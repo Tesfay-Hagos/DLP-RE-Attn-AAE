@@ -1,29 +1,20 @@
-# Model weights and large binaries
+# Ignore everything by default
+/*
+
+# Allow only these
+!/.gitignore
+!/Makefile
+!/experiments/
+
+# Inside experiments — ignore large output dirs and binaries
+/experiments/results/
+/experiments/results_*/
+/experiments/dl_report_complete/
+/experiments/extra_figures/
+/experiments/__pycache__/
+/experiments/.ipynb_checkpoints/
 *.pth
-*.pt
-*.pkl
-*.h5
-*.npz
 *.npy
+*.pkl
 *.zip
-
-# Result directories with large files
-all_results/
-results_rsna_resnet_sample/
-results_rsna_sample/
-results_sample/
-experiments/results_sample/
-experiments/results_pytorch/
-experiments/results_rsna_sample/
-
-# Wandb
-wandb/
-
-# Python
-__pycache__/
 *.pyc
-.ipynb_checkpoints/
-
-# Editor locks
-.~lock.*
-*.aux\n*.log\n*.blg\n*.toc\n*.out\n*.bbl
