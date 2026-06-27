@@ -1,0 +1,142 @@
+====================================================================================================
+DOI VERIFICATION REPORT
+====================================================================================================
+
+Source file: verified_papers.json
+Papers checked: 17
+Valid DOIs: 6
+No DOI: 6
+Invalid DOIs: 5
+
+====================================================================================================
+
+1. Generative Adversarial Nets
+   ───────────────────────────────────────────────────────────────────────────────────────────────
+   DOI: Not available
+   Status: Invalid/Missing
+   Message: No DOI available
+   Source: Unknown | Year: 2014
+
+2. Auto-Encoding Variational Bayes
+   ───────────────────────────────────────────────────────────────────────────────────────────────
+   DOI: Not available
+   Status: Invalid/Missing
+   Message: No DOI available
+   Source: Unknown | Year: 2013
+
+3. Adversarial Autoencoders
+   ───────────────────────────────────────────────────────────────────────────────────────────────
+   DOI: Not available
+   Status: Invalid/Missing
+   Message: No DOI available
+   Source: Unknown | Year: 2015
+
+4. Deep Residual Learning for Image Recognition
+   ───────────────────────────────────────────────────────────────────────────────────────────────
+   DOI: 10.1109/CVPR.2016.90
+   Status: Invalid/Missing
+   Message: Invalid - HTTP status 202
+   Source: Unknown | Year: 2016
+   Verify at: https://doi.org/10.1109/CVPR.2016.90
+
+5. Image Quality Assessment: From Error Visibility to Structural Similarity
+   ───────────────────────────────────────────────────────────────────────────────────────────────
+   DOI: 10.1109/TIP.2003.819861
+   Status: Invalid/Missing
+   Message: Invalid - HTTP status 202
+   Source: Unknown | Year: 2004
+   Verify at: https://doi.org/10.1109/TIP.2003.819861
+
+6. CBAM: Convolutional Block Attention Module
+   ───────────────────────────────────────────────────────────────────────────────────────────────
+   DOI: 10.1007/978-3-030-01234-2_1
+   Status: Valid
+   Message: Valid - resolves to link.springer.com
+   Source: Unknown | Year: 2018
+   Verify at: https://doi.org/10.1007/978-3-030-01234-2_1
+
+7. Adversarially Learned Anomaly Detection
+   ───────────────────────────────────────────────────────────────────────────────────────────────
+   DOI: 10.1109/ICDM.2018.00088
+   Status: Invalid/Missing
+   Message: Invalid - HTTP status 202
+   Source: Unknown | Year: 2018
+   Verify at: https://doi.org/10.1109/ICDM.2018.00088
+
+8. Unsupervised Anomaly Detection with Generative Adversarial Networks to Guide Marker Discovery
+   ───────────────────────────────────────────────────────────────────────────────────────────────
+   DOI: 10.1007/978-3-319-59050-9_12
+   Status: Valid
+   Message: Valid - resolves to link.springer.com
+   Source: Unknown | Year: 2017
+   Verify at: https://doi.org/10.1007/978-3-319-59050-9_12
+
+9. f-AnoGAN: Fast Unsupervised Anomaly Detection with Generative Adversarial Networks
+   ───────────────────────────────────────────────────────────────────────────────────────────────
+   DOI: 10.1016/j.media.2019.01.010
+   Status: Valid
+   Message: Valid - resolves to linkinghub.elsevier.com
+   Source: Unknown | Year: 2019
+   Verify at: https://doi.org/10.1016/j.media.2019.01.010
+
+10. Context-Encoding Variational Autoencoder for Unsupervised Anomaly Detection
+   ───────────────────────────────────────────────────────────────────────────────────────────────
+   DOI: 10.1007/978-3-030-32251-9_32
+   Status: Valid
+   Message: Valid - resolves to link.springer.com
+   Source: Unknown | Year: 2019
+   Verify at: https://doi.org/10.1007/978-3-030-32251-9_32
+
+11. Autoencoders for Unsupervised Anomaly Segmentation in Brain MR Images: A Comparative Study
+   ───────────────────────────────────────────────────────────────────────────────────────────────
+   DOI: 10.1016/j.media.2020.101952
+   Status: Valid
+   Message: Valid - resolves to linkinghub.elsevier.com
+   Source: Unknown | Year: 2021
+   Verify at: https://doi.org/10.1016/j.media.2020.101952
+
+12. CheXNet: Radiologist-Level Pneumonia Detection on Chest X-Rays with Deep Learning
+   ───────────────────────────────────────────────────────────────────────────────────────────────
+   DOI: Not available
+   Status: Invalid/Missing
+   Message: No DOI available
+   Source: Unknown | Year: 2017
+
+13. Deep Learning for Anomaly Detection: A Review
+   ───────────────────────────────────────────────────────────────────────────────────────────────
+   DOI: 10.1145/3439950
+   Status: Invalid/Missing
+   Message: Invalid - HTTP status 403
+   Source: Unknown | Year: 2021
+   Verify at: https://doi.org/10.1145/3439950
+
+14. Deep Learning for Anomaly Detection: A Survey
+   ───────────────────────────────────────────────────────────────────────────────────────────────
+   DOI: Not available
+   Status: Invalid/Missing
+   Message: No DOI available
+   Source: Unknown | Year: 2019
+
+15. Deep One-Class Classification
+   ───────────────────────────────────────────────────────────────────────────────────────────────
+   DOI: Not available
+   Status: Invalid/Missing
+   Message: No DOI available
+   Source: Unknown | Year: 2018
+
+16. ARAE: An Adaptive Robust AutoEncoder for Network Anomaly Detection
+   ───────────────────────────────────────────────────────────────────────────────────────────────
+   DOI: 10.32604/jcs.2025.072740
+   Status: Valid
+   Message: Valid - resolves to www.techscience.com
+   Source: Unknown | Year: 2025
+   Verify at: https://doi.org/10.32604/jcs.2025.072740
+
+17. Improving Performance of Autoencoder-Based Network Anomaly Detection on NSL-KDD Dataset
+   ───────────────────────────────────────────────────────────────────────────────────────────────
+   DOI: 10.1109/ACCESS.2021.3116612
+   Status: Invalid/Missing
+   Message: Invalid - HTTP status 202
+   Source: Unknown | Year: 2021
+   Verify at: https://doi.org/10.1109/ACCESS.2021.3116612
+

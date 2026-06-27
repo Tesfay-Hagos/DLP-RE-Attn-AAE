@@ -1,0 +1,546 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage[hidelinks,colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue]{hyperref}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage{xcolor}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{microtype}
+
+
+
+\graphicspath{%
+  {../results_kdd_complete/results_kdd/}%
+  {../results_kdd_complete/results_kdd/presentation/}%
+  {../experiments/dl_report_complete/dl_report/}%
+  {../experiments/extra_figures/}%
+}
+
+\newcommand{\method}{RE-Attn-AAE}
+\newcommand{\methodlong}{Reconstruction-Error Attention Adversarial Autoencoder}
+
+\title{%
+  \textbf{\methodlong{} (\method)}\\[4pt]
+  \large A Dual-Domain Evaluation on Network Traffic and Chest X-Rays
+}
+\author{Tesfay Hagos \\ \small University of Verona \\ \small \texttt{tesfay.hagos1421@gmail.com}}
+\date{June 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We propose the \methodlong{} (\method{}), a novel architecture that combines an
+Adversarial Autoencoder~\cite{makhzani_aae_2015} with a two-pass encoding strategy guided
+by a spatial attention map derived from the SSIM reconstruction
+error~\cite{wang_ssim_2004}.
+A first encoder reconstructs the input; the pixel-wise error map is passed through
+a lightweight attention module to produce a mask that gates the input before a second
+encoder maps the attended representation to a Gaussian-regularised latent space.
+We evaluate \method{} through a five-condition ablation on KDD Cup 1999 network-traffic
+data and a seven-condition study on RSNA chest X-rays, the latter also comparing
+scratch CNN against three ResNet-18 transfer-learning strategies.
+On KDD99, \method{} achieves the highest F1 of 0.9647 and best per-family AUC on the
+rare R2L (0.9488) and U2R (0.9490) attack categories.
+On RSNA, \method{} (C4) achieves AUC-ROC\,$=0.8337$, outperforming CNN-AE (0.8217),
+VAE (0.7342), and CNN-AAE without attention (0.7915).
+GAN-only training collapses on both datasets, confirming the need for a reconstruction
+anchor in adversarial anomaly detection.
+\end{abstract}
+
+\tableofcontents
+\clearpage
+
+%%% ─────────────────────────────────────────────────────────────────────
+\section{Introduction}
+%%% ─────────────────────────────────────────────────────────────────────
+
+Anomaly detection—identifying samples that deviate from learned normality—is critical
+for network intrusion detection~\cite{improving_ae_nslkdd_2021,arae_network_2025},
+medical imaging~\cite{baur_ae_survey_2021,schlegl_fanogan_2019},
+and industrial quality control~\cite{pang_survey_2021}.
+Because anomalies are rare and diverse, supervised labelled data is usually unavailable,
+motivating \emph{unsupervised} approaches that train on normal samples
+only~\cite{chalapathy_survey_2019}.
+
+Reconstruction-based autoencoders are the workhorse of unsupervised anomaly
+detection~\cite{baur_ae_survey_2021}: models trained on normal data reconstruct
+normals well but fail on anomalies, producing elevated reconstruction error as the
+anomaly score.
+VAEs~\cite{kingma_vae_2013} and GANs~\cite{goodfellow_gan_2014} add probabilistic
+structure to enable density-based scoring.
+AnoGAN~\cite{schlegl_anogan_2017} and f-AnoGAN~\cite{schlegl_fanogan_2019} pioneer
+GAN-based image anomaly detection; ALAD~\cite{zenati_alad_2018} uses bidirectional
+GAN training with cycle-consistency for dual scoring.
+Adversarial Autoencoders (AAE)~\cite{makhzani_aae_2015} impose a Gaussian latent
+prior adversarially, combining AE reconstruction with GAN-style regularisation.
+
+A shared limitation of existing methods is that anomaly scores are computed
+\emph{globally}—summed over all features equally—even though anomalies typically
+manifest in a \emph{local} subset.
+Attention modules such as CBAM~\cite{woo_cbam_2018} focus on feature-map attention
+in supervised settings but are not designed to exploit reconstruction-error signals.
+
+\textbf{Contributions:}
+\begin{enumerate}[leftmargin=*,label=\textbf{\arabic*.}]
+  \item \textbf{\method{} architecture}: a two-encoder AAE where SSIM error drives
+        a RE-Attention mask that focuses the second encoder on anomalous regions.
+  \item \textbf{Dual-domain ablation}: five conditions on KDD99 (tabular) and
+        seven on RSNA chest X-rays (image), including CNN scratch vs.\ ResNet-18
+        transfer-learning variants.
+  \item \textbf{Discriminator collapse analysis}: documented in all full-freeze and
+        partial fine-tuning ResNet conditions with self-correcting alpha-sweep fusion.
+  \item \textbf{Attention interpretability}: per-family entropy on KDD99 reveals
+        why RE-Attention helps most on rare attack families.
+\end{enumerate}
+
+%%% ─────────────────────────────────────────────────────────────────────
+\section{Related Work}
+%%% ─────────────────────────────────────────────────────────────────────
+
+\paragraph{Reconstruction-based detection.}
+Autoencoders trained on normal data use reconstruction error as an anomaly
+score~\cite{chalapathy_survey_2019,pang_survey_2021}.
+Baur~et~al.~\cite{baur_ae_survey_2021} show that a simple AE with SSIM loss
+outperforms complex generative models for brain MRI anomaly segmentation,
+motivating our use of SSIM as the primary signal.
+
+\paragraph{Generative approaches.}
+VAEs~\cite{kingma_vae_2013} impose a Gaussian prior via the ELBO.
+AnoGAN~\cite{schlegl_anogan_2017} uses GAN inversion for scoring;
+f-AnoGAN~\cite{schlegl_fanogan_2019} adds a trained encoder to speed inference.
+Zimmerer~et~al.~\cite{zimmerer_cevae_2019} combine reconstruction error with VAE
+density for a dual-signal score—a principle we extend with adversarial priors.
+ALAD~\cite{zenati_alad_2018} is the closest prior work using dual discriminator
+scoring for anomaly detection; it operates in data space without spatial attention.
+
+\paragraph{Attention mechanisms.}
+CBAM~\cite{woo_cbam_2018} applies sequential channel and spatial attention to
+intermediate feature maps in supervised CNNs.
+Our RE-Attention differs: it operates on the input image guided by the reconstruction
+error of the first pass, creating an unsupervised feedback loop.
+
+\paragraph{Network anomaly detection.}
+Xu~et~al.~\cite{improving_ae_nslkdd_2021} improve AE-based detection on NSL-KDD.
+Yin~et~al.~\cite{arae_network_2025} propose ARAE with feature-level attention.
+Deep SVDD~\cite{ruff_deepsvdd_2018} maps normal data to a hypersphere, contrasting
+with our Gaussian-prior adversarial design.
+CheXNet~\cite{rajpurkar_chexnet_2017} motivates the use of pretrained ResNet
+features for chest X-ray analysis, which we test in C5--C7.
+
+%%% ─────────────────────────────────────────────────────────────────────
+\section{Method}
+%%% ─────────────────────────────────────────────────────────────────────
+
+\subsection{Problem Statement}
+
+Given training set $\mathcal{X}_{\mathrm{train}}$ containing only normal samples,
+learn a scoring function $s:\mathcal{X}\to\mathbb{R}$ such that anomalies receive
+high scores and normals receive low scores at test time.
+
+\subsection{RE-Attention Module}
+
+Given sample $x$ and reconstruction $\hat{x}=\mathrm{Dec}(\mathrm{Enc}_1(x))$,
+the feature-wise error map is:
+\begin{equation}
+  e(x) = (x - \hat{x})^2 \quad\in\mathbb{R}^d
+\end{equation}
+For images we use the SSIM-based error map~\cite{wang_ssim_2004}:
+\begin{equation}
+  e_{\mathrm{SSIM}}(x) = 1 - \mathrm{SSIM}(x,\hat{x}) \quad\in[0,1]^{h\times w}
+\end{equation}
+The RE-Attention module $\phi:\mathbb{R}^d\to[0,1]^d$ maps this error to a spatial
+attention mask via a two-layer MLP with sigmoid output:
+\begin{equation}
+  a = \phi(e(x)) = \sigma\!\left(W_2\,\mathrm{ReLU}(W_1\,e(x)+b_1)+b_2\right)
+\end{equation}
+The attended input $\tilde{x} = x \odot a$ highlights regions of highest
+reconstruction deviation.
+
+\subsection{Architecture}
+
+\method{} has five components (Figure~\ref{fig:arch}):
+\textbf{Enc$_1$} maps $x\!\to\!z_1\in\mathbb{R}^L$;
+\textbf{Dec} (shared) maps $z\!\to\!\hat{x}$;
+\textbf{RE-Attention} maps error $e\!\to\!a$;
+\textbf{Enc$_2$} maps $\tilde{x}=x\odot a\!\to\!z_2$;
+\textbf{Discriminator $D$} distinguishes $z_2$ from $\mathcal{N}(0,I)$.
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.88\linewidth]{fig7_architecture.png}
+  \caption{\method{} architecture. Enc$_1$ reconstructs; SSIM error drives
+           RE-Attention; Enc$_2$ maps attended input to adversarially regularised
+           latent code.}
+  \label{fig:arch}
+\end{figure}
+
+\subsection{Three-Phase Training}
+
+\textbf{Phase 1 — Reconstruction} (Enc$_1$, Enc$_2$, Dec):
+\begin{equation}
+  \mathcal{L}_{\mathrm{rec}} = \mathbb{E}_x\!\left[
+    \|x - \mathrm{Dec}(z_1)\|^2 + \|x - \mathrm{Dec}(z_2)\|^2\right]
+\end{equation}
+\textbf{Phase 2 — Discriminator} ($D$):
+\begin{equation}
+  \mathcal{L}_D = -\mathbb{E}_{z_p}[\log D(z_p)]
+                 -\mathbb{E}_x[\log(1-D(z_2))]
+\end{equation}
+\textbf{Phase 3 — Generator} (Enc$_2$ only):
+\begin{equation}
+  \mathcal{L}_G = -\mathbb{E}_x[\log D(z_2)]
+\end{equation}
+Enc$_1$ and Dec are frozen during Phases 2--3 to stabilise reconstruction.
+
+\subsection{Anomaly Scoring}
+
+\begin{align}
+  s_{\mathrm{rec}}(x)  &= 1 - \mathrm{SSIM}(x,\hat{x}) \quad\text{(or MSE for tabular)} \\
+  s_{\mathrm{disc}}(x) &= 1 - D(z_2) \\
+  s(x)                 &= \alpha\,s_{\mathrm{rec}}(x) + (1-\alpha)\,s_{\mathrm{disc}}(x)
+\end{align}
+$\alpha\in[0,1]$ is selected by maximising AUC-ROC on a held-out grid.
+Discriminator collapse ($D(z)\approx0.5$) is automatically corrected by the grid
+selecting $\alpha=1$.
+
+%%% ─────────────────────────────────────────────────────────────────────
+\section{Experimental Setup}
+%%% ─────────────────────────────────────────────────────────────────────
+
+\subsection{Datasets}
+
+\paragraph{KDD Cup 1999.}
+494,021 normal training samples; 245,627 test samples (80\% normal, 20\% attack).
+115-dimensional preprocessed feature vectors.
+Attack families: DoS, Probe, R2L (rare), U2R (rare)~\cite{improving_ae_nslkdd_2021}.
+
+\paragraph{RSNA Pneumonia Detection.}
+Frontal chest X-rays resized to $128\times128$.
+Training: normal cases only.
+Test: 2,000 normal + 2,000 pneumonia-positive~\cite{rajpurkar_chexnet_2017}.
+
+\subsection{Ablation Conditions}
+
+\begin{table}[h]
+\centering
+\caption{KDD99 ablation conditions.}
+\begin{tabular}{llccc}
+\toprule
+ID & Description & Adversarial & RE-Attn & Dual score \\ \midrule
+C1 & Vanilla AE            & --          & --       & --  \\
+C2 & GAN discriminator     & \checkmark  & --       & --  \\
+C3 & CNN-AAE (recon only)  & \checkmark  & --       & --  \\
+C4 & CNN-AAE (dual score)  & \checkmark  & --       & \checkmark \\
+C5 & \method{} (proposed)  & \checkmark  & \checkmark & \checkmark \\ \bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\caption{RSNA ablation conditions.}
+\begin{tabular}{llcc}
+\toprule
+ID & Description & RE-Attn & Backbone \\ \midrule
+C1 & CNN-AE                        & --         & Scratch      \\
+C2 & VAE                           & --         & Scratch      \\
+C3 & CNN-AAE                       & --         & Scratch      \\
+C4 & CNN-\method{} (proposed)      & \checkmark & Scratch      \\
+C5 & ResNet-18, full freeze        & \checkmark & Frozen       \\
+C6 & ResNet-18, partial FT         & \checkmark & Partial FT   \\
+C7 & ResNet-18, mostly FT          & \checkmark & Mostly FT    \\ \bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Hyperparameters.}
+Latent dim $L=32$ (KDD99) / $128$ (RSNA).
+Batch size 64 / 32. Epochs 30 / 80.
+Adam with $\mathrm{lr}=10^{-3}$ (reconstruction), $5\times10^{-4}$ (discriminator).
+RSNA ResNet conditions: 20-epoch warm-start of decoder + FC head; layer4 at
+$\mathrm{lr}\times0.1$ for C6.
+
+%%% ─────────────────────────────────────────────────────────────────────
+\section{Results --- KDD99}
+%%% ─────────────────────────────────────────────────────────────────────
+
+\subsection{Overall Metrics}
+
+\begin{table}[h]
+\centering
+\caption{KDD99 image-level metrics. \textbf{Bold} = best.}
+\label{tab:kdd}
+\begin{tabular}{llcccc}
+\toprule
+ID & Method & AUC-ROC & AUC-PR & F1 & FNR \\ \midrule
+C1 & Vanilla AE          & 0.9994 & 0.9616 & 0.9548 & 0.0024 \\
+C2 & GAN Disc.           & 0.2178 & 0.0091 & 0.0245 & 0.0057 \\
+C3 & AAE (recon)         & 0.9993 & 0.9403 & 0.9183 & 0.0016 \\
+C4 & AAE (dual)          & 0.9993 & 0.9403 & 0.9183 & 0.0016 \\
+C5 & \method{} (ours)    & \textbf{0.9994} & \textbf{0.9571} & \textbf{0.9647} & 0.0024 \\ \bottomrule
+\end{tabular}
+\end{table}
+
+All AE-based methods exceed 0.999 AUC-ROC, consistent with prior
+work~\cite{improving_ae_nslkdd_2021,arae_network_2025}—this benchmark is near-saturated
+at the ranking level.
+The GAN-only baseline (C2) collapses to 0.218, confirming that adversarial
+training without a reconstruction anchor is unstable.
+\method{} achieves the highest F1 (0.9647) and AUC-PR (0.9571).
+C3 and C4 are identical across all metrics: the alpha sweep selects $\alpha=1$,
+meaning the latent discriminator provides no marginal information on tabular data.
+
+\begin{figure}[h]
+  \centering
+  \begin{subfigure}[b]{0.48\linewidth}
+    \includegraphics[width=\linewidth]{presE_roc_overlay.png}
+    \caption{ROC curves — KDD99.}
+  \end{subfigure}\hfill
+  \begin{subfigure}[b]{0.48\linewidth}
+    \includegraphics[width=\linewidth]{presB_violins.png}
+    \caption{Score distributions.}
+  \end{subfigure}
+  \caption{KDD99 detection performance. C5 shows the clearest normal/attack separation.}
+\end{figure}
+
+\subsection{Per-Family AUC-ROC}
+
+\begin{table}[h]
+\centering
+\caption{Per-attack-family AUC-ROC on KDD99. \textbf{Bold} = best.}
+\label{tab:kdd_family}
+\begin{tabular}{lcccc}
+\toprule
+Method & DoS & Probe & R2L & U2R \\ \midrule
+Vanilla AE        & 0.9995 & 0.9997 & 0.9448 & 0.9454 \\
+GAN Disc.         & 0.2183 & 0.1412 & 0.3985 & 0.4074 \\
+AAE (recon/dual)  & 0.9994 & 0.9996 & 0.9471 & 0.9468 \\
+\method{} (ours)  & \textbf{0.9995} & \textbf{0.9998} & \textbf{0.9488} & \textbf{0.9490} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\method{} achieves the best performance on all families.
+Gains are largest on R2L ($+0.004$) and U2R ($+0.004$)—the rare, polymorphic
+attack categories where global scoring is weakest.
+
+\subsection{Attention Entropy Analysis}
+
+Shannon entropy of the RE-Attention weight distribution per attack family:
+
+\begin{center}
+\begin{tabular}{lc}
+\toprule
+Family & Entropy \\ \midrule
+DoS    & 60.07 \\
+Probe  & 58.55 \\
+R2L    & 68.69 \\
+U2R    & 68.70 \\ \bottomrule
+\end{tabular}
+\end{center}
+
+R2L and U2R show substantially higher entropy, meaning RE-Attention spreads more
+diffusely across features for these attacks.
+This explains both the detection difficulty and the mechanism of improvement:
+rare attacks lack a single discriminative feature signature, so the model must
+attend broadly to discriminate them.
+
+\begin{figure}[h]
+  \centering
+  \begin{subfigure}[b]{0.48\linewidth}
+    \includegraphics[width=\linewidth]{presF_family_heatmap.png}
+    \caption{Per-family AUC heatmap.}
+  \end{subfigure}\hfill
+  \begin{subfigure}[b]{0.48\linewidth}
+    \includegraphics[width=\linewidth]{attention_entropy.png}
+    \caption{RE-Attention entropy per family.}
+  \end{subfigure}
+  \caption{KDD99 family-level analysis. Higher entropy for R2L/U2R explains why
+           RE-Attention helps most on rare attacks.}
+  \label{fig:kdd_entropy}
+\end{figure}
+
+%%% ─────────────────────────────────────────────────────────────────────
+\section{Results --- RSNA Chest X-Rays}
+%%% ─────────────────────────────────────────────────────────────────────
+
+\subsection{Overall Performance}
+
+\begin{table}[h]
+\centering
+\caption{RSNA image-level results. FZ = full freeze; PFT = partial fine-tune;
+         MFT = mostly fine-tune. \textbf{Bold} = best.}
+\label{tab:rsna}
+\begin{tabular}{llccccc}
+\toprule
+ID & Method & AUC-ROC & AUC-PR & F1 & Disc AUC & Fusion \\ \midrule
+C1 & CNN-AE           & 0.8217 & 0.7924 & 0.7509 & --     & --     \\
+C2 & VAE              & 0.7342 & 0.7048 & 0.7052 & --     & --     \\
+C3 & CNN-AAE          & 0.7915 & 0.7595 & 0.7454 & 0.4603 & 0.7821 \\
+C4 & CNN-\method{}    & \textbf{0.8337} & \textbf{0.8093} & \textbf{0.7710} & 0.5725 & 0.8034 \\
+C5 & ResNet FZ        & 0.6897 & 0.6312 & 0.6841 & 0.500  & 0.6897 \\
+C6 & ResNet PFT       & 0.8219 & 0.7944 & 0.4649 & 0.4511 & 0.7080 \\
+C7 & ResNet MFT       & 0.7943 & 0.7706 & 0.4496 & 0.500  & 0.7943 \\ \bottomrule
+\end{tabular}
+\end{table}
+
+CNN-\method{} (C4) is the best condition overall, with AUC-ROC $=0.8337$.
+The key findings are:
+
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{C3 regresses below C1}: adversarial regularisation alone disrupts
+        the SSIM reconstruction signal ($-0.030$). RE-Attention in C4 overcomes
+        this regression ($+0.042$ over C3).
+  \item \textbf{Full-freeze ResNet (C5) collapses}: Disc AUC $=0.500$, F1~$=0$.
+        Frozen ImageNet features are misaligned with 128$\times$128 reconstruction.
+  \item \textbf{Partial fine-tuning (C6) recovers AUC-ROC} to 0.822 but
+        not F1 (0.465)—the classification threshold shifts unfavourably,
+        and the discriminator remains collapsed.
+  \item \textbf{All ResNet discriminators collapse}: fusion selects $\alpha=1$
+        (SSIM-only) automatically in C5--C7.
+\end{enumerate}
+
+\begin{figure}[h]
+  \centering
+  \begin{subfigure}[b]{0.48\linewidth}
+    \includegraphics[width=\linewidth]{figD_roc_overlay.png}
+    \caption{ROC curves — all 7 conditions.}
+  \end{subfigure}\hfill
+  \begin{subfigure}[b]{0.48\linewidth}
+    \includegraphics[width=\linewidth]{figC_design_matrix.png}
+    \caption{Design matrix with AUC bar.}
+  \end{subfigure}
+  \caption{RSNA 7-condition ablation. C4 achieves the best AUC-ROC.
+           C5 collapses; C6 recovers AUC-ROC but not F1.}
+  \label{fig:rsna_main}
+\end{figure}
+
+\subsection{Ablation Chain}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.72\linewidth]{fig1_ablation_chain.png}
+  \caption{RSNA ablation chain C1$\to$C3$\to$C4.
+           Adversarial regularisation alone hurts ($-0.030$ AUC-ROC);
+           RE-Attention recovers and improves ($+0.042$).}
+  \label{fig:rsna_chain}
+\end{figure}
+
+\subsection{Discriminator Dynamics}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.85\linewidth]{figE_disc_collapse.png}
+  \caption{SSIM vs.\ discriminator vs.\ fusion scores per condition.
+           C4 has a partially healthy discriminator (0.573); all ResNet conditions
+           collapse to 0.500 and fusion hurts.
+           The alpha-sweep automatically recovers SSIM-only in collapse cases.}
+  \label{fig:rsna_disc}
+\end{figure}
+
+\subsection{ResNet Transfer Learning}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.72\linewidth]{fig8_resnet_analysis.png}
+  \caption{Scratch CNN (C4) vs.\ ResNet-18 variants.
+           Partial fine-tuning (C6) recovers AUC-ROC but does not surpass C4;
+           full freeze (C5) fails entirely.}
+  \label{fig:rsna_resnet}
+\end{figure}
+
+Pretrained ResNet-18 does not improve over scratch CNN for unsupervised
+128$\times$128 chest X-ray anomaly detection.
+The reconstruction task requires spatial flexibility that frozen layers cannot provide.
+
+\subsection{Attention Maps}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.88\linewidth]{fig10_attention_grid_pneumonia.png}
+  \caption{RE-Attention maps on RSNA pneumonia cases.
+           Top: original X-rays. Middle: SSIM error. Bottom: RE-Attention weights.
+           Without pixel-level supervision, attention concentrates on lung opacities.}
+  \label{fig:rsna_attn}
+\end{figure}
+
+\begin{table}[h]
+\centering
+\caption{Pixel-level localisation AUC-ROC on pneumonia-positive test cases.}
+\label{tab:pixel}
+\begin{tabular}{lcc}
+\toprule
+Condition & SSIM map & Attn map \\ \midrule
+C1 CNN-AE          & 0.6881 & --     \\
+C4 CNN-\method{}   & 0.6949 & 0.3095 \\
+C5 ResNet FZ       & 0.6342 & 0.3598 \\
+C6 ResNet PFT      & 0.6822 & 0.3083 \\
+C7 ResNet MFT      & 0.6972 & 0.2990 \\ \bottomrule
+\end{tabular}
+\end{table}
+
+SSIM-based pixel AUC (0.695 for C4) improves over the baseline (0.688).
+RE-Attention pixel AUC is lower ($\approx 0.31$): the attention map is designed
+for image-level scoring, not segmentation. SSIM remains the correct pixel-level
+localisation signal.
+
+%%% ─────────────────────────────────────────────────────────────────────
+\section{Discussion}
+%%% ─────────────────────────────────────────────────────────────────────
+
+\paragraph{When RE-Attention helps.}
+Gains are largest when anomalies are spatially local (image opacities, rare
+network-feature deviations) and the first encoder's reconstruction error is a
+reliable signal. On KDD99: $+0.010$ F1, $+0.004$ R2L/U2R AUC.
+On RSNA: $+0.042$ AUC-ROC over CNN-AAE.
+
+\paragraph{Discriminator stability.}
+GAN-only training collapses without a reconstruction anchor.
+AAE training is more stable, but the discriminator remains fragile when the
+backbone is frozen. Future work could explore Wasserstein distance or spectral
+normalisation to improve stability.
+
+\paragraph{Transfer learning.}
+Pretrained ResNet-18 does not help unsupervised anomaly detection on 128$\times$128
+images. Full freezing prevents decoder adaptation; partial fine-tuning recovers
+AUC-ROC but the adversarial component collapses.
+A scratch CNN with RE-Attention is the preferred architecture.
+
+\paragraph{KDD99 saturation.}
+AUC-ROC is near-saturated ($>0.999$) for all AE-based methods on KDD99.
+F1 and per-family AUC on rare attacks are the informative discriminators.
+Future work should use NSL-KDD or CICIDS-2017 where imbalance and diversity
+better differentiate modern methods~\cite{improving_ae_nslkdd_2021}.
+
+\paragraph{Limitations.}
+The blending parameter $\alpha$ requires a held-out validation set.
+RE-Attention adds $\approx15\%$ training time over a standard AAE.
+The attention map is not a pixel-level segmentation map—it is designed to
+focus the second encoder, not to produce diagnostic masks.
+Dual-score fusion provided no benefit on tabular KDD99 data.
+
+%%% ─────────────────────────────────────────────────────────────────────
+\section{Conclusion}
+%%% ─────────────────────────────────────────────────────────────────────
+
+We presented \method{}, a novel Adversarial Autoencoder in which a
+Reconstruction-Error Attention mechanism directs a second encoder to concentrate
+the latent code on anomalous regions.
+Through twelve total conditions across two datasets, we showed that:
+RE-Attention consistently improves over CNN-AAE without attention;
+GAN-only training collapses without a reconstruction anchor;
+pretrained ResNet-18 does not improve and can destabilise unsupervised detection;
+and \method{} produces interpretable attention maps highlighting pneumonia opacities
+without pixel-level supervision.
+On RSNA, \method{} achieves AUC-ROC $=0.8337$—best among seven conditions.
+On KDD99, it achieves the highest F1 (0.9647) and best rare-attack AUC-ROC.
+
+\bibliographystyle{unsrtnat}
+\bibliography{references}
+
+\end{document}

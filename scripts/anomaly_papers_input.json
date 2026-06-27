@@ -1,0 +1,52 @@
+[
+  {
+    "id": "alad",
+    "arxiv": "1812.02288",
+    "role": "ALAD — Adversarially Learned Anomaly Detection; encoder+BiGAN+dual discriminators in data+latent space; closest prior work on dual-score AAE"
+  },
+  {
+    "id": "arcade",
+    "arxiv": "2205.01432",
+    "role": "ARCADE — Adversarially Regularized Convolutional Autoencoder for Network Anomaly Detection; adversarial AE for network flows"
+  },
+  {
+    "id": "aladaen",
+    "doi": "10.1038/s41598-025-25621-0",
+    "role": "ALADAEN — Active Learning + Attention + Adversarial Dual AutoEncoder for APT anomaly detection; closest to full proposed pipeline"
+  },
+  {
+    "id": "arae_network",
+    "doi": "10.32604/jcs.2024.065064",
+    "role": "ARAE — Adaptive Robust AutoEncoder; multi-head attention + adversarial AE + adaptive multi-indicator scoring on KDD99/NSL-KDD"
+  },
+  {
+    "id": "wavelet_aae",
+    "doi": "10.1007/978-3-030-12942-2_18",
+    "role": "Wavelet + AAE for network intrusion; adversarial AE outperforms vanilla AE on encrypted TLS traffic"
+  },
+  {
+    "id": "vae_wgan",
+    "doi": "10.1016/j.comnet.2024.110728",
+    "role": "VAE-WGAN hybrid for network intrusion detection on KDD99; generative approach for minority attack augmentation"
+  },
+  {
+    "id": "vae_attention_lstm",
+    "doi": "10.1002/spy2.70044",
+    "role": "Modified VAE + Attention-LSTM for network intrusion on NSL-KDD; temporal attention with VAE, 99.37% accuracy"
+  },
+  {
+    "id": "attention_ae_latent",
+    "doi": "10.3390/s22010240",
+    "role": "Attention Autoencoder for Generative Latent Representational Learning; attention at bottleneck of AE for anomaly detection"
+  },
+  {
+    "id": "ae_analysis_nids",
+    "doi": "10.3390/s21124153",
+    "role": "Analysis of Autoencoders for Network Intrusion Detection; systematic comparison of AE variants on KDD99/NSL-KDD"
+  },
+  {
+    "id": "improving_ae_nslkdd",
+    "doi": "10.1109/ACCESS.2021.3114838",
+    "role": "Improving AE-based Network Anomaly Detection on NSL-KDD; architectural improvements to standard AE baseline"
+  }
+]

@@ -1,0 +1,138 @@
+\begin{thebibliography}{16}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Makhzani et~al.(2015)Makhzani, Shlens, Jaitly, Goodfellow, and
+  Frey]{makhzani_aae_2015}
+Alireza Makhzani, Jonathon Shlens, Navdeep Jaitly, Ian Goodfellow, and Brendan
+  Frey.
+\newblock Adversarial autoencoders.
+\newblock \emph{arXiv preprint arXiv:1511.05644}, 2015.
+\newblock URL \url{https://arxiv.org/abs/1511.05644}.
+
+\bibitem[Wang et~al.(2004)Wang, Bovik, Sheikh, and Simoncelli]{wang_ssim_2004}
+Zhou Wang, Alan~C. Bovik, Hamid~R. Sheikh, and Eero~P. Simoncelli.
+\newblock Image quality assessment: From error visibility to structural
+  similarity.
+\newblock \emph{IEEE Transactions on Image Processing}, 13\penalty0
+  (4):\penalty0 600--612, 2004.
+\newblock \doi{10.1109/TIP.2003.819861}.
+
+\bibitem[Xu et~al.(2021)Xu, Zhang, Yang, and Wang]{improving_ae_nslkdd_2021}
+Wenying Xu, Shengli Zhang, Fan Yang, and Xinheng Wang.
+\newblock Improving performance of autoencoder-based network anomaly detection
+  on {NSL-KDD} dataset.
+\newblock \emph{IEEE Access}, 9:\penalty0 140136--140146, 2021.
+\newblock \doi{10.1109/ACCESS.2021.3116612}.
+
+\bibitem[Yin et~al.(2025)Yin, Shang, and Zhao]{arae_network_2025}
+Chunyong Yin, Wenqian Shang, and Kailin Zhao.
+\newblock {ARAE}: An adaptive robust {AutoEncoder} for network anomaly
+  detection.
+\newblock \emph{Journal of Cyber Security}, 7, 2025.
+\newblock \doi{10.32604/jcs.2025.072740}.
+
+\bibitem[Baur et~al.(2021)Baur, Wiestler, Albarqouni, and
+  Navab]{baur_ae_survey_2021}
+Christoph Baur, Benedikt Wiestler, Shadi Albarqouni, and Nassir Navab.
+\newblock Autoencoders for unsupervised anomaly segmentation in brain {MR}
+  images: A comparative study.
+\newblock \emph{Medical Image Analysis}, 69:\penalty0 101952, 2021.
+\newblock \doi{10.1016/j.media.2020.101952}.
+
+\bibitem[Schlegl et~al.(2019)Schlegl, Seeb{\"o}ck, Waldstein, Langs, and
+  Schmidt-Erfurth]{schlegl_fanogan_2019}
+Thomas Schlegl, Philipp Seeb{\"o}ck, Sebastian~M. Waldstein, Georg Langs, and
+  Ursula Schmidt-Erfurth.
+\newblock f-{AnoGAN}: Fast unsupervised anomaly detection with generative
+  adversarial networks.
+\newblock \emph{Medical Image Analysis}, 54:\penalty0 30--44, 2019.
+\newblock \doi{10.1016/j.media.2019.01.010}.
+
+\bibitem[Pang et~al.(2021)Pang, Shen, Cao, and van~den
+  Hengel]{pang_survey_2021}
+Guansong Pang, Chunhua Shen, Longbing Cao, and Anton van~den Hengel.
+\newblock Deep learning for anomaly detection: A review.
+\newblock \emph{ACM Computing Surveys}, 54\penalty0 (2):\penalty0 1--38, 2021.
+\newblock \doi{10.1145/3439950}.
+
+\bibitem[Chalapathy and Chawla(2019)]{chalapathy_survey_2019}
+Raghavendra Chalapathy and Sanjay Chawla.
+\newblock Deep learning for anomaly detection: A survey.
+\newblock \emph{arXiv preprint arXiv:1901.03407}, 2019.
+\newblock URL \url{https://arxiv.org/abs/1901.03407}.
+
+\bibitem[Kingma and Welling(2013)]{kingma_vae_2013}
+Diederik~P. Kingma and Max Welling.
+\newblock Auto-encoding variational bayes.
+\newblock \emph{arXiv preprint arXiv:1312.6114}, 2013.
+\newblock URL \url{https://arxiv.org/abs/1312.6114}.
+
+\bibitem[Goodfellow et~al.(2014)Goodfellow, Pouget-Abadie, Mirza, Xu,
+  Warde-Farley, Ozair, Courville, and Bengio]{goodfellow_gan_2014}
+Ian~J. Goodfellow, Jean Pouget-Abadie, Mehdi Mirza, Bing Xu, David
+  Warde-Farley, Sherjil Ozair, Aaron Courville, and Yoshua Bengio.
+\newblock Generative adversarial nets.
+\newblock In \emph{Advances in Neural Information Processing Systems
+  (NeurIPS)}, volume~27, 2014.
+\newblock URL \url{https://arxiv.org/abs/1406.2661}.
+
+\bibitem[Schlegl et~al.(2017)Schlegl, Seeb{\"o}ck, Waldstein, Schmidt-Erfurth,
+  and Langs]{schlegl_anogan_2017}
+Thomas Schlegl, Philipp Seeb{\"o}ck, Sebastian~M. Waldstein, Ursula
+  Schmidt-Erfurth, and Georg Langs.
+\newblock Unsupervised anomaly detection with generative adversarial networks
+  to guide marker discovery.
+\newblock In \emph{Information Processing in Medical Imaging (IPMI)}, pages
+  146--157, 2017.
+\newblock \doi{10.1007/978-3-319-59050-9_12}.
+
+\bibitem[Zenati et~al.(2018)Zenati, Foo, Lecouat, Manek, and
+  Chandrasekhar]{zenati_alad_2018}
+Houssam Zenati, Chuan~Sheng Foo, Bruno Lecouat, Gaurav Manek, and
+  Vijay~Ramaseshan Chandrasekhar.
+\newblock Adversarially learned anomaly detection.
+\newblock In \emph{IEEE International Conference on Data Mining (ICDM)}, pages
+  727--736, 2018.
+\newblock \doi{10.1109/ICDM.2018.00088}.
+
+\bibitem[Woo et~al.(2018)Woo, Park, Lee, and Kweon]{woo_cbam_2018}
+Sanghyun Woo, Jongchan Park, Joon-Young Lee, and In~So Kweon.
+\newblock {CBAM}: Convolutional block attention module.
+\newblock In \emph{European Conference on Computer Vision (ECCV)}, pages 3--19,
+  2018.
+\newblock \doi{10.1007/978-3-030-01234-2_1}.
+
+\bibitem[Zimmerer et~al.(2019)Zimmerer, Kohl, Petersen, Isensee, and
+  Maier-Hein]{zimmerer_cevae_2019}
+David Zimmerer, Simon A.~A. Kohl, Jens Petersen, Fabian Isensee, and Klaus~H.
+  Maier-Hein.
+\newblock Context-encoding variational autoencoder for unsupervised anomaly
+  detection.
+\newblock In \emph{Medical Image Computing and Computer-Assisted Intervention
+  (MICCAI)}, pages 190--198, 2019.
+\newblock \doi{10.1007/978-3-030-32251-9_32}.
+
+\bibitem[Ruff et~al.(2018)Ruff, Vandermeulen, G{\"o}rnitz, Deecke, Siddiqui,
+  Binder, M{\"u}ller, and Kloft]{ruff_deepsvdd_2018}
+Lukas Ruff, Robert Vandermeulen, Nico G{\"o}rnitz, Lucas Deecke, Shoaib~Ahmed
+  Siddiqui, Alexander Binder, Emmanuel M{\"u}ller, and Marius Kloft.
+\newblock Deep one-class classification.
+\newblock In \emph{International Conference on Machine Learning (ICML)}, pages
+  4393--4402, 2018.
+\newblock URL \url{https://arxiv.org/abs/1906.02629}.
+
+\bibitem[Rajpurkar et~al.(2017)Rajpurkar, Irvin, Zhu, Yang, Mehta, Duan, Ding,
+  Bagul, Langlotz, Shpanskaya, Lungren, and Ng]{rajpurkar_chexnet_2017}
+Pranav Rajpurkar, Jeremy Irvin, Kaylie Zhu, Brandon Yang, Hershel Mehta, Tony
+  Duan, Daisy Ding, Aarti Bagul, Curtis Langlotz, Katie Shpanskaya, Matthew~P.
+  Lungren, and Andrew~Y. Ng.
+\newblock {CheXNet}: Radiologist-level pneumonia detection on chest {X}-rays
+  with deep learning.
+\newblock \emph{arXiv preprint arXiv:1711.05225}, 2017.
+\newblock URL \url{https://arxiv.org/abs/1711.05225}.
+
+\end{thebibliography}

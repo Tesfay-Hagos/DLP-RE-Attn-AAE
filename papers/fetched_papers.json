@@ -1,0 +1,157 @@
+[
+  {
+    "title": "Adversarially Learned Anomaly Detection",
+    "authors": [
+      "Houssam Zenati",
+      "Manon Romain",
+      "Chuan-Sheng Foo",
+      "Bruno Lecouat",
+      "V. Chandrasekhar"
+    ],
+    "year": 2018,
+    "abstract": "Anomaly detection is a significant and hence well-studied problem. However, developing effective anomaly detection methods for complex and high-dimensional data remains a challenge. As Generative Adversarial Networks (GANs) are able to model the complex high-dimensional distributions of real-world data, they offer a promising approach to address this challenge. In this work, we propose an anomaly detection method, Adversarially Learned Anomaly Detection (ALAD) based on bi-directional GANs, that derives adversarially learned features for the anomaly detection task. ALAD then uses reconstruction errors based on these adversarially learned features to determine if a data sample is anomalous. ALAD builds on recent advances to ensure data-space and latent-space cycle-consistencies and stabilize GAN training, which results in significantly improved anomaly detection performance. ALAD achieves state-of-the-art performance on a range of image and tabular datasets while being several hundred-fold faster at test time than the only published GAN-based method.",
+    "venue": "Industrial Conference on Data Mining",
+    "citations": 454,
+    "doi": "10.1109/ICDM.2018.00088",
+    "arxiv": "1812.02288",
+    "source": "SemanticScholar",
+    "s2_url": "https://api.semanticscholar.org/graph/v1/paper/ARXIV:1812.02288",
+    "id": "alad",
+    "role": "ALAD \u2014 Adversarially Learned Anomaly Detection; encoder+BiGAN+dual discriminators in data+latent space; closest prior work on dual-score AAE"
+  },
+  {
+    "title": "ARCADE: Adversarially Regularized Convolutional Autoencoder for Network Anomaly Detection",
+    "authors": [
+      "Willian T. Lunardi",
+      "Martin Andreoni Lopez",
+      "Jean-Pierre Giacalone"
+    ],
+    "year": 2022,
+    "abstract": "As the number of heterogenous IP-connected devices and traffic volume increase, so does the potential for security breaches. The undetected exploitation of these breaches can bring severe cybersecurity and privacy risks. Anomaly-based \\acp{IDS} play an essential role in network security. In this paper, we present a practical unsupervised anomaly-based deep learning detection system called ARCADE (Adversarially Regularized Convolutional Autoencoder for unsupervised network anomaly DEtection). With a convolutional \\ac{AE}, ARCADE automatically builds a profile of the normal traffic using a subset of raw bytes of a few initial packets of network flows so that potential network anomalies and intrusions can be efficiently detected before they cause more damage to the network. ARCADE is trained exclusively on normal traffic. An adversarial training strategy is proposed to regularize and decrease the \\ac{AE}'s capabilities to reconstruct network flows that are out-of-the-normal distribution, thereby improving its anomaly detection capabilities. The proposed approach is more effective than state-of-the-art deep learning approaches for network anomaly detection. Even when examining only two initial packets of a network flow, ARCADE can effectively detect malware infection and network attacks. ARCADE presents 20 times fewer parameters than baselines, achieving significantly faster detection speed and reaction time.",
+    "venue": "arXiv",
+    "citations": 0,
+    "doi": null,
+    "arxiv": "2205.01432",
+    "source": "arXiv",
+    "s2_url": "https://arxiv.org/abs/2205.01432",
+    "id": "arcade",
+    "role": "ARCADE \u2014 Adversarially Regularized Convolutional Autoencoder for Network Anomaly Detection; adversarial AE for network flows"
+  },
+  {
+    "title": "Ranking-enhanced anomaly detection using Active Learning-assisted Attention Adversarial Dual AutoEncoder",
+    "authors": [
+      "Sidahmed Benabderrahmane",
+      "James Cheney",
+      "Talal Rahwan"
+    ],
+    "year": 2025,
+    "abstract": "Advanced Persistent Threats (APTs) pose a significant challenge in cybersecurity due to their stealthy and long-term nature. Modern supervised learning methods require extensive labeled data, which is often scarce in real-world cybersecurity environments. In this paper, we propose an innovative approach that leverages AutoEncoders for unsupervised anomaly detection, augmented by active learning to iteratively improve the detection of APT anomalies. By selectively querying an oracle for labels on uncertain or ambiguous samples, we minimize labeling costs while improving detection rates, enabling the model to improve its detection accuracy with minimal data while reducing the need for extensive manual labeling. We provide a detailed formulation of the proposed Attention Adversarial Dual AutoEncoder-based anomaly detection framework and show how the active learning loop iteratively enhances the model. The framework is evaluated on real-world imbalanced provenance trace databases produced by the DARPA Transparent Computing program, where APT-like attacks constitute as little as 0.004% of the data. The datasets span multiple operating systems, including Android, Linux, BSD, and Windows, and cover two attack scenarios. The results have shown significant improvements in detection rates during active learning and better performance compared to other existing approaches.",
+    "venue": "Scientific Reports",
+    "citations": 4,
+    "doi": "10.1038/s41598-025-25621-0",
+    "arxiv": "2511.20480",
+    "source": "SemanticScholar",
+    "s2_url": "https://api.semanticscholar.org/graph/v1/paper/DOI:10.1038/s41598-025-25621-0",
+    "id": "aladaen",
+    "role": "ALADAEN \u2014 Active Learning + Attention + Adversarial Dual AutoEncoder for APT anomaly detection; closest to full proposed pipeline"
+  },
+  {
+    "title": "Anomaly-Based Network Intrusion Detection Using Wavelets and Adversarial Autoencoders",
+    "authors": [
+      "S. Puuska",
+      "T. Kokkonen",
+      "Janne Alatalo",
+      "Eppu Heilimo"
+    ],
+    "year": 2018,
+    "abstract": null,
+    "venue": "International Conference on Security for Information Technology and Communications",
+    "citations": 17,
+    "doi": "10.1007/978-3-030-12942-2_18",
+    "arxiv": null,
+    "source": "SemanticScholar",
+    "s2_url": "https://api.semanticscholar.org/graph/v1/paper/DOI:10.1007/978-3-030-12942-2_18",
+    "id": "wavelet_aae",
+    "role": "Wavelet + AAE for network intrusion; adversarial AE outperforms vanilla AE on encrypted TLS traffic"
+  },
+  {
+    "title": "LPulse: An efficient algorithm for service function chain placement and routing with delay guarantee",
+    "authors": [
+      "Ximeng Liu",
+      "Shizhen Zhao",
+      "Xinbing Wang",
+      "Cheng Zhou"
+    ],
+    "year": 2024,
+    "abstract": null,
+    "venue": "Comput. Networks",
+    "citations": 4,
+    "doi": "10.1016/j.comnet.2024.110728",
+    "arxiv": null,
+    "source": "SemanticScholar",
+    "s2_url": "https://api.semanticscholar.org/graph/v1/paper/DOI:10.1016/j.comnet.2024.110728",
+    "id": "vae_wgan",
+    "role": "VAE-WGAN hybrid for network intrusion detection on KDD99; generative approach for minority attack augmentation"
+  },
+  {
+    "title": "Modified Variational Autoencoder and Attention Mechanism\u2010Based Long Short\u2010Term Memory for Detecting Intrusions in Imbalanced Network Traffic",
+    "authors": [
+      "O. H. Abdulganiyu",
+      "Taha Ait Tchakoucht",
+      "Y. Saheed",
+      "Meryam El Mouhtadi",
+      "A. Alaoui"
+    ],
+    "year": 2025,
+    "abstract": "The internet and communication industries have grown at a very quick pace, which has caused a massive increase in the volume of data and network size. This surge has given rise to a multitude of new attacks, posing substantial challenges for network security in effectively identifying breaches. To counteract these threats, intrusion detection systems (IDS) have been created, utilizing technology to scrutinize, monitor, and analyze network traffic and ensure the conservation of availability, confidentiality, and integrity. In networks with imbalanced traffic, malicious cyber\u2010attacks can easily go unnoticed within large volumes of regular data. This proficiency in concealing their presence poses a formidable obstacle for Network IDS in accurately and promptly detecting such threats. Despite extensive research efforts, conventional IDS proposed models are faced with persistent issues of enhancing detection accuracy and lowering false alarm rates, identifying emerging rare and zero\u2010day intrusion types. Previous research has also emphasized the problem of uneven distribution in network traffic, potentially leading to the misclassification of attacks. As a solution to these problems, this study proposed a multi\u2010model architecture that leverages attention mechanism\u2010based long short\u2010term memory (AM\u2010LSTM) and class\u2010wise focal loss\u2010based variational autoencoder (CWFL\u2010VAE), which both aimed to detect various forms of attacks, including rare or zero\u2010day attacks, while reducing false alarm rates and computational complexity. CWFL\u2010VAE was employed to handle imbalanced network traffic, focusing on minority classes to address the issue of misclassification; AM\u2010LSTM was used for classification, while the Adam gradient descent technique was employed to optimize the model. The proposed system performance was assessed using two datasets: NSL\u2010KDD, a benchmark dataset with skewed network traffic distribution, and CSE\u2010CIC\u2010IDS2018, featuring network traffic that is approximately 83% benign cases. CSE\u2010CIC\u2010IDS2018 was employed in assessing the performance of the model due to its recent release and incorporation of contemporary attack types, while the NSL\u2010KDD data functioned as a trustworthy benchmark, testing the model's implementation against findings in the literature. The research showed good performance with a low false positive rate of 0.12%, 99.37% accuracy, and 99.23% detection rate for the NSL\u2010KDD data. Similarly, the technique's detection rate, accuracy, and false positive rate for the CSE\u2010CIC\u2010IDS2018 data were 94.2%, 0.22%, and 92.39%, respectively. According to these findings, the recommended model was found to be competitive in terms of precision, rate of detection, and incidence of false positives when evaluated with existing methods.",
+    "venue": "Security and Privacy",
+    "citations": 12,
+    "doi": "10.1002/spy2.70044",
+    "arxiv": null,
+    "source": "SemanticScholar",
+    "s2_url": "https://api.semanticscholar.org/graph/v1/paper/DOI:10.1002/spy2.70044",
+    "id": "vae_attention_lstm",
+    "role": "Modified VAE + Attention-LSTM for network intrusion on NSL-KDD; temporal attention with VAE, 99.37% accuracy"
+  },
+  {
+    "title": "Application of Wigner Distribution Function for THz Propagation Analysis",
+    "authors": [
+      "M. Gerasimov",
+      "E. Dyunin",
+      "Jacob Gerasimov",
+      "Johnathan Ciplis",
+      "A. Friedman"
+    ],
+    "year": 2021,
+    "abstract": "The construction of a transmission line (TL) for a wide tunable broad-spectrum THz radiation source is not a simple task. We present here a platform for the future use of designs of the TL through our homemade simulations. The TL is designed to be a component of the construction of an innovative accelerator at the Schlesinger Family Center for Compact Accelerators, Radiation Sources and Applications (FEL). We developed a three-dimensional space-frequency tool for the analysis of a radiation pulse. The total electromagnetic (EM) field on the edge of the source is represented in the frequency domain in terms of cavity eigenmodes. However, any pulse can be used regardless of its mathematical function, which is the key point of this work. The only requirement is the existence of the original pulse. This EM field is converted to geometric-optical ray representation through the Wigner transform at any desired resolution. Wigner\u2019s representation allows us to describe the dynamics of field evolution in future propagation, which allows us to determine an initial design of the TL. Representation of the EM field by rays gives access to the ray tracing method and future processing, operating in the linear and non-linear regimes. This allows for fast work with graphics cards and parallel processing, providing great flexibility and serving as future preparation that enables us to apply advanced libraries such as machine learning. The platform is used to study the phase-amplitude and spectral characteristics of multimode radiation generation in a free-electron laser (FEL) operating in various operational parameters.",
+    "venue": "Italian National Conference on Sensors",
+    "citations": 5,
+    "doi": "10.3390/s22010240",
+    "arxiv": null,
+    "source": "SemanticScholar",
+    "s2_url": "https://api.semanticscholar.org/graph/v1/paper/DOI:10.3390/s22010240",
+    "id": "attention_ae_latent",
+    "role": "Attention Autoencoder for Generative Latent Representational Learning; attention at bottleneck of AE for anomaly detection"
+  },
+  {
+    "title": "An Evolving TinyML Compression Algorithm for IoT Environments Based on Data Eccentricity",
+    "authors": [
+      "Gabriel Signoretti",
+      "Marianne Silva",
+      "P. Andrade",
+      "I. Silva",
+      "E. Sisinni",
+      "P. Ferrari"
+    ],
+    "year": 2021,
+    "abstract": "Currently, the applications of the Internet of Things (IoT) generate a large amount of sensor data at a very high pace, making it a challenge to collect and store the data. This scenario brings about the need for effective data compression algorithms to make the data manageable among tiny and battery-powered devices and, more importantly, shareable across the network. Additionally, considering that, very often, wireless communications (e.g., low-power wide-area networks) are adopted to connect field devices, user payload compression can also provide benefits derived from better spectrum usage, which in turn can result in advantages for high-density application scenarios. As a result of this increase in the number of connected devices, a new concept has emerged, called TinyML. It enables the use of machine learning on tiny, computationally restrained devices. This allows intelligent devices to analyze and interpret data locally and in real time. Therefore, this work presents a new data compression solution (algorithm) for the IoT that leverages the TinyML perspective. The new approach is called the Tiny Anomaly Compressor (TAC) and is based on data eccentricity. TAC does not require previously established mathematical models or any assumptions about the underlying data distribution. In order to test the effectiveness of the proposed solution and validate it, a comparative analysis was performed on two real-world datasets with two other algorithms from the literature (namely Swing Door Trending (SDT) and the Discrete Cosine Transform (DCT)). It was found that the TAC algorithm showed promising results, achieving a maximum compression rate of 98.33%. Additionally, it also surpassed the two other models regarding the compression error and peak signal-to-noise ratio in all cases.",
+    "venue": "Italian National Conference on Sensors",
+    "citations": 62,
+    "doi": "10.3390/s21124153",
+    "arxiv": null,
+    "source": "SemanticScholar",
+    "s2_url": "https://api.semanticscholar.org/graph/v1/paper/DOI:10.3390/s21124153",
+    "id": "ae_analysis_nids",
+    "role": "Analysis of Autoencoders for Network Intrusion Detection; systematic comparison of AE variants on KDD99/NSL-KDD"
+  }
+]

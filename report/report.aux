@@ -1,0 +1,115 @@
+\relax 
+\providecommand\hyper@newdestlabel[2]{}
+\providecommand\HyField@AuxAddToFields[1]{}
+\providecommand\HyField@AuxAddToCoFields[2]{}
+\citation{makhzani_aae_2015}
+\citation{wang_ssim_2004}
+\citation{improving_ae_nslkdd_2021,arae_network_2025}
+\citation{baur_ae_survey_2021,schlegl_fanogan_2019}
+\citation{pang_survey_2021}
+\citation{chalapathy_survey_2019}
+\citation{baur_ae_survey_2021}
+\citation{kingma_vae_2013}
+\citation{goodfellow_gan_2014}
+\citation{schlegl_anogan_2017}
+\citation{schlegl_fanogan_2019}
+\citation{zenati_alad_2018}
+\citation{makhzani_aae_2015}
+\citation{woo_cbam_2018}
+\citation{chalapathy_survey_2019,pang_survey_2021}
+\citation{baur_ae_survey_2021}
+\citation{kingma_vae_2013}
+\citation{schlegl_anogan_2017}
+\citation{schlegl_fanogan_2019}
+\citation{zimmerer_cevae_2019}
+\citation{zenati_alad_2018}
+\citation{woo_cbam_2018}
+\citation{improving_ae_nslkdd_2021}
+\citation{arae_network_2025}
+\citation{ruff_deepsvdd_2018}
+\citation{rajpurkar_chexnet_2017}
+\@writefile{toc}{\contentsline {section}{\numberline {1}Introduction}{3}{section.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {2}Related Work}{3}{section.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Reconstruction-based detection.}{3}{section*.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Generative approaches.}{3}{section*.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Attention mechanisms.}{3}{section*.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Network anomaly detection.}{3}{section*.5}\protected@file@percent }
+\citation{wang_ssim_2004}
+\@writefile{toc}{\contentsline {section}{\numberline {3}Method}{4}{section.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}Problem Statement}{4}{subsection.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}RE-Attention Module}{4}{subsection.3.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}Architecture}{4}{subsection.3.3}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces RE-Attn-AAE{} architecture. Enc$_1$ reconstructs; SSIM error drives RE-Attention; Enc$_2$ maps attended input to adversarially regularised latent code.}}{4}{figure.caption.6}\protected@file@percent }
+\providecommand*\caption@xref[2]{\@setref\relax\@undefined{#1}}
+\newlabel{fig:arch}{{1}{4}{\method {} architecture. Enc$_1$ reconstructs; SSIM error drives RE-Attention; Enc$_2$ maps attended input to adversarially regularised latent code}{figure.caption.6}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.4}Three-Phase Training}{4}{subsection.3.4}\protected@file@percent }
+\citation{improving_ae_nslkdd_2021}
+\citation{rajpurkar_chexnet_2017}
+\citation{improving_ae_nslkdd_2021,arae_network_2025}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.5}Anomaly Scoring}{5}{subsection.3.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {4}Experimental Setup}{5}{section.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Datasets}{5}{subsection.4.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{KDD Cup 1999.}{5}{section*.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{RSNA Pneumonia Detection.}{5}{section*.8}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Ablation Conditions}{5}{subsection.4.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces KDD99 ablation conditions.}}{5}{table.caption.9}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Hyperparameters.}{5}{section*.11}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces RSNA ablation conditions.}}{6}{table.caption.10}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces KDD99 image-level metrics. \textbf  {Bold} = best.}}{6}{table.caption.12}\protected@file@percent }
+\newlabel{tab:kdd}{{3}{6}{KDD99 image-level metrics. \textbf {Bold} = best}{table.caption.12}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {5}Results --- KDD99}{6}{section.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Overall Metrics}{6}{subsection.5.1}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces KDD99 detection performance. C5 shows the clearest normal/attack separation.}}{6}{figure.caption.13}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Per-Family AUC-ROC}{7}{subsection.5.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces Per-attack-family AUC-ROC on KDD99. \textbf  {Bold} = best.}}{7}{table.caption.14}\protected@file@percent }
+\newlabel{tab:kdd_family}{{4}{7}{Per-attack-family AUC-ROC on KDD99. \textbf {Bold} = best}{table.caption.14}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.3}Attention Entropy Analysis}{7}{subsection.5.3}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces KDD99 family-level analysis. Higher entropy for R2L/U2R explains why RE-Attention helps most on rare attacks.}}{7}{figure.caption.15}\protected@file@percent }
+\newlabel{fig:kdd_entropy}{{3}{7}{KDD99 family-level analysis. Higher entropy for R2L/U2R explains why RE-Attention helps most on rare attacks}{figure.caption.15}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {6}Results --- RSNA Chest X-Rays}{7}{section.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.1}Overall Performance}{7}{subsection.6.1}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {5}{\ignorespaces RSNA image-level results. FZ = full freeze; PFT = partial fine-tune; MFT = mostly fine-tune. \textbf  {Bold} = best.}}{8}{table.caption.16}\protected@file@percent }
+\newlabel{tab:rsna}{{5}{8}{RSNA image-level results. FZ = full freeze; PFT = partial fine-tune; MFT = mostly fine-tune. \textbf {Bold} = best}{table.caption.16}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces RSNA 7-condition ablation. C4 achieves the best AUC-ROC. C5 collapses; C6 recovers AUC-ROC but not F1.}}{8}{figure.caption.17}\protected@file@percent }
+\newlabel{fig:rsna_main}{{4}{8}{RSNA 7-condition ablation. C4 achieves the best AUC-ROC. C5 collapses; C6 recovers AUC-ROC but not F1}{figure.caption.17}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.2}Ablation Chain}{8}{subsection.6.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.3}Discriminator Dynamics}{8}{subsection.6.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.4}ResNet Transfer Learning}{8}{subsection.6.4}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {5}{\ignorespaces RSNA ablation chain C1$\to $C3$\to $C4. Adversarial regularisation alone hurts ($-0.030$ AUC-ROC); RE-Attention recovers and improves ($+0.042$).}}{9}{figure.caption.18}\protected@file@percent }
+\newlabel{fig:rsna_chain}{{5}{9}{RSNA ablation chain C1$\to $C3$\to $C4. Adversarial regularisation alone hurts ($-0.030$ AUC-ROC); RE-Attention recovers and improves ($+0.042$)}{figure.caption.18}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {6}{\ignorespaces SSIM vs.\ discriminator vs.\ fusion scores per condition. C4 has a partially healthy discriminator (0.573); all ResNet conditions collapse to 0.500 and fusion hurts. The alpha-sweep automatically recovers SSIM-only in collapse cases.}}{9}{figure.caption.19}\protected@file@percent }
+\newlabel{fig:rsna_disc}{{6}{9}{SSIM vs.\ discriminator vs.\ fusion scores per condition. C4 has a partially healthy discriminator (0.573); all ResNet conditions collapse to 0.500 and fusion hurts. The alpha-sweep automatically recovers SSIM-only in collapse cases}{figure.caption.19}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.5}Attention Maps}{9}{subsection.6.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7}Discussion}{9}{section.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{When RE-Attention helps.}{9}{section*.23}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Discriminator stability.}{9}{section*.24}\protected@file@percent }
+\citation{improving_ae_nslkdd_2021}
+\@writefile{lof}{\contentsline {figure}{\numberline {7}{\ignorespaces Scratch CNN (C4) vs.\ ResNet-18 variants. Partial fine-tuning (C6) recovers AUC-ROC but does not surpass C4; full freeze (C5) fails entirely.}}{10}{figure.caption.20}\protected@file@percent }
+\newlabel{fig:rsna_resnet}{{7}{10}{Scratch CNN (C4) vs.\ ResNet-18 variants. Partial fine-tuning (C6) recovers AUC-ROC but does not surpass C4; full freeze (C5) fails entirely}{figure.caption.20}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {8}{\ignorespaces RE-Attention maps on RSNA pneumonia cases. Top: original X-rays. Middle: SSIM error. Bottom: RE-Attention weights. Without pixel-level supervision, attention concentrates on lung opacities.}}{10}{figure.caption.21}\protected@file@percent }
+\newlabel{fig:rsna_attn}{{8}{10}{RE-Attention maps on RSNA pneumonia cases. Top: original X-rays. Middle: SSIM error. Bottom: RE-Attention weights. Without pixel-level supervision, attention concentrates on lung opacities}{figure.caption.21}{}}
+\@writefile{toc}{\contentsline {paragraph}{Transfer learning.}{10}{section*.25}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{KDD99 saturation.}{10}{section*.26}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Limitations.}{10}{section*.27}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {8}Conclusion}{10}{section.8}\protected@file@percent }
+\bibstyle{unsrtnat}
+\bibdata{references}
+\bibcite{makhzani_aae_2015}{{1}{2015}{{Makhzani et~al.}}{{Makhzani, Shlens, Jaitly, Goodfellow, and Frey}}}
+\bibcite{wang_ssim_2004}{{2}{2004}{{Wang et~al.}}{{Wang, Bovik, Sheikh, and Simoncelli}}}
+\bibcite{improving_ae_nslkdd_2021}{{3}{2021}{{Xu et~al.}}{{Xu, Zhang, Yang, and Wang}}}
+\bibcite{arae_network_2025}{{4}{2025}{{Yin et~al.}}{{Yin, Shang, and Zhao}}}
+\bibcite{baur_ae_survey_2021}{{5}{2021}{{Baur et~al.}}{{Baur, Wiestler, Albarqouni, and Navab}}}
+\bibcite{schlegl_fanogan_2019}{{6}{2019}{{Schlegl et~al.}}{{Schlegl, Seeb{\"o}ck, Waldstein, Langs, and Schmidt-Erfurth}}}
+\bibcite{pang_survey_2021}{{7}{2021}{{Pang et~al.}}{{Pang, Shen, Cao, and van~den Hengel}}}
+\bibcite{chalapathy_survey_2019}{{8}{2019}{{Chalapathy and Chawla}}{{}}}
+\bibcite{kingma_vae_2013}{{9}{2013}{{Kingma and Welling}}{{}}}
+\bibcite{goodfellow_gan_2014}{{10}{2014}{{Goodfellow et~al.}}{{Goodfellow, Pouget-Abadie, Mirza, Xu, Warde-Farley, Ozair, Courville, and Bengio}}}
+\@writefile{lot}{\contentsline {table}{\numberline {6}{\ignorespaces Pixel-level localisation AUC-ROC on pneumonia-positive test cases.}}{11}{table.caption.22}\protected@file@percent }
+\newlabel{tab:pixel}{{6}{11}{Pixel-level localisation AUC-ROC on pneumonia-positive test cases}{table.caption.22}{}}
+\bibcite{schlegl_anogan_2017}{{11}{2017}{{Schlegl et~al.}}{{Schlegl, Seeb{\"o}ck, Waldstein, Schmidt-Erfurth, and Langs}}}
+\bibcite{zenati_alad_2018}{{12}{2018}{{Zenati et~al.}}{{Zenati, Foo, Lecouat, Manek, and Chandrasekhar}}}
+\bibcite{woo_cbam_2018}{{13}{2018}{{Woo et~al.}}{{Woo, Park, Lee, and Kweon}}}
+\bibcite{zimmerer_cevae_2019}{{14}{2019}{{Zimmerer et~al.}}{{Zimmerer, Kohl, Petersen, Isensee, and Maier-Hein}}}
+\bibcite{ruff_deepsvdd_2018}{{15}{2018}{{Ruff et~al.}}{{Ruff, Vandermeulen, G{\"o}rnitz, Deecke, Siddiqui, Binder, M{\"u}ller, and Kloft}}}
+\bibcite{rajpurkar_chexnet_2017}{{16}{2017}{{Rajpurkar et~al.}}{{Rajpurkar, Irvin, Zhu, Yang, Mehta, Duan, Ding, Bagul, Langlotz, Shpanskaya, Lungren, and Ng}}}
+\gdef \@abspage@last{12}

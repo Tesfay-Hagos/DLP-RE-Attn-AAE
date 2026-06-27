@@ -1,0 +1,115 @@
+{
+  "C1": {
+    "auc_roc": 0.8217342500000001,
+    "auc_pr": 0.7924050581056583,
+    "f1": 0.7509367974019485,
+    "label": "CNN-AE Baseline"
+  },
+  "C2": {
+    "auc_roc": 0.7342169999999999,
+    "auc_pr": 0.7047546286014859,
+    "f1": 0.7051614423756776,
+    "label": "VAE Baseline"
+  },
+  "C3": {
+    "auc_roc": 0.791508375,
+    "auc_pr": 0.7595079807628512,
+    "f1": 0.7454117647058823,
+    "label": "CNN-AAE (ablation, no attn)"
+  },
+  "C3_disc": {
+    "auc_roc": 0.460314875,
+    "auc_pr": 0.45944276610757306,
+    "f1": 0.6514285714285715,
+    "label": "CNN-AAE disc score"
+  },
+  "C3_fuse": {
+    "auc_roc": 0.7820957500000001,
+    "auc_pr": 0.7492998172257477,
+    "f1": 0.7346348517715112,
+    "label": "CNN-AAE fusion"
+  },
+  "C4": {
+    "auc_roc": 0.8336815000000001,
+    "auc_pr": 0.809281361449546,
+    "f1": 0.770976128574805,
+    "label": "CNN-RE-Attn-AAE (Ours)"
+  },
+  "C4_disc": {
+    "auc_roc": 0.572468,
+    "auc_pr": 0.5398536395941536,
+    "f1": 0.6674523669220193,
+    "label": "CNN-RE-Attn-AAE disc"
+  },
+  "C4_fuse": {
+    "auc_roc": 0.8033995,
+    "auc_pr": 0.7377634449921128,
+    "f1": 0.765438008616563,
+    "label": "CNN-RE-Attn-AAE fusion"
+  },
+  "C5": {
+    "auc_roc": 0.6896735,
+    "auc_pr": 0.6312127230159976,
+    "f1": 0.6840909090909091,
+    "label": "ResNet-AAE Full Freeze (collapsed)"
+  },
+  "C5_disc": {
+    "auc_roc": 0.5,
+    "auc_pr": 0.5,
+    "f1": 0.0,
+    "label": "ResNet Full Freeze disc"
+  },
+  "C5_fuse": {
+    "auc_roc": 0.6896735,
+    "auc_pr": 0.6312127230159976,
+    "f1": 0.6840909090909091,
+    "label": "ResNet Full Freeze fusion"
+  },
+  "C6": {
+    "auc_roc": 0.8219182500000002,
+    "auc_pr": 0.7943580487645965,
+    "f1": 0.4649122807017544,
+    "label": "ResNet-RE-Attn-AAE Partial FT"
+  },
+  "C6_disc": {
+    "auc_roc": 0.45114112500000003,
+    "auc_pr": 0.45956136405318415,
+    "f1": 0.05645534474780194,
+    "label": "ResNet Partial FT disc"
+  },
+  "C6_fuse": {
+    "auc_roc": 0.708041125,
+    "auc_pr": 0.6878909909459001,
+    "f1": 0.2919886132574217,
+    "label": "ResNet Partial FT fusion"
+  },
+  "C7": {
+    "auc_roc": 0.7942612500000001,
+    "auc_pr": 0.7705790239389422,
+    "f1": 0.4496124031007752,
+    "label": "ResNet-RE-Attn-AAE Mostly FT"
+  },
+  "C7_disc": {
+    "auc_roc": 0.5,
+    "auc_pr": 0.5,
+    "f1": 0.0,
+    "label": "ResNet Mostly FT disc"
+  },
+  "C7_fuse": {
+    "auc_roc": 0.7942612500000001,
+    "auc_pr": 0.7705790239389422,
+    "f1": 0.4496124031007752,
+    "label": "ResNet Mostly FT fusion"
+  },
+  "pixel_auroc": {
+    "ssim_c1": 0.6880840774657204,
+    "ssim_c4": 0.6949085202020816,
+    "ssim_c5": 0.6341910809635285,
+    "ssim_c6": 0.6822011674459603,
+    "ssim_c7": 0.6972272203194221,
+    "attn_c4": 0.3094828715651868,
+    "attn_c5": 0.3597999583922747,
+    "attn_c6": 0.3083311331896806,
+    "attn_c7": 0.2989996916195234
+  }
+}

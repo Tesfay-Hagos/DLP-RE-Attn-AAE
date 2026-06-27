@@ -1,0 +1,15 @@
+PAPERS REQUIRING MANUAL LOOKUP
+============================================================
+
+ID   : arae_network
+Role : ARAE — Adaptive Robust AutoEncoder; multi-head attention + adversarial AE + adaptive multi-indicator scoring on KDD99/NSL-KDD
+URL  : https://doi.org/10.32604/jcs.2024.065064
+Copy: title, authors, year, venue, abstract
+------------------------------------------------------------
+
+ID   : improving_ae_nslkdd
+Role : Improving AE-based Network Anomaly Detection on NSL-KDD; architectural improvements to standard AE baseline
+URL  : https://doi.org/10.1109/ACCESS.2021.3114838
+Copy: title, authors, year, venue, abstract
+------------------------------------------------------------
+

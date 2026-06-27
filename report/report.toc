@@ -1,0 +1,35 @@
+\contentsline {section}{\numberline {1}Introduction}{3}{section.1}%
+\contentsline {section}{\numberline {2}Related Work}{3}{section.2}%
+\contentsline {paragraph}{Reconstruction-based detection.}{3}{section*.2}%
+\contentsline {paragraph}{Generative approaches.}{3}{section*.3}%
+\contentsline {paragraph}{Attention mechanisms.}{3}{section*.4}%
+\contentsline {paragraph}{Network anomaly detection.}{3}{section*.5}%
+\contentsline {section}{\numberline {3}Method}{4}{section.3}%
+\contentsline {subsection}{\numberline {3.1}Problem Statement}{4}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}RE-Attention Module}{4}{subsection.3.2}%
+\contentsline {subsection}{\numberline {3.3}Architecture}{4}{subsection.3.3}%
+\contentsline {subsection}{\numberline {3.4}Three-Phase Training}{4}{subsection.3.4}%
+\contentsline {subsection}{\numberline {3.5}Anomaly Scoring}{5}{subsection.3.5}%
+\contentsline {section}{\numberline {4}Experimental Setup}{5}{section.4}%
+\contentsline {subsection}{\numberline {4.1}Datasets}{5}{subsection.4.1}%
+\contentsline {paragraph}{KDD Cup 1999.}{5}{section*.7}%
+\contentsline {paragraph}{RSNA Pneumonia Detection.}{5}{section*.8}%
+\contentsline {subsection}{\numberline {4.2}Ablation Conditions}{5}{subsection.4.2}%
+\contentsline {paragraph}{Hyperparameters.}{5}{section*.11}%
+\contentsline {section}{\numberline {5}Results --- KDD99}{6}{section.5}%
+\contentsline {subsection}{\numberline {5.1}Overall Metrics}{6}{subsection.5.1}%
+\contentsline {subsection}{\numberline {5.2}Per-Family AUC-ROC}{7}{subsection.5.2}%
+\contentsline {subsection}{\numberline {5.3}Attention Entropy Analysis}{7}{subsection.5.3}%
+\contentsline {section}{\numberline {6}Results --- RSNA Chest X-Rays}{7}{section.6}%
+\contentsline {subsection}{\numberline {6.1}Overall Performance}{7}{subsection.6.1}%
+\contentsline {subsection}{\numberline {6.2}Ablation Chain}{8}{subsection.6.2}%
+\contentsline {subsection}{\numberline {6.3}Discriminator Dynamics}{8}{subsection.6.3}%
+\contentsline {subsection}{\numberline {6.4}ResNet Transfer Learning}{8}{subsection.6.4}%
+\contentsline {subsection}{\numberline {6.5}Attention Maps}{9}{subsection.6.5}%
+\contentsline {section}{\numberline {7}Discussion}{9}{section.7}%
+\contentsline {paragraph}{When RE-Attention helps.}{9}{section*.23}%
+\contentsline {paragraph}{Discriminator stability.}{9}{section*.24}%
+\contentsline {paragraph}{Transfer learning.}{10}{section*.25}%
+\contentsline {paragraph}{KDD99 saturation.}{10}{section*.26}%
+\contentsline {paragraph}{Limitations.}{10}{section*.27}%
+\contentsline {section}{\numberline {8}Conclusion}{10}{section.8}%
