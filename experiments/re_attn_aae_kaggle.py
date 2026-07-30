@@ -400,17 +400,62 @@ print("Model classes defined.")
 
 # %% [CELL 7]  Evaluation utilities
 
-def compute_metrics(scores, binary_labels):
+def bootstrap_auc(scores, binary_labels, n_boot=1000, seed=SEED):
+    """Bootstrap resample AUC-ROC to get mean/std/95% CI."""
     if len(np.unique(binary_labels)) < 2:
-        return {'auc_roc': np.nan, 'auc_pr': np.nan, 'f1': np.nan, 'fnr': np.nan}
+        return {'auc_mean': np.nan, 'auc_std': np.nan, 'ci_lo': np.nan, 'ci_hi': np.nan}
+    rng = np.random.default_rng(seed)
+    n = len(scores)
+    aucs = np.empty(n_boot)
+    for i in range(n_boot):
+        idx = rng.integers(0, n, n)
+        if len(np.unique(binary_labels[idx])) < 2:
+            aucs[i] = np.nan
+            continue
+        aucs[i] = roc_auc_score(binary_labels[idx], scores[idx])
+    aucs = aucs[~np.isnan(aucs)]
+    lo, hi = np.percentile(aucs, [2.5, 97.5])
+    return {'auc_mean': float(aucs.mean()), 'auc_std': float(aucs.std()),
+            'ci_lo': float(lo), 'ci_hi': float(hi)}
+
+
+def bootstrap_paired_diff(scores_a, scores_b, binary_labels, n_boot=1000, seed=SEED):
+    """Paired bootstrap on AUC-ROC(a) - AUC-ROC(b): same resample indices for both
+    score arrays each draw. Returns the diff CI and a two-sided bootstrap p-value."""
+    if len(np.unique(binary_labels)) < 2:
+        return {'diff_mean': np.nan, 'ci_lo': np.nan, 'ci_hi': np.nan, 'p_value': np.nan}
+    rng = np.random.default_rng(seed)
+    n = len(binary_labels)
+    diffs = np.empty(n_boot)
+    for i in range(n_boot):
+        idx = rng.integers(0, n, n)
+        if len(np.unique(binary_labels[idx])) < 2:
+            diffs[i] = np.nan
+            continue
+        auc_a = roc_auc_score(binary_labels[idx], scores_a[idx])
+        auc_b = roc_auc_score(binary_labels[idx], scores_b[idx])
+        diffs[i] = auc_a - auc_b
+    diffs = diffs[~np.isnan(diffs)]
+    lo, hi = np.percentile(diffs, [2.5, 97.5])
+    p_value = 2 * min((diffs <= 0).mean(), (diffs >= 0).mean())
+    return {'diff_mean': float(diffs.mean()), 'ci_lo': float(lo), 'ci_hi': float(hi),
+            'p_value': float(min(p_value, 1.0))}
+
+
+def compute_metrics(scores, binary_labels, n_boot=1000, seed=SEED):
+    if len(np.unique(binary_labels)) < 2:
+        return {'auc_roc': np.nan, 'auc_pr': np.nan, 'f1': np.nan, 'fnr': np.nan,
+                'auc_std': np.nan, 'ci_lo': np.nan, 'ci_hi': np.nan}
     auc_roc  = roc_auc_score(binary_labels, scores)
     auc_pr   = average_precision_score(binary_labels, scores)
     fpr, tpr, thresh = roc_curve(binary_labels, scores)
     best     = np.argmax(tpr - fpr)
     pred     = (scores >= thresh[best]).astype(int)
+    boot     = bootstrap_auc(scores, binary_labels, n_boot=n_boot, seed=seed)
     return {'auc_roc': auc_roc, 'auc_pr': auc_pr,
             'f1': f1_score(binary_labels, pred, zero_division=0),
-            'fnr': float(1.0 - tpr[best])}
+            'fnr': float(1.0 - tpr[best]),
+            'auc_std': boot['auc_std'], 'ci_lo': boot['ci_lo'], 'ci_hi': boot['ci_hi']}
 
 def per_family_auc(scores, y_raw):
     out = {}
@@ -791,17 +836,35 @@ else:
 print("\n" + "="*60)
 print("RESULTS SUMMARY")
 print("="*60)
-header = f"\n  {'Condition':<28} {'AUC-ROC':>8} {'AUC-PR':>8} {'F1':>8} {'FNR':>8}"
-print(header); print(f"  {'-'*56}")
-for k, r in all_results.items():
+_cond_keys = ['C1', 'C2', 'C3', 'C4', 'C5']
+
+header = f"\n  {'Condition':<28} {'AUC-ROC':>8} {'95% CI':>15} {'AUC-PR':>8} {'F1':>8} {'FNR':>8}"
+print(header); print(f"  {'-'*72}")
+for k in _cond_keys:
+    r = all_results[k]
     tag = ' ←' if k == 'C5' else ''
-    print(f"  {r['label']:<28} {r['auc_roc']:>8.4f} {r['auc_pr']:>8.4f} "
+    ci = f"[{r['ci_lo']:.4f},{r['ci_hi']:.4f}]" if not np.isnan(r.get('ci_lo', np.nan)) else 'n/a'
+    print(f"  {r['label']:<28} {r['auc_roc']:>8.4f} {ci:>15} {r['auc_pr']:>8.4f} "
           f"{r['f1']:>8.4f} {r['fnr']:>8.4f}{tag}")
+
+# Paired bootstrap significance on the two claims the abstract makes:
+# (1) the full method (C5) beats the vanilla-AE baseline (C1);
+# (2) the attention mechanism (C5) improves over the plain AAE dual-score (C4)
+#     it's built on, isolating RE-Attention's own contribution.
+significance_results = {}
+print(f"\n  Significance (paired bootstrap, n=1000):")
+for name, sa, sb in [('C1 vs C5 (baseline -> ours)', scores_c5, scores_c1),
+                      ('C4 vs C5 (+RE-Attention)',    scores_c5, scores_c4)]:
+    sig = bootstrap_paired_diff(sa, sb, binary_test)
+    significance_results[name] = sig
+    print(f"  {name:<32} ΔAUC-ROC = {sig['diff_mean']:+.4f}  "
+          f"95% CI [{sig['ci_lo']:+.4f}, {sig['ci_hi']:+.4f}]  p = {sig['p_value']:.4f}")
 
 print(f"\n  Per-Family AUC-ROC")
 print(f"  {'Condition':<28} {'DoS':>8} {'Probe':>8} {'R2L':>8} {'U2R':>8}")
 print(f"  {'-'*56}")
-for k, r in all_results.items():
+for k in _cond_keys:
+    r = all_results[k]
     fam = r.get('family', {})
     def _f(v): return f"{v:>8.4f}" if not np.isnan(v) else f"{'n/a':>8}"
     print(f"  {r['label']:<28} "
@@ -1092,6 +1155,8 @@ def _json(obj):
     if isinstance(obj, dict):  return {k: _json(v) for k, v in obj.items()}
     if isinstance(obj, list):  return [_json(v) for v in obj]
     return obj
+
+all_results['significance'] = significance_results
 
 with open(f'{OUTPUT_DIR}/all_results.json', 'w') as f:
     json.dump(_json(all_results), f, indent=2)

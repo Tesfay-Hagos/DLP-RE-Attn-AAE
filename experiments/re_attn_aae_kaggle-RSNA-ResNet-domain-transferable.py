@@ -191,6 +191,18 @@ EPS           = 1e-8
 TEST_NORMAL   = 2000 if not SAMPLE_MODE else 10
 TEST_OPACITY  = 2000 if not SAMPLE_MODE else 5
 
+# ── Cross-domain evaluation (Option 3: domain-transferability novelty test) ────
+# Does the RE-Attention-gated score degrade less than plain reconstruction when
+# scored on a hospital/scanner it was never trained on? Inference only, no
+# retraining. Attach the Kaggle dataset "nih-chest-xrays/data" (or point these at
+# an equivalent local NIH ChestX-ray14 layout) to enable; otherwise this section
+# is skipped and the rest of the pipeline is unaffected.
+CROSS_DOMAIN_EVAL       = True
+NIH_DATA_DIR            = '/kaggle/input/data'
+NIH_CSV                 = f'{NIH_DATA_DIR}/Data_Entry_2017.csv'
+CROSS_DOMAIN_N_PER_CLASS = 1500 if not SAMPLE_MODE else 5
+CROSS_DOMAIN_POSITIVE_LABELS = ('Infiltration', 'Consolidation')
+
 random.seed(SEED); np.random.seed(SEED); torch.manual_seed(SEED)
 if torch.cuda.is_available():
     torch.cuda.manual_seed_all(SEED)
@@ -1192,20 +1204,6 @@ if is_done('C4'):
     scores_c4, sc_disc_c4, attn_maps_c4 = load_ckpt('C4')
     sc_fuse_c4 = 0.5 * normalise_scores(scores_c4) + 0.5 * normalise_scores(sc_disc_c4)
     load_weights('C4', enc1=enc1_c4, enc2=enc2_c4, dec=dec_c4, re_attn=re_attn_c4, disc=ld_c4)
-    # Recompute the attention-weighted score (not cached) — needs one forward pass
-    # through enc1/dec/re_attn, all restored above.
-    enc1_c4.eval(); dec_c4.eval(); re_attn_c4.eval()
-    attnw_list = []
-    with torch.no_grad():
-        for i in range(0, len(x_test), BATCH_SIZE):
-            xb = torch.tensor(x_test[i:i+BATCH_SIZE]).to(device); n = xb.size(0)
-            x_hat1   = dec_c4(enc1_c4(xb))
-            ssim_inf = ssim_anomaly_map(xb, x_hat1).view(n, 1, IMAGE_SIZE, IMAGE_SIZE)
-            att_img  = re_attn_c4(ssim_inf)
-            attnw_list.append(torch.quantile((att_img * ssim_inf).flatten(1), 0.99, dim=1).cpu().numpy())
-    scores_c4_attnw = np.concatenate(attnw_list)
-    m_c4_attnw = compute_metrics(scores_c4_attnw, binary_test)
-    all_results['C4_attnw'] = {**m_c4_attnw, 'label': 'CNN-RE-Attn-AAE attn-weighted (novelty test)'}
 else:
     opt_rec_c4  = Adam(list(enc1_c4.parameters()) + list(dec_c4.parameters()), lr=LR, betas=(BETA1, 0.999))
     opt_disc_c4 = Adam(ld_c4.parameters(), lr=LR, betas=(BETA1, 0.999))
@@ -1277,7 +1275,7 @@ else:
     loss_history['C4'] = c4_epoch_loss
     print(f"C4 training: {time.time()-t0:.1f}s")
     enc1_c4.eval(); enc2_c4.eval(); dec_c4.eval(); re_attn_c4.eval(); ld_c4.eval()
-    scores_c4, sc_disc_c4, attn_maps_c4, scores_c4_attnw = [], [], [], []
+    scores_c4, sc_disc_c4, attn_maps_c4 = [], [], []
     with torch.no_grad():
         for i in range(0, len(x_test), BATCH_SIZE):
             xb = torch.tensor(x_test[i:i+BATCH_SIZE]).to(device); n = xb.size(0)
@@ -1287,33 +1285,24 @@ else:
             scores_c4.append(anomaly_score(xb, x_hat1).cpu().numpy())
             sc_disc_c4.append((1.0 - ld_c4(enc2_c4(xb * att_img))).squeeze(1).cpu().numpy())
             attn_maps_c4.append(att_img.squeeze(1).cpu().numpy())
-            # Attention-weighted reconstruction score: gates the SSIM error map by the
-            # attention mask itself, so (unlike the primary score) this one is causally
-            # downstream of RE-Attention — the direct test of whether the mechanism helps.
-            scores_c4_attnw.append(torch.quantile((att_img * ssim_inf).flatten(1), 0.99, dim=1).cpu().numpy())
-    scores_c4       = np.concatenate(scores_c4)
-    sc_disc_c4      = np.concatenate(sc_disc_c4)
-    sc_fuse_c4      = 0.5 * normalise_scores(scores_c4) + 0.5 * normalise_scores(sc_disc_c4)
-    attn_maps_c4    = np.concatenate(attn_maps_c4)
-    scores_c4_attnw = np.concatenate(scores_c4_attnw)
+    scores_c4    = np.concatenate(scores_c4)
+    sc_disc_c4   = np.concatenate(sc_disc_c4)
+    sc_fuse_c4   = 0.5 * normalise_scores(scores_c4) + 0.5 * normalise_scores(sc_disc_c4)
+    attn_maps_c4 = np.concatenate(attn_maps_c4)
     m_c4       = compute_metrics(scores_c4,  binary_test)
     m_c4_disc  = compute_metrics(sc_disc_c4, binary_test)
     m_c4_fuse  = compute_metrics(sc_fuse_c4, binary_test)
-    m_c4_attnw = compute_metrics(scores_c4_attnw, binary_test)
     print(f"\n  SSIM primary  AUC-ROC={m_c4['auc_roc']:.4f}  AUC-PR={m_c4['auc_pr']:.4f}  F1={m_c4['f1']:.4f}")
     print(f"  Disc score    AUC-ROC={m_c4_disc['auc_roc']:.4f}")
     print(f"  Fusion        AUC-ROC={m_c4_fuse['auc_roc']:.4f}")
-    print(f"  Attn-weighted AUC-ROC={m_c4_attnw['auc_roc']:.4f}  (novelty test: does RE-Attention itself help)")
-    all_results['C4']        = {**m_c4,      'label': 'CNN-RE-Attn-AAE (Ours)'}
-    all_results['C4_disc']   = {**m_c4_disc, 'label': 'CNN-RE-Attn-AAE disc'}
-    all_results['C4_fuse']   = {**m_c4_fuse, 'label': 'CNN-RE-Attn-AAE fusion'}
-    all_results['C4_attnw']  = {**m_c4_attnw, 'label': 'CNN-RE-Attn-AAE attn-weighted (novelty test)'}
-    save_ckpt('C4', ['C4','C4_disc','C4_fuse','C4_attnw'], scores_c4, sc_disc_c4, c4_epoch_loss,
+    all_results['C4']      = {**m_c4,      'label': 'CNN-RE-Attn-AAE (Ours)'}
+    all_results['C4_disc'] = {**m_c4_disc, 'label': 'CNN-RE-Attn-AAE disc'}
+    all_results['C4_fuse'] = {**m_c4_fuse, 'label': 'CNN-RE-Attn-AAE fusion'}
+    save_ckpt('C4', ['C4','C4_disc','C4_fuse'], scores_c4, sc_disc_c4, c4_epoch_loss,
               attn_maps=attn_maps_c4,
               enc1=enc1_c4.state_dict(), enc2=enc2_c4.state_dict(),
               dec=dec_c4.state_dict(), re_attn=re_attn_c4.state_dict(),
               disc=ld_c4.state_dict())
-    np.save(f'{CKPT_DIR}/C4_attnw_scores.npy', scores_c4_attnw)
 
 # %% [markdown]
 # ---
@@ -1672,18 +1661,12 @@ else:
     def evaluate(scores, labels):
         from sklearn.metrics import roc_auc_score, average_precision_score, f1_score
         if len(np.unique(labels)) < 2:
-            return {'auc_roc': float('nan'), 'auc_pr': float('nan'), 'f1': float('nan'),
-                    'auc_std': float('nan'), 'ci_lo': float('nan'), 'ci_hi': float('nan')}
+            return {'auc_roc': float('nan'), 'auc_pr': float('nan'), 'f1': float('nan')}
         auc_roc = roc_auc_score(labels, scores)
         auc_pr  = average_precision_score(labels, scores)
         thresh  = np.percentile(scores[labels == 0], 95)
         f1      = f1_score(labels, (scores > thresh).astype(int), zero_division=0)
-        # Same bootstrap CI treatment as compute_metrics() (Cell 7) -- this local
-        # copy predates that fix and would otherwise crash the Fig-11 table build,
-        # which expects ci_lo/ci_hi/auc_std on every condition's _disc result.
-        boot = bootstrap_auc(scores, labels)
-        return {'auc_roc': auc_roc, 'auc_pr': auc_pr, 'f1': f1,
-                'auc_std': boot['auc_std'], 'ci_lo': boot['ci_lo'], 'ci_hi': boot['ci_hi']}
+        return {'auc_roc': auc_roc, 'auc_pr': auc_pr, 'f1': f1}
 
     sc_fuse_c6   = 0.5 * normalise_scores(scores_c6) + 0.5 * normalise_scores(sc_disc_c6)
 
@@ -1954,21 +1937,6 @@ print(f"  ΔAUC-ROC = {c1_v_c4_sig['diff_mean']:+.4f}  "
       f"95% CI [{c1_v_c4_sig['ci_lo']:+.4f}, {c1_v_c4_sig['ci_hi']:+.4f}]  "
       f"p = {c1_v_c4_sig['p_value']:.4f}")
 
-# Novelty test: does RE-Attention itself contribute anything, using the score that is
-# actually downstream of the attention mechanism (scores_c4_attnw) instead of the
-# disconnected primary score (scores_c4, which only ever touches enc1/dec — see report
-# notes). Two comparisons:
-#   C1 vs C4_attnw   -- does the attention-gated score beat the plain baseline at all
-#   C4 vs C4_attnw   -- does gating by attention beat the disconnected reconstruction score
-print(f"\n  RE-Attention novelty test (paired bootstrap, n=1000):")
-for key, name, sa, sb in [
-        ('C1_vs_C4attnw_sig', 'C1 vs C4_attnw (baseline -> attn-gated)', scores_c4_attnw, scores_c1),
-        ('C4_vs_C4attnw_sig', 'C4 vs C4_attnw (recon -> attn-gated)',    scores_c4_attnw, scores_c4)]:
-    sig = bootstrap_paired_diff(sa, sb, binary_test)
-    all_results[key] = sig
-    print(f"  {name:<40} ΔAUC-ROC = {sig['diff_mean']:+.4f}  "
-          f"95% CI [{sig['ci_lo']:+.4f}, {sig['ci_hi']:+.4f}]  p = {sig['p_value']:.4f}")
-
 # %% [markdown]
 # ---
 # ## **Cell 14** — Plots: Training Convergence, ROC Curves, AUC-ROC Bar Chart
@@ -2228,6 +2196,191 @@ print("  attention_grid.png — C4 vs C5 (frozen) vs C6 (partial FT) with GT bbo
 print("\n" + "="*60)
 print("DONE — check /kaggle/working/results_rsna_resnet/")
 print("="*60)
+
+# %% [markdown]
+# ---
+# ## **Cell 17b** — Cross-domain evaluation (NIH ChestX-ray14)
+#
+# **Question:** does RE-Attention generalise, or does it just fit RSNA's acquisition
+# characteristics? All RSNA-trained models (C1, C3, C4) are scored -- inference only,
+# no retraining -- on a stratified NIH ChestX-ray14 subset never seen during training.
+#
+# **Novelty framing (Option 3):** rather than compete on in-domain AUC-ROC (already
+# near its ceiling for CNN conditions and not the RE-Attention path's strong suit --
+# see Option 1's `C4_attnw` test in the sibling script), the claim under test here is
+# that the attention-gated score (`C4_attnw`) *degrades less* under domain shift than
+# plain reconstruction (`C1`, `C4` primary). Preprocessing (CLAHE + resize to
+# IMAGE_SIZE) mirrors Cell 4 exactly so any AUC drop reflects the images/labels, not a
+# pipeline mismatch.
+
+# %% [CELL 17b]  Cross-domain evaluation — NIH ChestX-ray14
+
+if CROSS_DOMAIN_EVAL and os.path.exists(NIH_CSV):
+    print("\n" + "="*60)
+    print("CROSS-DOMAIN EVALUATION — NIH ChestX-ray14")
+    print("="*60)
+
+    def _iter_nih_image_subdirs(data_dir):
+        # Handles both known Kaggle repackagings of this dataset: images_00X/images/*.png
+        # (nested) and images_00X/*.png (flat per-folder) -- try both per entry.
+        for entry in sorted(os.listdir(data_dir)):
+            entry_path = os.path.join(data_dir, entry)
+            if not os.path.isdir(entry_path):
+                continue
+            nested = os.path.join(entry_path, 'images')
+            if os.path.isdir(nested):
+                yield nested
+            yield entry_path
+        yield data_dir  # fallback: everything directly under data_dir
+
+    def build_nih_subset(data_dir, csv_path, n_per_class, seed=SEED,
+                          positive_labels=CROSS_DOMAIN_POSITIVE_LABELS):
+        """Stratified single-label subset. NIH-14 is entirely frontal (PA/AP), so no
+        view filtering is needed. Single-label rows only, to avoid co-occurring
+        pathologies contaminating the anomaly class."""
+        df = pd.read_csv(csv_path)
+        single_label = ~df['Finding Labels'].str.contains(r'\|', regex=True)
+        normal_df   = df[single_label & (df['Finding Labels'] == 'No Finding')]
+        positive_df = df[single_label & df['Finding Labels'].isin(positive_labels)]
+
+        rng = np.random.default_rng(seed)
+        normal_ids   = rng.choice(normal_df['Image Index'].values,
+                                   size=min(n_per_class, len(normal_df)), replace=False)
+        positive_ids = rng.choice(positive_df['Image Index'].values,
+                                   size=min(n_per_class, len(positive_df)), replace=False)
+        print(f"NIH pool: {len(normal_df)} No-Finding, {len(positive_df)} "
+              f"{'/'.join(positive_labels)} (single-label) -> "
+              f"sampling {len(normal_ids)}/{len(positive_ids)}")
+
+        subdirs = list(_iter_nih_image_subdirs(data_dir))
+        def _resolve(image_ids):
+            found = []
+            for name in image_ids:
+                for root in subdirs:
+                    p = os.path.join(root, name)
+                    if os.path.exists(p):
+                        found.append(p)
+                        break
+            return found
+
+        return _resolve(normal_ids), _resolve(positive_ids)
+
+    def load_nih_png_resized(path, size=IMAGE_SIZE):
+        import cv2
+        img = cv2.imread(path, cv2.IMREAD_GRAYSCALE).astype(np.float32)
+        img = (img - img.min()) / (img.max() - img.min() + 1e-8)
+        img = _clahe_uint8(img)
+        t = torch.tensor(img).unsqueeze(0).unsqueeze(0)
+        t = F.interpolate(t, size=(size, size), mode='bilinear', align_corners=False)
+        return t.squeeze().numpy()
+
+    def load_nih_image_set(paths, size, tag):
+        imgs = []
+        for i, p in enumerate(paths):
+            if i % 500 == 0:
+                print(f"  {tag}: {i}/{len(paths)}")
+            imgs.append(load_nih_png_resized(p, size))
+        arr = np.stack(imgs)[:, None, :, :]
+        print(f"  {tag} done -> {arr.shape}")
+        return arr
+
+    nih_normal_paths, nih_positive_paths = build_nih_subset(
+        NIH_DATA_DIR, NIH_CSV, CROSS_DOMAIN_N_PER_CLASS)
+    x_nih_normal   = load_nih_image_set(nih_normal_paths,   IMAGE_SIZE, 'NIH-normal')
+    x_nih_positive = load_nih_image_set(nih_positive_paths, IMAGE_SIZE, 'NIH-anomaly')
+    x_test_nih      = np.concatenate([x_nih_normal, x_nih_positive], axis=0)
+    binary_test_nih = np.array([0]*len(x_nih_normal) + [1]*len(x_nih_positive), dtype=np.int32)
+    print(f"\nNIH test set: {x_test_nih.shape}  ({binary_test_nih.mean()*100:.1f}% anomaly)")
+
+    @torch.no_grad()
+    def score_nih_c1():
+        out = []
+        for i in range(0, len(x_test_nih), BATCH_SIZE):
+            xb = torch.tensor(x_test_nih[i:i+BATCH_SIZE]).to(device)
+            out.append(anomaly_score(xb, dec_c1(enc_c1(xb))).cpu().numpy())
+        return np.concatenate(out)
+
+    @torch.no_grad()
+    def score_nih_c3():
+        out = []
+        for i in range(0, len(x_test_nih), BATCH_SIZE):
+            xb = torch.tensor(x_test_nih[i:i+BATCH_SIZE]).to(device)
+            out.append(anomaly_score(xb, dec_c3(enc1_c3(xb))).cpu().numpy())
+        return np.concatenate(out)
+
+    @torch.no_grad()
+    def score_nih_c4():
+        """Returns both the disconnected primary score and the attention-weighted
+        score (the one actually downstream of RE-Attention) for direct comparison."""
+        primary, attnw = [], []
+        for i in range(0, len(x_test_nih), BATCH_SIZE):
+            xb = torch.tensor(x_test_nih[i:i+BATCH_SIZE]).to(device); n = xb.size(0)
+            x_hat1   = dec_c4(enc1_c4(xb))
+            ssim_inf = ssim_anomaly_map(xb, x_hat1).view(n, 1, IMAGE_SIZE, IMAGE_SIZE)
+            att_img  = re_attn_c4(ssim_inf)
+            primary.append(anomaly_score(xb, x_hat1).cpu().numpy())
+            attnw.append(torch.quantile((att_img * ssim_inf).flatten(1), 0.99, dim=1).cpu().numpy())
+        return np.concatenate(primary), np.concatenate(attnw)
+
+    enc_c1.eval(); dec_c1.eval()
+    enc1_c3.eval(); dec_c3.eval()
+    enc1_c4.eval(); dec_c4.eval(); re_attn_c4.eval()
+
+    nih_scores_c1              = score_nih_c1()
+    nih_scores_c3              = score_nih_c3()
+    nih_scores_c4, nih_scores_c4_attnw = score_nih_c4()
+
+    nih_m_c1      = compute_metrics(nih_scores_c1,      binary_test_nih)
+    nih_m_c3      = compute_metrics(nih_scores_c3,      binary_test_nih)
+    nih_m_c4      = compute_metrics(nih_scores_c4,      binary_test_nih)
+    nih_m_c4_attnw = compute_metrics(nih_scores_c4_attnw, binary_test_nih)
+
+    cross_domain_results = {
+        'C1':        {**nih_m_c1,       'label': 'CNN-AE Baseline'},
+        'C3':        {**nih_m_c3,       'label': 'CNN-AAE (no attn)'},
+        'C4':        {**nih_m_c4,       'label': 'CNN-RE-Attn-AAE primary (disconnected)'},
+        'C4_attnw':  {**nih_m_c4_attnw, 'label': 'CNN-RE-Attn-AAE attn-weighted'},
+    }
+
+    print(f"\n  {'Condition':<40} {'In-domain':>10} {'Cross-domain':>13} {'95% CI':>16} {'Degradation':>12}")
+    print(f"  {'-'*95}")
+    degradation = {}
+    for key, in_domain_key in [('C1', 'C1'), ('C3', 'C3'), ('C4', 'C4'), ('C4_attnw', 'C4_attnw')]:
+        cd = cross_domain_results[key]
+        in_domain_auc = all_results.get(in_domain_key, {}).get('auc_roc', np.nan)
+        degrad = in_domain_auc - cd['auc_roc']
+        degradation[key] = degrad
+        ci = f"[{cd['ci_lo']:.4f},{cd['ci_hi']:.4f}]" if not np.isnan(cd['ci_lo']) else 'n/a'
+        print(f"  {cd['label']:<40} {in_domain_auc:>10.4f} {cd['auc_roc']:>13.4f} {ci:>16} {degrad:>+12.4f}")
+
+    # Direct novelty comparison: does the attention-gated score degrade less than
+    # plain reconstruction under domain shift? (paired bootstrap on the degradation
+    # itself would need matched samples across domains, which we don't have --
+    # instead compare degradation magnitudes directly, and test whether C4_attnw's
+    # cross-domain AUC beats C1's cross-domain AUC, which does use matched NIH samples.)
+    print(f"\n  Degradation comparison (lower = generalises better):")
+    print(f"    C1 (plain reconstruction)  : {degradation['C1']:+.4f}")
+    print(f"    C4 (disconnected primary)  : {degradation['C4']:+.4f}")
+    print(f"    C4_attnw (attention-gated) : {degradation['C4_attnw']:+.4f}")
+
+    cd_sig = bootstrap_paired_diff(nih_scores_c4_attnw, nih_scores_c1, binary_test_nih)
+    print(f"\n  Cross-domain C1 vs C4_attnw (paired bootstrap, n=1000):")
+    print(f"  ΔAUC-ROC = {cd_sig['diff_mean']:+.4f}  "
+          f"95% CI [{cd_sig['ci_lo']:+.4f}, {cd_sig['ci_hi']:+.4f}]  p = {cd_sig['p_value']:.4f}")
+    cross_domain_results['C1_vs_C4attnw_sig'] = cd_sig
+    cross_domain_results['degradation'] = degradation
+    cross_domain_results['_meta'] = {
+        'dataset': 'NIH ChestX-ray14', 'n_normal': int(len(x_nih_normal)),
+        'n_anomaly': int(len(x_nih_positive)), 'positive_labels': list(CROSS_DOMAIN_POSITIVE_LABELS),
+    }
+
+    with open(f'{OUTPUT_DIR}/cross_domain_nih_results.json', 'w') as f:
+        json.dump(_json(cross_domain_results), f, indent=2)
+    print(f"\nSaved -> {OUTPUT_DIR}/cross_domain_nih_results.json")
+else:
+    print("\n[CROSS_DOMAIN_EVAL] Skipped: NIH ChestX-ray14 not found at "
+          f"{NIH_CSV}. Attach the Kaggle dataset 'nih-chest-xrays/data' "
+          "(or set NIH_DATA_DIR/NIH_CSV) to enable this section.")
 
 # %% [markdown]
 # ---
@@ -2904,14 +3057,6 @@ for k in ['C1','C2','C3','C4','C5','C6','C7']:
         f'{ssim_px:.4f}' if not np.isnan(ssim_px) else '—',
         f'{attn_px:.4f}' if not np.isnan(attn_px) else '—',
         disc_stable.get(k,'—'),
-    ])
-
-if 'C4_attnw' in all_results:
-    r = all_results['C4_attnw']
-    table_data.append([
-        'C4-attnw', 'CNN', '✓', '✓ (gated score)', '—',
-        f'{r["auc_roc"]:.4f}', f'{r["auc_pr"]:.4f}', f'{r["f1"]:.4f}',
-        '—', '—', 'novelty test',
     ])
 
 tbl = ax.table(cellText=table_data, colLabels=col_labels,
