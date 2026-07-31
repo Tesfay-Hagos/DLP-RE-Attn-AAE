@@ -453,6 +453,16 @@ print(f"\nTrain (normal only) : {x_train_norm.shape}")
 print(f"Test                : {x_test.shape}  ({binary_test.mean()*100:.1f}% anomaly)")
 print(f"Opacity with boxes  : {len(test_boxes)}")
 
+# Dataset size wasn't known yet at wandb.init() time (Cell 3, before data loading) --
+# enrich the *same* run's config now instead of opening a second run for it.
+if USE_WANDB and wandb.run is not None:
+    wandb.config.update({
+        'dataset':      'RSNA Pneumonia Detection',
+        'train_normal': int(x_train_norm.shape[0]),
+        'test_normal':  int((binary_test == 0).sum()),
+        'test_opacity': int((binary_test == 1).sum()),
+    }, allow_val_change=True)
+
 # %% [markdown]
 # ---
 # ## **Cell 5** — DataLoader factory
@@ -3254,68 +3264,28 @@ print('\nDONE — download streamlit_assets.zip from Output → Files.')
 
 # %% [markdown]
 # ---
-# ## **Cell 20** — Save to Weights & Biases + Google Drive
+# ## **Cell 20** — Final Summary to Weights & Biases + Google Drive
 #
 # Two options to persist data before the Kaggle session expires.
-# **Option A (wandb)**: full experiment tracking — metrics, loss curves, weights as artifacts.
-# **Option B (Google Drive)**: simple file copy — good fallback if wandb is unavailable.
-#
-# Setup wandb (one-time):
-# 1. Create account at https://wandb.ai
-# 2. Kaggle → Add-ons → Secrets → add secret named `REATTN_KEY`
+# **Option A (wandb)**: logs a final summary table/scalars/histograms and two
+# consolidated artifacts into the **same run** that Cell 3 opened at startup —
+# no second login, no second `wandb.init()`. Per-condition metrics, loss curves,
+# and checkpoint artifacts were already uploaded incrementally as each condition
+# finished (see `save_ckpt()`), so this cell only adds the cross-condition summary
+# that isn't known until every condition is done, then closes the run.
+# **Option B (Google Drive)**: simple file copy — fallback if wandb is unavailable.
 
-# %% [CELL 20]  Save to wandb + Google Drive
+# %% [CELL 20]  Save final summary to wandb + Google Drive
 
-import os, json, subprocess, sys, shutil
+import os, json, shutil
 import numpy as np
 import torch
 
-# ── install wandb if missing ──────────────────────────────────────────
-try:
-    import wandb
-except ImportError:
-    subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'wandb', '-q'])
-    import wandb
-
-# ── wandb login (same pattern as bone_fracture_kaggle.py) ────────────
-USE_WANDB = False
-try:
-    if os.path.exists('/kaggle/working'):
-        from kaggle_secrets import UserSecretsClient
-        _key = UserSecretsClient().get_secret('REATTN_KEY')
-        wandb.login(key=_key)
-    else:
-        wandb.login()
-    USE_WANDB = True
-    print('WandB ready.')
-except Exception as _e:
-    USE_WANDB = False
-    print(f'WandB unavailable ({_e}) — will use Google Drive only.')
-
 # ════════════════════════════════════════════════════════════════
-# OPTION A — Weights & Biases
+# OPTION A — Weights & Biases (reuses the run opened in Cell 3)
 # ════════════════════════════════════════════════════════════════
-if USE_WANDB:
-    run = wandb.init(
-        project = 'RE-Attn-AAE-RSNA',
-        name    = 'ablation-C1-C7',
-        config  = {
-            'image_size':    IMAGE_SIZE,
-            'latent_dim':    LATENT_DIM,
-            'lambda_adv':    LAMBDA_ADV,
-            'warmup_epochs': WARMUP_EPOCHS,
-            'epochs':        EPOCHS,
-            'batch_size':    BATCH_SIZE,
-            'lr':            LR,
-            'dataset':       'RSNA Pneumonia Detection',
-            'train_normal':  int(x_train_norm.shape[0]),
-            'test_normal':   int((binary_test == 0).sum()),
-            'test_opacity':  int((binary_test == 1).sum()),
-        },
-        tags    = ['ablation','anomaly-detection','AAE','RE-attention','CXR'],
-        reinit  = True,
-        settings= wandb.Settings(init_timeout=120),
-    )
+if USE_WANDB and wandb.run is not None:
+    run = wandb.run
 
     # 1. Metrics table
     px = all_results.get('pixel_auroc', {})
@@ -3386,7 +3356,12 @@ if USE_WANDB:
     run.log_artifact(art2)
 
     wandb.finish()
-    print(f'\nwandb done. View at: https://wandb.ai/home → project RE-Attn-AAE-RSNA')
+    print(f'\nwandb done — final summary logged to run {WANDB_GROUP} '
+          f'(https://wandb.ai/home → project {WANDB_PROJECT})')
+else:
+    print('\nwandb not active (unavailable at startup, or SKIP_COMPLETED path never '
+          'opened a run) — skipping final summary. Per-condition results were still '
+          'saved locally to CKPT_DIR regardless.')
 
 # ════════════════════════════════════════════════════════════════
 # OPTION B — Google Drive  (works alongside or instead of wandb)
