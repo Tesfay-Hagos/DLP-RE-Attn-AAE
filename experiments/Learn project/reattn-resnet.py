@@ -257,8 +257,8 @@ def save_ckpt(cond, result_keys, scores, disc_scores, epoch_loss,
                 _art_name,
                 type='checkpoint',
                 metadata={'cond': cond, 'version': RUN_VERSION, 'group': _group},
+                tags=[_group],   # searchable in the wandb UI / API by group name
             )
-            art.tags = [_group]   # searchable in the wandb UI / API by group name
             art.add_file(ckpt_path(cond))                       # {COND}_done.json
             art.add_file(f'{CKPT_DIR}/{cond}_scores.npy')       # SSIM anomaly scores
             disc_p = f'{CKPT_DIR}/{cond}_disc.npy'
