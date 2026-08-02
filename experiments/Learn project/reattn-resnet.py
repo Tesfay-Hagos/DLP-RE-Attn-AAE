@@ -257,7 +257,6 @@ def save_ckpt(cond, result_keys, scores, disc_scores, epoch_loss,
                 _art_name,
                 type='checkpoint',
                 metadata={'cond': cond, 'version': RUN_VERSION, 'group': _group},
-                tags=[_group],   # searchable in the wandb UI / API by group name
             )
             art.add_file(ckpt_path(cond))                       # {COND}_done.json
             art.add_file(f'{CKPT_DIR}/{cond}_scores.npy')       # SSIM anomaly scores
@@ -268,7 +267,10 @@ def save_ckpt(cond, result_keys, scores, disc_scores, epoch_loss,
             for name in model_states:
                 wp = f'{CKPT_DIR}/{cond}_{name}.pth'
                 if os.path.exists(wp): art.add_file(wp)         # model weights
-            wandb.log_artifact(art)
+            art = wandb.log_artifact(art)
+            art.wait()                 # block until the artifact is fully registered server-side
+            art.tags = [_group]        # only settable on an already-logged, waited-on artifact
+            art.save()                 # push the tag change back to the server
             print(f'  [{cond}] artifact logged → wandb:{_art_name}:latest')
         except Exception as _art_e:
             print(f'  [{cond}] wandb artifact upload failed: {_art_e}')
