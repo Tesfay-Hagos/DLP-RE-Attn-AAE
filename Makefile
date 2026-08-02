@@ -7,8 +7,8 @@ IPYNB_RSNA   := experiments/re_attn_aae_kaggle-RSNA.ipynb
 PY_RESNET    := experiments/re_attn_aae_kaggle-RSNA-ResNet.py
 IPYNB_RESNET := experiments/re_attn_aae_kaggle-RSNA-ResNet.ipynb
 
-PY_Learn    := Learn project/reattn-resnet.py
-IPYNB_Learn := Learn project/reattn-resnet.ipynb
+PY_Learn    := experiments/Learn project/reattn-resnet.py
+IPYNB_Learn := experiments/Learn project/reattn-resnet.ipynb
 
 # GNU Make splits prerequisite lists on whitespace, so a bare path containing a
 # space (like "Learn project/...") is silently parsed as two separate targets.
