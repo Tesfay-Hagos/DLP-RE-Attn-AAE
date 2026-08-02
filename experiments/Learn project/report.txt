@@ -1,0 +1,7 @@
+1. how do we choose the hyperparameter values like on 
+
+    A. LAMBDA_ADV = 0.3 — used identically in the generator loss line for C3–C7 (LAMBDA_ADV * (-torch.mean(torch.log(disc(...) + EPS)))).
+     Also directly confirmed by the report text at line 2589: 'LAMBDA_ADV=0.3 prevents generator from overwhelming discriminator' — 
+     this is the author explicitly stating in the report why 0.3 was chosen, exactly the empirical tuning rationale I guessed at earlier.
+    B. BETA1 = 0.5   for Adam Optimization
+2. 
