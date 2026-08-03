@@ -198,7 +198,7 @@ print(f"OUTPUT_DIR     : {OUTPUT_DIR}")
 print(f"CKPT_DIR       : {CKPT_DIR}")
 
 
-USE_WANDB = False
+
 
 
 # %% [markdown]
@@ -325,6 +325,7 @@ def load_weights(cond, **models):
 # %% [CELL 1.6]  Wandb setup and login
 # USE_WANDB is the flag every later cell should check before calling wandb.*
 # — that's what makes wandb fully optional (see save_ckpt above).
+USE_WANDB = False
 try:
     import wandb
     # Two login paths: Kaggle reads the API key from its Secrets vault;
@@ -355,120 +356,144 @@ except Exception as _e:
     USE_WANDB = False
     print(f'WandB unavailable ({_e}) — continuing without.')
 
+# %% [CELL 1.7]  Sanity-test the checkpoint/wandb helpers with dummy data
+# Uses a throwaway condition name ('CTEST') so it can never collide with C1-C7.
+# Covers: is_done before/after, save with no optional args, save with all
+# optional args, load_ckpt round-trip, load_weights hit + miss.
+TEST_COND = 'CTEST'
 
+# 1. Nothing saved yet -> should be False
+print('is_done (before save):', is_done(TEST_COND))
 
-# %% [markdown]
-# ---
-# ## **Cell 2.0** — Data preparation
-#
-# Loads DICOM chest X-rays from the RSNA Pneumonia Detection dataset, applies
-# **CLAHE contrast enhancement**, and bilinearly downsamples to `IMAGE_SIZE × IMAGE_SIZE`.
-#
-# **Train / test split strategy:**
-# - Training set: normal scans only (no anomalies seen during training).
-# - Test set: 2 000 normal + 2 000 lung-opacity images (50 / 50 balance).
-# - Bounding-box annotations are loaded for all opacity images that have them
-#   — used later for **pixel-level localisation AUROC**.
-#
-# In `SAMPLE_MODE` random arrays substitute for real images so the full pipeline
-# can be validated in seconds without the dataset.
+# 2. Fake metrics/loss, as if a training loop had just finished this condition
+all_results[TEST_COND]            = {'auc_roc': 0.91, 'auc_pr': 0.87, 'f1': 0.80}
+all_results[f'{TEST_COND}_disc']  = {'auc_roc': 0.60, 'auc_pr': 0.55, 'f1': 0.50}
+loss_history[TEST_COND] = [1.0, 0.8, 0.6, 0.5]
 
+dummy_scores      = np.random.rand(20).astype(np.float32)
+dummy_disc_scores = np.random.rand(20).astype(np.float32)
+dummy_attn_maps   = np.random.rand(4, 1, IMAGE_SIZE, IMAGE_SIZE).astype(np.float32)
+dummy_model       = nn.Linear(4, 4)     # stand-in for a real enc1/dec1 module
 
+# 3. Case A: minimal call — no disc_scores, no attn_maps, no model weights
+#    wandb_group='test-runs' tags this save separately from real ablation-v2 results.
+save_ckpt(TEST_COND + '_min', result_keys=[TEST_COND], scores=dummy_scores,
+          disc_scores=None, epoch_loss=loss_history[TEST_COND],
+          wandb_group='test-runs')
 
-# %% [CELL 2.0]  Data preparation
+# 4. Case B: full call — disc_scores + attn_maps + one model's weights
+save_ckpt(TEST_COND, result_keys=[TEST_COND, f'{TEST_COND}_disc'], scores=dummy_scores,
+          disc_scores=dummy_disc_scores, epoch_loss=loss_history[TEST_COND],
+          attn_maps=dummy_attn_maps, enc1=dummy_model.state_dict(),
+          wandb_group='test-runs')
 
-def _clahe_uint8(img_f32):
-    import cv2
-    img_u8 = (img_f32 * 255).clip(0, 255).astype(np.uint8)
-    clahe  = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    return clahe.apply(img_u8).astype(np.float32) / 255.0
+# 5. is_done should flip to True now that the checkpoint file exists
+print('is_done (after save): ', is_done(TEST_COND))
 
-def load_dcm_resized(patient_id, train_dir, size):
-    dcm = pydicom.dcmread(f'{train_dir}/{patient_id}.dcm')
-    img = dcm.pixel_array.astype(np.float32)
-    img = (img - img.min()) / (img.max() - img.min() + 1e-8)
-    img = _clahe_uint8(img)
-    t   = torch.tensor(img).unsqueeze(0).unsqueeze(0)
-    t   = F.interpolate(t, size=(size, size), mode='bilinear', align_corners=False)
-    return t.squeeze().numpy()
+# 6. Simulate a fresh kernel session: wipe the in-memory dicts, reload from disk
+all_results.pop(TEST_COND, None); all_results.pop(f'{TEST_COND}_disc', None)
+loss_history.pop(TEST_COND, None)
+scores_back, disc_back, attn_back = load_ckpt(TEST_COND)
+print('scores match:', np.allclose(scores_back, dummy_scores))
+print('disc match:  ', np.allclose(disc_back, dummy_disc_scores))
+print('attn match:  ', np.allclose(attn_back, dummy_attn_maps))
+print('reloaded all_results keys:', list(all_results.keys()))
 
-def load_images(patient_ids, train_dir, size, tag):
-    imgs, n = [], len(patient_ids)
-    for i, pid in enumerate(patient_ids):
-        if i % 500 == 0:
-            print(f"  {tag}: {i}/{n}")
-        imgs.append(load_dcm_resized(pid, train_dir, size))
-    arr = np.stack(imgs)[:, None, :, :]
-    print(f"  {tag} done → {arr.shape}")
-    return arr
+# 7. load_weights: hit case (enc1 was saved) and miss case (never saved a name like this)
+fresh_model = nn.Linear(4, 4)
+load_weights(TEST_COND, enc1=fresh_model)
+print('weights match:', torch.allclose(fresh_model.weight, dummy_model.weight))
+load_weights(TEST_COND, decoder_never_saved=fresh_model)   # expect "weight file missing" print, no crash
 
-if SAMPLE_MODE:
-    x_train_norm = np.random.rand(30, 1, IMAGE_SIZE, IMAGE_SIZE).astype(np.float32)
-    x_test_norm  = np.random.rand(TEST_NORMAL,  1, IMAGE_SIZE, IMAGE_SIZE).astype(np.float32)
-    x_test_opa   = np.random.rand(TEST_OPACITY, 1, IMAGE_SIZE, IMAGE_SIZE).astype(np.float32)
-    raw_boxes    = {i: [(100, 200, 300, 200)] for i in range(TEST_OPACITY)}
-    print(f"SAMPLE_MODE — train:{x_train_norm.shape}  "
-          f"test_norm:{x_test_norm.shape}  test_opa:{x_test_opa.shape}")
+# %% [CELL 1.8]  Delete everything CELL 1.7 wrote (local files + in-memory entries only)
+import glob
+for _cond in [TEST_COND, TEST_COND + '_min']:
+    for _f in glob.glob(f'{CKPT_DIR}/{_cond}_*'):
+        os.remove(_f)
+        print('removed:', _f)
+    all_results.pop(_cond, None)
+    all_results.pop(f'{_cond}_disc', None)
+    loss_history.pop(_cond, None)
+print('Local CTEST checkpoint files removed; all_results/loss_history entries cleared.')
+
+# %% [CELL 1.9]  (optional, manual) Delete the wandb-side 'test-runs' artifacts
+# CELL 1.8 above only removes local files. If USE_WANDB was True, CELL 1.7 also
+# logged artifacts tagged group='test-runs' (see save_ckpt's wandb_group param).
+# This cell finds and deletes ALL artifact versions in that group across your
+# whole wandb project — not just today's CTEST run — so only run it on purpose.
+# It uses the read/write wandb.Api(), not wandb.log(), so it works even outside
+# an active wandb.init() run.
+RUN_WANDB_CLEANUP = False   # flip to True and re-run this cell to actually delete
+if RUN_WANDB_CLEANUP:
+    api = wandb.Api()
+    for coll in api.artifact_collections(project_name=WANDB_PROJECT, type_name='checkpoint'):
+        for art in coll.versions():
+            if 'test-runs' in art.tags:
+                print('deleting wandb artifact:', art.name)
+                art.delete(delete_aliases=True)
+    print('wandb "test-runs" cleanup done.')
+
+# %% [CELL 1.10]  DEMO ONLY — how to give each experiment its own separate wandb
+# Run, versioned/tagged so you can later fetch "every experiment" or "every
+# version of one scenario". This is a sandbox: it opens throwaway runs under
+# group='demo-runs' and never touches CELL 1.6's real ablation-v2 run or its
+# metric history. It's a reference for how you'd structure real experiment
+# runs later — nothing here is wired into save_ckpt or the real init.
+if USE_WANDB:
+    _demo_prev_run = wandb.run   # remember the real run so we can hand control back after
+
+    def demo_start_run(cond, run_version):
+        """One wandb Run per (condition, run_version) pair.
+        group='demo-runs' + tags=[run_version, cond] is what makes both
+        "fetch all experiments" and "fetch all versions of one scenario" possible."""
+        return wandb.init(
+            project=WANDB_PROJECT, group='demo-runs', name=f'demo-{cond}-{run_version}',
+            id=f'demo-{cond}-{run_version}', resume='allow',
+            tags=['demo-runs', run_version, cond],
+            config={'condition': cond, 'run_version': run_version, 'demo': True},
+            reinit=True, settings=wandb.Settings(init_timeout=120),
+        )
+
+    def demo_fetch_all():
+        """Every demo run, any scenario, any version."""
+        api = wandb.Api()
+        return list(api.runs(f'{api.default_entity}/{WANDB_PROJECT}', filters={'tags': 'demo-runs'}))
+
+    def demo_fetch_by_scenario(cond):
+        """All versions of ONE scenario, e.g. every 'SIM_A' run regardless of run_version."""
+        api = wandb.Api()
+        return list(api.runs(f'{api.default_entity}/{WANDB_PROJECT}',
+                              filters={'$and': [{'tags': 'demo-runs'}, {'tags': cond}]}))
+
+    def demo_fetch_by_version(run_version):
+        """Every scenario logged under ONE version, e.g. everything under 'demo-v2'."""
+        api = wandb.Api()
+        return list(api.runs(f'{api.default_entity}/{WANDB_PROJECT}',
+                              filters={'$and': [{'tags': 'demo-runs'}, {'tags': run_version}]}))
+
+    # Simulate 2 scenarios, each run under 2 different versions -> 4 separate runs total.
+    for _cond in ['SIM_A', 'SIM_B']:
+        for _ver in ['demo-v1', 'demo-v2']:
+            _run = demo_start_run(_cond, _ver)
+            wandb.log({'dummy_metric': float(np.random.rand())})
+            _run.finish()
+
+    print('all demo experiments:      ', [r.name for r in demo_fetch_all()])
+    print('only SIM_A, any version:   ', [r.name for r in demo_fetch_by_scenario('SIM_A')])
+    print('only demo-v2, any scenario:', [r.name for r in demo_fetch_by_version('demo-v2')])
+
+    if _demo_prev_run is not None:
+        # Hand control back to the real run so later real cells keep logging there.
+        wandb.init(id=_demo_prev_run.id, project=WANDB_PROJECT, resume='must', reinit=True)
+        print('handed control back to real run:', wandb.run.id)
 else:
-    labels = pd.read_csv(f'{BASE}/stage_2_train_labels.csv')
-    detail = pd.read_csv(f'{BASE}/stage_2_detailed_class_info.csv')
-    patient_class = (detail.drop_duplicates('patientId')
-                           .set_index('patientId')['class'])
-    normal_ids  = patient_class[patient_class == 'Normal'].index.tolist()
-    opacity_ids = patient_class[patient_class == 'Lung Opacity'].index.tolist()
-    np.random.shuffle(normal_ids); np.random.shuffle(opacity_ids)
-    test_nml_ids  = normal_ids[:TEST_NORMAL]
-    train_nml_ids = normal_ids[TEST_NORMAL:]
-    test_opa_ids  = opacity_ids[:TEST_OPACITY]
-    print(f"Train normal  : {len(train_nml_ids)}")
-    print(f"Test  normal  : {len(test_nml_ids)}")
-    print(f"Test  opacity : {len(test_opa_ids)}")
-    print(f"\nLoading images ...")
-    t0 = time.time()
-    x_train_norm = load_images(train_nml_ids, TRAIN_DIR, IMAGE_SIZE, 'Train-normal')
-    x_test_norm  = load_images(test_nml_ids,  TRAIN_DIR, IMAGE_SIZE, 'Test-normal')
-    x_test_opa   = load_images(test_opa_ids,  TRAIN_DIR, IMAGE_SIZE, 'Test-opacity')
-    print(f"All images loaded in {time.time()-t0:.0f}s")
-    box_df    = labels[labels['Target'] == 1][['patientId','x','y','width','height']]
-    raw_boxes = {}
-    for i, pid in enumerate(test_opa_ids):
-        rows = box_df[box_df['patientId'] == pid]
-        if len(rows):
-            raw_boxes[i] = list(zip(rows['x'], rows['y'], rows['width'], rows['height']))
+    print('USE_WANDB is False — log in first (CELL 1.6) to try this demo.')
 
-x_test      = np.concatenate([x_test_norm, x_test_opa], axis=0)
-binary_test = np.array([0]*len(x_test_norm) + [1]*len(x_test_opa), dtype=np.int32)
-test_boxes  = {k + len(x_test_norm): v for k, v in raw_boxes.items()}
-
-print(f"\nTrain (normal only) : {x_train_norm.shape}")
-print(f"Test                : {x_test.shape}  ({binary_test.mean()*100:.1f}% anomaly)")
-print(f"Opacity with boxes  : {len(test_boxes)}")
-
-# Dataset size wasn't known yet at wandb.init() time (Cell 3, before data loading) --
-# enrich the *same* run's config now instead of opening a second run for it.
-if USE_WANDB and wandb.run is not None:
-    wandb.config.update({
-        'dataset':      'RSNA Pneumonia Detection',
-        'train_normal': int(x_train_norm.shape[0]),
-        'test_normal':  int((binary_test == 0).sum()),
-        'test_opacity': int((binary_test == 1).sum()),
-    }, allow_val_change=True)
-
-
-
-# %% [markdown]
-# ---
-# ## **Cell 2.1** — DataLoader factory
-#
-# A thin wrapper around `TensorDataset` + `DataLoader`.
-# `pin_memory=True` on GPU environments speeds up CPU→GPU transfers.
-# Each condition creates its own loader from this function to ensure independent shuffling.
-
-# %% [CELL 2.1]  DataLoader helper
-
-def make_loader(x_np, batch_size, shuffle=True, drop_last=True):
-    ds = TensorDataset(torch.tensor(x_np, dtype=torch.float32))
-    return DataLoader(ds, batch_size=batch_size, shuffle=shuffle,
-                      drop_last=drop_last,
-                      pin_memory=(device.type == 'cuda'),
-                      num_workers=2)
+# %% [CELL 1.11]  (optional, manual) delete the 4 demo runs CELL 1.10 created
+RUN_DEMO_CLEANUP = False   # flip to True and re-run this cell to actually delete
+if RUN_DEMO_CLEANUP and USE_WANDB:
+    api = wandb.Api()
+    for r in api.runs(f'{api.default_entity}/{WANDB_PROJECT}', filters={'tags': 'demo-runs'}):
+        print('deleting run:', r.name)
+        r.delete()
+    print('demo runs deleted.')
