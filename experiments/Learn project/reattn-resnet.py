@@ -517,6 +517,28 @@ class CNNEncoder(nn.Module):
         return self.fc(self.conv(x).flatten(1))
 
 
+class CNNEncoderStrided(nn.Module):
+    """3 × (strided Conv-BN-ReLU) → flatten → Linear.
+
+    Alternative to CNNEncoder: downsamples with learned stride-2 convs instead
+    of fixed MaxPool2d. Same output shape (128, s, s), so it's a drop-in swap
+    for CNNEncoder wherever it's used — try it against CNNEncoder to see
+    whether learned downsampling helps reconstruction quality here.
+    """
+    def __init__(self, latent_dim, image_size=IMAGE_SIZE):
+        super().__init__()
+        s = image_size // 8   # unchanged — still 3 halvings, still 128→16
+        self.conv = nn.Sequential(
+            nn.Conv2d(1,   32, 4, stride=2, padding=1), nn.BatchNorm2d(32),  nn.ReLU(),
+            nn.Conv2d(32,  64, 4, stride=2, padding=1), nn.BatchNorm2d(64),  nn.ReLU(),
+            nn.Conv2d(64, 128, 4, stride=2, padding=1), nn.BatchNorm2d(128), nn.ReLU(),
+        )
+        self.fc = nn.Linear(128 * s * s, latent_dim)
+
+    def forward(self, x):
+        return self.fc(self.conv(x).flatten(1))
+
+
 class CNNDecoder(nn.Module):
     """Linear → unflatten → 3 × ConvTranspose2d → Sigmoid."""
     def __init__(self, latent_dim, image_size=IMAGE_SIZE):
@@ -627,11 +649,161 @@ class LatentDisc(nn.Module):
 
 print("Models defined: CNNEncoder, CNNDecoder, VAEEncoder, ResNetEncoder, REAttention, LatentDisc")
 
+# %% [markdown]
+# ---
+# ## **Cell 3.0.1** — Evaluation utilities
+#
+# All metrics are computed identically across conditions:
+#
+# - **`anomaly_score(x, x_hat)`** — 99th-percentile SSIM error per image.
+#   This is the **primary anomaly score** reported for every condition.
+#   Using the 99th percentile (instead of the mean) is robust to small normally-reconstructed areas
+#   in otherwise anomalous images.
+#
+# - **`ssim_anomaly_map(x, x_hat)`** — per-pixel `(1 − SSIM)` map using an 11×11 sliding window.
+#   SSIM captures structural similarity; the error is HIGH at pneumonia regions
+#   (smooth consolidation the model cannot reconstruct) and LOW at normal lung texture.
+#   This is superior to MSE for localisation because MSE is dominated by sharp edges (ribs, heart border).
+#
+# - **`pixel_auroc(maps, boxes, labels)`** — compares spatial anomaly maps against radiologist
+#   bounding boxes. Measures localisation quality, not just detection.
+#
+# - **`vae_elbo_loss`** — ELBO = reconstruction (0.7 × MSE + 0.3 × SSIM-loss) + β × KL divergence.
 
+# %% [CELL 3.0.1]  Evaluation utilities
+
+def bootstrap_auc(scores, binary_labels, n_boot=1000, seed=SEED):
+    """Bootstrap resample AUC-ROC to get mean/std/95% CI (replaces hand-typed stability labels)."""
+    if len(np.unique(binary_labels)) < 2:
+        return {'auc_mean': np.nan, 'auc_std': np.nan, 'ci_lo': np.nan, 'ci_hi': np.nan}
+    rng = np.random.default_rng(seed)
+    n = len(scores)
+    aucs = np.empty(n_boot)
+    for i in range(n_boot):
+        idx = rng.integers(0, n, n)
+        if len(np.unique(binary_labels[idx])) < 2:
+            aucs[i] = np.nan
+            continue
+        aucs[i] = roc_auc_score(binary_labels[idx], scores[idx])
+    aucs = aucs[~np.isnan(aucs)]
+    lo, hi = np.percentile(aucs, [2.5, 97.5])
+    return {'auc_mean': float(aucs.mean()), 'auc_std': float(aucs.std()),
+            'ci_lo': float(lo), 'ci_hi': float(hi)}
+
+
+def bootstrap_paired_diff(scores_a, scores_b, binary_labels, n_boot=1000, seed=SEED):
+    """Paired bootstrap on AUC-ROC(a) - AUC-ROC(b), resampling both scores with the same
+    indices each draw. Returns the diff CI and a two-sided bootstrap p-value for diff == 0."""
+    if len(np.unique(binary_labels)) < 2:
+        return {'diff_mean': np.nan, 'ci_lo': np.nan, 'ci_hi': np.nan, 'p_value': np.nan}
+    rng = np.random.default_rng(seed)
+    n = len(binary_labels)
+    diffs = np.empty(n_boot)
+    for i in range(n_boot):
+        idx = rng.integers(0, n, n)
+        if len(np.unique(binary_labels[idx])) < 2:
+            diffs[i] = np.nan
+            continue
+        auc_a = roc_auc_score(binary_labels[idx], scores_a[idx])
+        auc_b = roc_auc_score(binary_labels[idx], scores_b[idx])
+        diffs[i] = auc_a - auc_b
+    diffs = diffs[~np.isnan(diffs)]
+    lo, hi = np.percentile(diffs, [2.5, 97.5])
+    p_value = 2 * min((diffs <= 0).mean(), (diffs >= 0).mean())
+    return {'diff_mean': float(diffs.mean()), 'ci_lo': float(lo), 'ci_hi': float(hi),
+            'p_value': float(min(p_value, 1.0))}
+
+
+def disc_stability_label(auc_stats):
+    """Computed replacement for the old hardcoded disc_stable dict: classifies the
+    discriminator-only score using its bootstrap CI instead of an asserted label."""
+    ci_lo, ci_hi, auc_std = auc_stats['ci_lo'], auc_stats['ci_hi'], auc_stats['auc_std']
+    if np.isnan(ci_lo):
+        return '-'
+    if ci_lo <= 0.5 <= ci_hi:
+        return f'COLLAPSED ({ci_lo:.2f}-{ci_hi:.2f})'
+    elif auc_std > 0.03:
+        return f'unstable (σ={auc_std:.3f})'
+    else:
+        return f'stable (σ={auc_std:.3f})'
+
+
+def compute_metrics(scores, binary_labels, n_boot=1000, seed=SEED):
+    if len(np.unique(binary_labels)) < 2:
+        return {'auc_roc': np.nan, 'auc_pr': np.nan, 'f1': np.nan,
+                'auc_std': np.nan, 'ci_lo': np.nan, 'ci_hi': np.nan}
+    auc_roc          = roc_auc_score(binary_labels, scores)
+    auc_pr           = average_precision_score(binary_labels, scores)
+    fpr, tpr, thresh = roc_curve(binary_labels, scores)
+    best = np.argmax(tpr - fpr)
+    pred = (scores >= thresh[best]).astype(int)
+    boot = bootstrap_auc(scores, binary_labels, n_boot=n_boot, seed=seed)
+    return {'auc_roc': auc_roc, 'auc_pr': auc_pr,
+            'f1': f1_score(binary_labels, pred, zero_division=0),
+            'auc_std': boot['auc_std'], 'ci_lo': boot['ci_lo'], 'ci_hi': boot['ci_hi']}
+
+def boxes_to_mask(boxes, size=IMAGE_SIZE, orig=ORIG_SIZE):
+    scale = size / orig
+    mask  = np.zeros((size, size), dtype=np.float32)
+    for (x, y, w, h) in boxes:
+        x1, y1 = int(x*scale), int(y*scale)
+        x2 = min(size, int((x+w)*scale))
+        y2 = min(size, int((y+h)*scale))
+        if x2 > x1 and y2 > y1:
+            mask[y1:y2, x1:x2] = 1.0
+    return mask
+
+def pixel_auroc(maps_np, boxes_dict, binary_arr):
+    gt_all, pred_all = [], []
+    for idx in range(len(binary_arr)):
+        if binary_arr[idx] == 0 or idx not in boxes_dict:
+            continue
+        gt_all.append(boxes_to_mask(boxes_dict[idx]).flatten())
+        pred_all.append(maps_np[idx].flatten())
+    if not gt_all:
+        return np.nan
+    gt, pred = np.concatenate(gt_all), np.concatenate(pred_all)
+    return roc_auc_score(gt, pred) if len(np.unique(gt)) > 1 else np.nan
+
+mse_fn = nn.MSELoss()
+
+def ssim_anomaly_map(x, x_hat, window=11):
+    """Per-pixel (1-SSIM) → (B, H*W). Higher = more anomalous."""
+    pad  = window // 2
+    mu_x = F.avg_pool2d(x,     window, stride=1, padding=pad)
+    mu_y = F.avg_pool2d(x_hat, window, stride=1, padding=pad)
+    s_x  = F.avg_pool2d(x**2,     window, stride=1, padding=pad) - mu_x**2
+    s_y  = F.avg_pool2d(x_hat**2, window, stride=1, padding=pad) - mu_y**2
+    s_xy = F.avg_pool2d(x*x_hat,  window, stride=1, padding=pad) - mu_x*mu_y
+    c1, c2 = 0.01**2, 0.03**2
+    ssim = ((2*mu_x*mu_y + c1)*(2*s_xy + c2)) / \
+           ((mu_x**2 + mu_y**2 + c1)*(s_x + s_y + c2))
+    return (1.0 - ssim.clamp(-1, 1)).view(x.size(0), -1)
+
+def ssim_loss_fn(x, x_hat):
+    return ssim_anomaly_map(x, x_hat).mean()
+
+def anomaly_score(x, x_hat):
+    """99th-pct SSIM score — primary metric, consistent across all conditions."""
+    return torch.quantile(ssim_anomaly_map(x, x_hat), 0.99, dim=1)
+
+def normalise_scores(s):
+    """Min-max normalise to [0,1] so fusion weights both scores equally."""
+    s_min, s_max = s.min(), s.max()
+    return (s - s_min) / (s_max - s_min + 1e-8)
+
+def vae_elbo_loss(x, x_hat, mu, logvar, beta=1.0):
+    recon = 0.7 * mse_fn(x_hat, x) + 0.3 * ssim_loss_fn(x_hat, x)
+    kl    = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
+    return recon + beta * kl
+
+all_results  = {}
+loss_history = {}
+print("Utilities defined.")
 
 # %% [markdown]
 # ---
-# ## **Cell 8** — C1: CNN-AE Baseline
+# ## **Cell 3.1** — Exp1: CNN-AE Baseline
 #
 # **Architecture:** `CNNEncoder → CNNDecoder`
 #
@@ -648,7 +820,7 @@ print("Models defined: CNNEncoder, CNNDecoder, VAEEncoder, ResNetEncoder, REAtte
 # This condition is the **anchor** for the ablation chain — C3, C4, and C5 all build on it.
 
 
-# %% [CELL 8]  C1 — CNN-AE Baseline
+# %% [CELL 3.1]  Exp1 — CNN-AE Baseline
 
 print("\n" + "="*60)
 print("CONDITION 1 — CNN-AE Baseline")
