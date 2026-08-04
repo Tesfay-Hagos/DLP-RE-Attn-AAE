@@ -182,14 +182,14 @@ EPOCHS        = 80  if not SAMPLE_MODE else 2
 WARMUP_EPOCHS = 20  if not SAMPLE_MODE else 1
 LAMBDA_ADV    = 0.3
 BATCH_SIZE    = 32  if not SAMPLE_MODE else 4
-SEED          = 42
 EPS           = 1e-8
 TEST_NORMAL   = 2000 if not SAMPLE_MODE else 10
 TEST_OPACITY  = 2000 if not SAMPLE_MODE else 5
 
-random.seed(SEED); np.random.seed(SEED); torch.manual_seed(SEED)
-if torch.cuda.is_available():
-    torch.cuda.manual_seed_all(SEED)
+SPLIT_SEED    = 42                                        # NEVER change — fixes train/test split
+TRAIN_SEED    = int(os.environ.get('TRAIN_SEED', '42'))    # vary this: 42, 1337, 2024
+DOWNSAMPLE    = os.environ.get('DOWNSAMPLE', 'stride')      # 'max' | 'avg' | 'stride'
+SEED          = SPLIT_SEED   # keeps bootstrap_auc/compute_metrics (which default to seed=SEED) tied to the split, not the sweep
 
 print(f"SAMPLE_MODE    : {SAMPLE_MODE}")
 print(f"RUN_VERSION    : {RUN_VERSION}  (SKIP_COMPLETED={SKIP_COMPLETED})")
@@ -517,27 +517,23 @@ class CNNEncoder(nn.Module):
         return self.fc(self.conv(x).flatten(1))
 
 
-class CNNEncoderStrided(nn.Module):
-    """3 × (strided Conv-BN-ReLU) → flatten → Linear.
-
-    Alternative to CNNEncoder: downsamples with learned stride-2 convs instead
-    of fixed MaxPool2d. Same output shape (128, s, s), so it's a drop-in swap
-    for CNNEncoder wherever it's used — try it against CNNEncoder to see
-    whether learned downsampling helps reconstruction quality here.
-    """
-    def __init__(self, latent_dim, image_size=IMAGE_SIZE):
+class CNNEncoder(nn.Module):
+    """3-block conv encoder → flatten → Linear. down: 'max' | 'avg' | 'stride'."""
+    def __init__(self, latent_dim, image_size=IMAGE_SIZE, down='max'):
         super().__init__()
-        s = image_size // 8   # unchanged — still 3 halvings, still 128→16
-        self.conv = nn.Sequential(
-            nn.Conv2d(1,   32, 4, stride=2, padding=1), nn.BatchNorm2d(32),  nn.ReLU(),
-            nn.Conv2d(32,  64, 4, stride=2, padding=1), nn.BatchNorm2d(64),  nn.ReLU(),
-            nn.Conv2d(64, 128, 4, stride=2, padding=1), nn.BatchNorm2d(128), nn.ReLU(),
-        )
+        s = image_size // 8
+        def block(cin, cout):
+            if down == 'stride':
+                return [nn.Conv2d(cin, cout, 4, stride=2, padding=1),
+                        nn.BatchNorm2d(cout), nn.ReLU()]
+            pool = nn.MaxPool2d(2) if down == 'max' else nn.AvgPool2d(2)
+            return [nn.Conv2d(cin, cout, 3, padding=1),
+                    nn.BatchNorm2d(cout), nn.ReLU(), pool]
+        self.conv = nn.Sequential(*block(1, 32), *block(32, 64), *block(64, 128))
         self.fc = nn.Linear(128 * s * s, latent_dim)
 
     def forward(self, x):
         return self.fc(self.conv(x).flatten(1))
-
 
 class CNNDecoder(nn.Module):
     """Linear → unflatten → 3 × ConvTranspose2d → Sigmoid."""
@@ -869,3 +865,112 @@ else:
     all_results['C1'] = {**m_c1, 'label': 'CNN-AE Baseline'}
     save_ckpt('C1', ['C1'], scores_c1, None, c1_epoch_loss,
               enc1=enc_c1.state_dict(), dec=dec_c1.state_dict())
+
+
+
+# %% [markdown]
+# ---
+# ## **Cell 3.1-sweep** — Encoder downsampling comparison (max / avg / stride)
+#
+# **Question:** does the choice of downsampling operator inside `CNNEncoder`
+# change reconstruction/anomaly-detection quality enough to matter, before
+# committing to one for C1/C3/C4?
+#
+# **Design — 3 variants × 3 seeds = 9 independent C1-style runs:**
+# - `max`    — current default: `Conv3x3 → MaxPool2d(2)`
+# - `avg`    — same, but `AvgPool2d(2)` instead of max
+# - `stride` — no pooling at all: `Conv4x4(stride=2)` learns the downsampling
+#
+# **Why 3 seeds, not 1:** weight init, batch shuffling, and flip augmentation
+# are all random. A single run's AUC is one sample from a noisy distribution
+# (typically ±0.005–0.01 spread run-to-run on this setup) — comparing single
+# runs risks mistaking training noise for a real architectural difference.
+#
+# **Why the split seed (`SPLIT_SEED`) is fixed and separate from `TRAIN_SEED`:**
+# the train/test patient split is also randomised (`np.random.shuffle` in Cell
+# 2.0). If seeding it together with training, changing the seed to get
+# variance would *also* reshuffle which images are in train vs. test —
+# making the 9 runs incomparable, since they'd be scored on different data.
+# `SPLIT_SEED` never changes; only `TRAIN_SEED` varies across the 9 runs.
+#
+# **Isolation from the real study:** each run is saved under its own
+# `cond_id = 'ENCSWEEP_{down}_s{seed}'`, never `'C1'` — so this sweep cannot
+# overwrite or interfere with the real ablation chain's C1 checkpoint.
+#
+# **Metrics recorded per run:** image AUC-ROC / AUC-PR / F1 (detection
+# quality), pixel-AUROC (localisation quality against radiologist boxes),
+# final training loss, wall-clock time, and encoder parameter count (so a
+# win isn't just "more capacity").
+#
+# **How to read the result (Cell 3.1-sweep-summary):** collapse each
+# variant's 3 seeds to mean ± std. If the gap between two variants' mean
+# AUC-ROC is bigger than ~2× the pooled std, treat the difference as real;
+# otherwise they're statistically indistinguishable here — in that case
+# pick whichever is faster / has fewer parameters, which is a legitimate
+# conclusion, not a non-answer.
+
+
+# %% [CELL 3.1-sweep]  Encoder downsample comparison (max / avg / stride), 3 seeds each
+encoder_sweep_results = []
+
+for down in ['max', 'avg', 'stride']:
+    for seed in [42, 1337, 2024]:
+        random.seed(seed); np.random.seed(seed); torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+
+        cond_id = f'ENCSWEEP_{down}_s{seed}'
+        print(f"\n--- {cond_id} ---")
+
+        enc = CNNEncoder(LATENT_DIM, down=down).to(device)
+        dec = CNNDecoder(LATENT_DIM).to(device)
+        n_params = sum(p.numel() for p in enc.parameters())
+
+        opt   = Adam(list(enc.parameters()) + list(dec.parameters()), lr=LR)
+        sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=EPOCHS, eta_min=1e-6)
+        loader = make_loader(x_train_norm, BATCH_SIZE)
+
+        t0 = time.time()
+        epoch_loss = []
+        for epoch in range(EPOCHS):
+            enc.train(); dec.train()
+            losses = []
+            for (xb,) in loader:
+                xb = xb.to(device)
+                flip = torch.rand(xb.size(0), device=device) > 0.5
+                xb[flip] = xb[flip].flip(dims=[3])
+                opt.zero_grad()
+                xhat = dec(enc(xb))
+                loss = 0.7 * mse_fn(xhat, xb) + 0.3 * ssim_loss_fn(xhat, xb)
+                loss.backward(); opt.step()
+                losses.append(loss.item())
+            sched.step()
+            epoch_loss.append(np.mean(losses))
+        train_time = time.time() - t0
+
+        enc.eval(); dec.eval()
+        scores, pix_maps = [], []
+        with torch.no_grad():
+            for i in range(0, len(x_test), BATCH_SIZE):
+                xb   = torch.tensor(x_test[i:i+BATCH_SIZE]).to(device)
+                xhat = dec(enc(xb))
+                scores.append(anomaly_score(xb, xhat).cpu().numpy())
+                pix_maps.append(ssim_anomaly_map(xb, xhat).cpu().numpy())
+        scores   = np.concatenate(scores)
+        pix_maps = np.concatenate(pix_maps)
+
+        m = compute_metrics(scores, binary_test)
+        pix_auroc = pixel_auroc(pix_maps, test_boxes, binary_test)
+
+        print(f"  AUC-ROC={m['auc_roc']:.4f}  AUC-PR={m['auc_pr']:.4f}  F1={m['f1']:.4f}  "
+              f"pixel-AUROC={pix_auroc:.4f}  params={n_params:,}  time={train_time:.0f}s")
+
+        encoder_sweep_results.append({
+            'down': down, 'seed': seed, 'auc_roc': m['auc_roc'], 'auc_pr': m['auc_pr'],
+            'f1': m['f1'], 'pixel_auroc': pix_auroc, 'final_loss': epoch_loss[-1],
+            'params': n_params, 'time_s': train_time,
+        })
+
+        all_results[cond_id] = {**m, 'label': f'ENCSWEEP {down} s{seed}'}
+        save_ckpt(cond_id, [cond_id], scores, None, epoch_loss,
+                  enc1=enc.state_dict(), dec=dec.state_dict())
