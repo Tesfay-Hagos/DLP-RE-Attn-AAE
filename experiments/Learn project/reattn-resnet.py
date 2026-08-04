@@ -444,8 +444,12 @@ print(f"\nTrain (normal only) : {x_train_norm.shape}")
 print(f"Test                : {x_test.shape}  ({binary_test.mean()*100:.1f}% anomaly)")
 print(f"Opacity with boxes  : {len(test_boxes)}")
 
-# Dataset size wasn't known yet at wandb.init() time (Cell 3, before data loading) --
+# %% [markdown]
+# ---
+# ## **Cell 2.1** — update wandb config with dataset sizes
+# Dataset size wasn't known yet at wandb.init() time (Cell 1, before data loading) --
 # enrich the *same* run's config now instead of opening a second run for it.
+# %% [CELL 2.1]  Wandb config update with dataset sizes
 if USE_WANDB and wandb.run is not None:
     wandb.config.update({
         'dataset':      'RSNA Pneumonia Detection',
@@ -458,13 +462,13 @@ if USE_WANDB and wandb.run is not None:
 
 # %% [markdown]
 # ---
-# ## **Cell 2.1** — DataLoader factory
+# ## **Cell 2.2** — DataLoader factory
 #
 # A thin wrapper around `TensorDataset` + `DataLoader`.
 # `pin_memory=True` on GPU environments speeds up CPU→GPU transfers.
 # Each condition creates its own loader from this function to ensure independent shuffling.
 
-# %% [CELL 2.1]  DataLoader helper
+# %% [CELL 2.2]  DataLoader helper
 
 def make_loader(x_np, batch_size, shuffle=True, drop_last=True):
     ds = TensorDataset(torch.tensor(x_np, dtype=torch.float32))
@@ -472,3 +476,224 @@ def make_loader(x_np, batch_size, shuffle=True, drop_last=True):
                       drop_last=drop_last,
                       pin_memory=(device.type == 'cuda'),
                       num_workers=2)
+
+
+
+
+
+# %% [markdown]
+# ---
+# ## **Cell 3.0** — Model architectures
+#
+# Five building blocks shared across conditions:
+#
+# | Class | Role | Used in |
+# |-------|------|---------|
+# | `CNNEncoder` | 3-block conv encoder → latent vector | C1, C3, C4 (enc1 & enc2) |
+# | `CNNDecoder` | Latent → 3-block transposed conv → image | C1, C2, C3, C4, C5 |
+# | `VAEEncoder` | Same CNN backbone + dual μ / log σ² heads, reparameterisation | C2 |
+# | `ResNetEncoder` | **Partially fine-tuned** ResNet-18 (layer4 trainable) + `fc` projection | C5 |
+# | `REAttention` | 3-layer conv network: SSIM error map → soft spatial mask ∈ [0, 1] | C4, C5 |
+# | `LatentDisc` | MLP discriminator: latent → P(sample looks Gaussian) | C3, C4, C5 |
+#
+
+
+
+# %% [CELL 6]  Model architectures
+
+class CNNEncoder(nn.Module):
+    """3 × (Conv-BN-ReLU-MaxPool) → flatten → Linear."""
+    def __init__(self, latent_dim, image_size=IMAGE_SIZE):
+        super().__init__()
+        s = image_size // 8
+        self.conv = nn.Sequential(
+            nn.Conv2d(1, 32, 3, padding=1), nn.BatchNorm2d(32), nn.ReLU(), nn.MaxPool2d(2),
+            nn.Conv2d(32, 64, 3, padding=1), nn.BatchNorm2d(64), nn.ReLU(), nn.MaxPool2d(2),
+            nn.Conv2d(64, 128, 3, padding=1), nn.BatchNorm2d(128), nn.ReLU(), nn.MaxPool2d(2),
+        )
+        self.fc = nn.Linear(128 * s * s, latent_dim)
+
+    def forward(self, x):
+        return self.fc(self.conv(x).flatten(1))
+
+
+class CNNDecoder(nn.Module):
+    """Linear → unflatten → 3 × ConvTranspose2d → Sigmoid."""
+    def __init__(self, latent_dim, image_size=IMAGE_SIZE):
+        super().__init__()
+        self.s    = image_size // 8
+        self.flat = 128 * self.s * self.s
+        self.fc   = nn.Linear(latent_dim, self.flat)
+        self.deconv = nn.Sequential(
+            nn.ConvTranspose2d(128, 64, 4, stride=2, padding=1), nn.BatchNorm2d(64), nn.ReLU(),
+            nn.ConvTranspose2d(64,  32, 4, stride=2, padding=1), nn.BatchNorm2d(32), nn.ReLU(),
+            nn.ConvTranspose2d(32,   1, 4, stride=2, padding=1), nn.Sigmoid(),
+        )
+
+    def forward(self, z):
+        return self.deconv(self.fc(z).view(-1, 128, self.s, self.s))
+
+
+class VAEEncoder(nn.Module):
+    """Same CNN backbone as CNNEncoder with dual mu / log-var projection heads."""
+    def __init__(self, latent_dim, image_size=IMAGE_SIZE):
+        super().__init__()
+        s = image_size // 8
+        self.conv = nn.Sequential(
+            nn.Conv2d(1, 32, 3, padding=1), nn.BatchNorm2d(32), nn.ReLU(), nn.MaxPool2d(2),
+            nn.Conv2d(32, 64, 3, padding=1), nn.BatchNorm2d(64), nn.ReLU(), nn.MaxPool2d(2),
+            nn.Conv2d(64, 128, 3, padding=1), nn.BatchNorm2d(128), nn.ReLU(), nn.MaxPool2d(2),
+        )
+        hidden = 128 * s * s
+        self.fc_mu     = nn.Linear(hidden, latent_dim)
+        self.fc_logvar = nn.Linear(hidden, latent_dim)
+
+    def encode(self, x):
+        h = self.conv(x).flatten(1)
+        return self.fc_mu(h), self.fc_logvar(h)
+
+    def reparameterize(self, mu, logvar):
+        if self.training:
+            return mu + (0.5 * logvar).exp() * torch.randn_like(mu)
+        return mu   # deterministic mean at inference for stable scoring
+
+    def forward(self, x):
+        mu, logvar = self.encode(x)
+        return self.reparameterize(mu, logvar), mu, logvar
+
+
+class ResNetEncoder(nn.Module):
+    """ResNet-18 backbone + trainable projection head.
+
+    (B,1,H,W) → repeat channel 3x → (B,3,H,W) → ResNet-18 → (B,512)
+    → Linear(512, latent_dim).
+
+    freeze_upto controls which backbone layers are frozen:
+
+    | value | frozen layers       | trainable backbone | condition |
+    |-------|---------------------|--------------------|-----------|
+    | None  | all (0-8)           | none               | C5        |
+    | 7     | 0-6 (conv1→layer3)  | layer4 + avgpool   | C6        |
+    | 2     | 0-1 (conv1, bn1)    | layer1-4 + avgpool | C7        |
+
+    Backbone layer index map:
+      0=conv1  1=bn1  2=relu  3=maxpool  4=layer1  5=layer2
+      6=layer3  7=layer4  8=avgpool
+    """
+    def __init__(self, latent_dim, freeze_upto=None):
+        super().__init__()
+        base = tv_models.resnet18(weights='IMAGENET1K_V1')
+        self.backbone   = nn.Sequential(*list(base.children())[:-1])
+        self.fc         = nn.Linear(512, latent_dim)
+        self.freeze_upto = freeze_upto
+        if freeze_upto is None:
+            for p in self.backbone.parameters():
+                p.requires_grad = False
+        else:
+            for i, child in enumerate(self.backbone.children()):
+                if i < freeze_upto:
+                    for p in child.parameters():
+                        p.requires_grad = False
+
+    def forward(self, x):
+        feats = self.backbone(x.repeat(1, 3, 1, 1)).flatten(1)
+        return self.fc(feats)
+
+
+class REAttention(nn.Module):
+    """Conv SSIM-error-guided attention: (B,1,H,W) → soft mask (B,1,H,W) ∈[0,1]."""
+    def __init__(self):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Conv2d(1, 16, 3, padding=1), nn.ReLU(),
+            nn.Conv2d(16, 16, 3, padding=1), nn.ReLU(),
+            nn.Conv2d(16,  1, 1),            nn.Sigmoid(),
+        )
+
+    def forward(self, e):
+        return self.net(e)
+
+
+class LatentDisc(nn.Module):
+    """MLP discriminator: latent → P(looks Gaussian)."""
+    def __init__(self, latent_dim):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(latent_dim, 64), nn.ReLU(),
+            nn.Linear(64, 32),         nn.ReLU(),
+            nn.Linear(32,  1),         nn.Sigmoid(),
+        )
+    def forward(self, z): return self.net(z)
+
+print("Models defined: CNNEncoder, CNNDecoder, VAEEncoder, ResNetEncoder, REAttention, LatentDisc")
+
+
+
+# %% [markdown]
+# ---
+# ## **Cell 8** — C1: CNN-AE Baseline
+#
+# **Architecture:** `CNNEncoder → CNNDecoder`
+#
+# The simplest possible baseline: a plain convolutional autoencoder trained to minimise
+# a combined `0.7 × MSE + 0.3 × SSIM` reconstruction loss on normal images only.
+#
+# At inference, anomaly score = 99th-percentile SSIM error per image.
+# Normal images that the AE has learned to reconstruct faithfully score low;
+# unseen pneumonia patterns that the AE cannot reconstruct score high.
+#
+# **Optimisation:** Adam with cosine annealing (`eta_min = 1e-6`).
+# Horizontal random flip augmentation is applied during training to improve generalisation.
+#
+# This condition is the **anchor** for the ablation chain — C3, C4, and C5 all build on it.
+
+
+# %% [CELL 8]  C1 — CNN-AE Baseline
+
+print("\n" + "="*60)
+print("CONDITION 1 — CNN-AE Baseline")
+print("="*60)
+
+enc_c1 = CNNEncoder(LATENT_DIM).to(device)
+dec_c1 = CNNDecoder(LATENT_DIM).to(device)
+
+if is_done('C1'):
+    scores_c1, _, _ = load_ckpt('C1')
+    load_weights('C1', enc1=enc_c1, dec=dec_c1)
+else:
+    opt_c1   = Adam(list(enc_c1.parameters()) + list(dec_c1.parameters()), lr=LR)
+    sched_c1 = torch.optim.lr_scheduler.CosineAnnealingLR(opt_c1, T_max=EPOCHS, eta_min=1e-6)
+    loader_c1     = make_loader(x_train_norm, BATCH_SIZE)
+    c1_epoch_loss = []
+    t0 = time.time()
+    for epoch in range(EPOCHS):
+        enc_c1.train(); dec_c1.train()
+        losses = []
+        for (xb,) in loader_c1:
+            xb = xb.to(device)
+            flip = torch.rand(xb.size(0), device=device) > 0.5
+            xb[flip] = xb[flip].flip(dims=[3])
+            opt_c1.zero_grad()
+            xhat = dec_c1(enc_c1(xb))
+            loss = 0.7 * mse_fn(xhat, xb) + 0.3 * ssim_loss_fn(xhat, xb)
+            loss.backward(); opt_c1.step()
+            losses.append(loss.item())
+        sched_c1.step()
+        c1_epoch_loss.append(np.mean(losses))
+        if (epoch + 1) % 10 == 0 or epoch == 0:
+            print(f"  Epoch {epoch+1:02d}/{EPOCHS}  loss={c1_epoch_loss[-1]:.5f}  "
+                  f"lr={sched_c1.get_last_lr()[0]:.2e}")
+    loss_history['C1'] = c1_epoch_loss
+    print(f"C1 training: {time.time()-t0:.1f}s")
+    enc_c1.eval(); dec_c1.eval()
+    scores_c1 = []
+    with torch.no_grad():
+        for i in range(0, len(x_test), BATCH_SIZE):
+            xb = torch.tensor(x_test[i:i+BATCH_SIZE]).to(device)
+            scores_c1.append(anomaly_score(xb, dec_c1(enc_c1(xb))).cpu().numpy())
+    scores_c1 = np.concatenate(scores_c1)
+    m_c1 = compute_metrics(scores_c1, binary_test)
+    print(f"\n  AUC-ROC={m_c1['auc_roc']:.4f}  AUC-PR={m_c1['auc_pr']:.4f}  F1={m_c1['f1']:.4f}")
+    all_results['C1'] = {**m_c1, 'label': 'CNN-AE Baseline'}
+    save_ckpt('C1', ['C1'], scores_c1, None, c1_epoch_loss,
+              enc1=enc_c1.state_dict(), dec=dec_c1.state_dict())
