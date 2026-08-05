@@ -216,6 +216,28 @@ loss_history={}
 def ckpt_path(cond):
     # Where this condition's "done" marker (metrics) lives on disk.
     return f'{CKPT_DIR}/{cond}_done.json'
+def restore_from_wandb(cond, run_version, entity=None):
+    """Download a past run_version's checkpoint artifact for `cond` back into
+    CKPT_DIR, so load_ckpt(cond)/load_weights(cond, ...) work normally
+    afterward — even in a brand-new session with an empty /kaggle/working.
+    Needs only wandb.login() to have succeeded; does NOT need wandb.init()."""
+    api = wandb.Api()
+    entity = entity or api.default_entity
+    group = f'ablation-{run_version}'   # matches _art_name in save_ckpt exactly — no sanitizing here
+    art_name = f'{entity}/{WANDB_PROJECT}/{group}-{cond.lower()}-ckpt:latest'
+    art = api.artifact(art_name)
+    art.download(root=CKPT_DIR)
+    print(f'  [{cond}] restored from wandb ({run_version}) -> {CKPT_DIR}')
+
+def ensure_local(cond, run_version=None):
+    """Fetch cond's checkpoint from wandb into CKPT_DIR if it's not already
+    on local disk, so is_done()/load_ckpt() see it. Call this before is_done()."""
+    if os.path.exists(ckpt_path(cond)):
+        return   # already local, nothing to do
+    try:
+        restore_from_wandb(cond, run_version or RUN_VERSION)
+    except Exception as e:
+        print(f'  [{cond}] no local or wandb checkpoint found ({e}) — will train fresh.')
 
 def is_done(cond):
     """Return True if this condition is already completed for RUN_VERSION."""
@@ -287,7 +309,7 @@ def save_ckpt(cond, result_keys, scores, disc_scores, epoch_loss,
                 if os.path.exists(wp): art.add_file(wp)         # model weights
             art = wandb.log_artifact(art)
             art.wait()                 # block until the artifact is fully registered server-side
-            art.tags = [_group]        # only settable on an already-logged, waited-on artifact
+            art.tags = [_group.replace('.', '_')]   # wandb tags reject '.'; only settable on a waited-on artifact
             art.save()                 # push the tag change back to the server
             print(f'  [{cond}] artifact logged → wandb:{_art_name}:latest')
         except Exception as _art_e:
@@ -824,7 +846,7 @@ print("="*60)
 
 enc_c1 = CNNEncoder(LATENT_DIM).to(device)
 dec_c1 = CNNDecoder(LATENT_DIM).to(device)
-
+ensure_local('C1')
 if is_done('C1'):
     scores_c1, _, _ = load_ckpt('C1')
     load_weights('C1', enc1=enc_c1, dec=dec_c1)
@@ -926,38 +948,45 @@ for down in ['max', 'avg', 'stride']:
         dec = CNNDecoder(LATENT_DIM).to(device)
         n_params = sum(p.numel() for p in enc.parameters())
 
-        opt   = Adam(list(enc.parameters()) + list(dec.parameters()), lr=LR)
-        sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=EPOCHS, eta_min=1e-6)
-        loader = make_loader(x_train_norm, BATCH_SIZE)
+        ensure_local(cond_id)
+        if is_done(cond_id):
+            scores, pix_maps, _ = load_ckpt(cond_id)   # pix_maps was saved into the disc_scores slot
+            load_weights(cond_id, enc1=enc, dec=dec)
+            epoch_loss = loss_history[cond_id]
+            train_time = np.nan   # not meaningful for a skipped/reloaded run
+        else:
+            opt   = Adam(list(enc.parameters()) + list(dec.parameters()), lr=LR)
+            sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=EPOCHS, eta_min=1e-6)
+            loader = make_loader(x_train_norm, BATCH_SIZE)
 
-        t0 = time.time()
-        epoch_loss = []
-        for epoch in range(EPOCHS):
-            enc.train(); dec.train()
-            losses = []
-            for (xb,) in loader:
-                xb = xb.to(device)
-                flip = torch.rand(xb.size(0), device=device) > 0.5
-                xb[flip] = xb[flip].flip(dims=[3])
-                opt.zero_grad()
-                xhat = dec(enc(xb))
-                loss = 0.7 * mse_fn(xhat, xb) + 0.3 * ssim_loss_fn(xhat, xb)
-                loss.backward(); opt.step()
-                losses.append(loss.item())
-            sched.step()
-            epoch_loss.append(np.mean(losses))
-        train_time = time.time() - t0
+            t0 = time.time()
+            epoch_loss = []
+            for epoch in range(EPOCHS):
+                enc.train(); dec.train()
+                losses = []
+                for (xb,) in loader:
+                    xb = xb.to(device)
+                    flip = torch.rand(xb.size(0), device=device) > 0.5
+                    xb[flip] = xb[flip].flip(dims=[3])
+                    opt.zero_grad()
+                    xhat = dec(enc(xb))
+                    loss = 0.7 * mse_fn(xhat, xb) + 0.3 * ssim_loss_fn(xhat, xb)
+                    loss.backward(); opt.step()
+                    losses.append(loss.item())
+                sched.step()
+                epoch_loss.append(np.mean(losses))
+            train_time = time.time() - t0
 
-        enc.eval(); dec.eval()
-        scores, pix_maps = [], []
-        with torch.no_grad():
-            for i in range(0, len(x_test), BATCH_SIZE):
-                xb   = torch.tensor(x_test[i:i+BATCH_SIZE]).to(device)
-                xhat = dec(enc(xb))
-                scores.append(anomaly_score(xb, xhat).cpu().numpy())
-                pix_maps.append(ssim_anomaly_map(xb, xhat).cpu().numpy())
-        scores   = np.concatenate(scores)
-        pix_maps = np.concatenate(pix_maps)
+            enc.eval(); dec.eval()
+            scores, pix_maps = [], []
+            with torch.no_grad():
+                for i in range(0, len(x_test), BATCH_SIZE):
+                    xb   = torch.tensor(x_test[i:i+BATCH_SIZE]).to(device)
+                    xhat = dec(enc(xb))
+                    scores.append(anomaly_score(xb, xhat).cpu().numpy())
+                    pix_maps.append(ssim_anomaly_map(xb, xhat).cpu().numpy())
+            scores   = np.concatenate(scores)
+            pix_maps = np.concatenate(pix_maps)
 
         m = compute_metrics(scores, binary_test)
         pix_auroc = pixel_auroc(pix_maps, test_boxes, binary_test)
@@ -971,6 +1000,7 @@ for down in ['max', 'avg', 'stride']:
             'params': n_params, 'time_s': train_time,
         })
 
-        all_results[cond_id] = {**m, 'label': f'ENCSWEEP {down} s{seed}'}
-        save_ckpt(cond_id, [cond_id], scores, None, epoch_loss,
-                  enc1=enc.state_dict(), dec=dec.state_dict())
+        all_results[cond_id] = {**m, 'pixel_auroc': pix_auroc, 'label': f'ENCSWEEP {down} s{seed}'}
+        if not is_done(cond_id):
+            save_ckpt(cond_id, [cond_id], scores, pix_maps, epoch_loss,
+                      enc1=enc.state_dict(), dec=dec.state_dict())
