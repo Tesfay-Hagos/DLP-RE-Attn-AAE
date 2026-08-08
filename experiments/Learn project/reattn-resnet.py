@@ -160,7 +160,7 @@ SAMPLE_MODE = bool(int(os.environ.get('SAMPLE_MODE', '0')))
 # ── Version + skip control (mirrors bone_fracture_kaggle.py) ─────────
 # Bump RUN_VERSION to force a full re-run (old checkpoints are ignored).
 # Set SKIP_COMPLETED=False to retrain within the same version.
-RUN_VERSION    = 'v2'
+RUN_VERSION    = 'v3.1'
 SKIP_COMPLETED = True
 WANDB_PROJECT  = 'RE-Attn-AAE-RSNA'
 WANDB_GROUP    = f'ablation-{RUN_VERSION}'   # groups all 7 conditions under one experiment
@@ -181,6 +181,8 @@ BETA1         = 0.5
 EPOCHS        = 80  if not SAMPLE_MODE else 2
 WARMUP_EPOCHS = 20  if not SAMPLE_MODE else 1
 LAMBDA_ADV    = 0.3
+LAMBDA_REC2   = 0.5   # C4: weight of the second (attention-gated) reconstruction loss
+LAMBDA_AE     = 0.3   # C4: weight of the attention-expansion regularizer mean(1-att), prevents collapse
 BATCH_SIZE    = 32  if not SAMPLE_MODE else 4
 EPS           = 1e-8
 TEST_NORMAL   = 2000 if not SAMPLE_MODE else 10
@@ -521,24 +523,7 @@ def make_loader(x_np, batch_size, shuffle=True, drop_last=True):
 
 
 
-# %% [CELL 6]  Model architectures
-
-class CNNEncoder(nn.Module):
-    """3 × (Conv-BN-ReLU-MaxPool) → flatten → Linear."""
-    def __init__(self, latent_dim, image_size=IMAGE_SIZE):
-        super().__init__()
-        s = image_size // 8
-        self.conv = nn.Sequential(
-            nn.Conv2d(1, 32, 3, padding=1), nn.BatchNorm2d(32), nn.ReLU(), nn.MaxPool2d(2),
-            nn.Conv2d(32, 64, 3, padding=1), nn.BatchNorm2d(64), nn.ReLU(), nn.MaxPool2d(2),
-            nn.Conv2d(64, 128, 3, padding=1), nn.BatchNorm2d(128), nn.ReLU(), nn.MaxPool2d(2),
-        )
-        self.fc = nn.Linear(128 * s * s, latent_dim)
-
-    def forward(self, x):
-        return self.fc(self.conv(x).flatten(1))
-
-
+# %% [CELL 6]  Model architecturesWSSSSS
 class CNNEncoder(nn.Module):
     """3-block conv encoder → flatten → Linear. down: 'max' | 'avg' | 'stride'."""
     def __init__(self, latent_dim, image_size=IMAGE_SIZE, down='max'):
@@ -575,15 +560,22 @@ class CNNDecoder(nn.Module):
 
 
 class VAEEncoder(nn.Module):
-    """Same CNN backbone as CNNEncoder with dual mu / log-var projection heads."""
-    def __init__(self, latent_dim, image_size=IMAGE_SIZE):
+    """Same CNN backbone as CNNEncoder with dual mu / log-var projection heads.
+    down: 'max' | 'avg' | 'stride' — same knob as CNNEncoder, defaults to 'max'
+    (unchanged behavior) since the VAE's KL-regularized latent means the
+    encoder-sweep result for the plain CNN-AE isn't assumed to transfer here.
+    """
+    def __init__(self, latent_dim, image_size=IMAGE_SIZE, down='max'):
         super().__init__()
         s = image_size // 8
-        self.conv = nn.Sequential(
-            nn.Conv2d(1, 32, 3, padding=1), nn.BatchNorm2d(32), nn.ReLU(), nn.MaxPool2d(2),
-            nn.Conv2d(32, 64, 3, padding=1), nn.BatchNorm2d(64), nn.ReLU(), nn.MaxPool2d(2),
-            nn.Conv2d(64, 128, 3, padding=1), nn.BatchNorm2d(128), nn.ReLU(), nn.MaxPool2d(2),
-        )
+        def block(cin, cout):
+            if down == 'stride':
+                return [nn.Conv2d(cin, cout, 4, stride=2, padding=1),
+                        nn.BatchNorm2d(cout), nn.ReLU()]
+            pool = nn.MaxPool2d(2) if down == 'max' else nn.AvgPool2d(2)
+            return [nn.Conv2d(cin, cout, 3, padding=1),
+                    nn.BatchNorm2d(cout), nn.ReLU(), pool]
+        self.conv = nn.Sequential(*block(1, 32), *block(32, 64), *block(64, 128))
         hidden = 128 * s * s
         self.fc_mu     = nn.Linear(hidden, latent_dim)
         self.fc_logvar = nn.Linear(hidden, latent_dim)
@@ -641,17 +633,27 @@ class ResNetEncoder(nn.Module):
 
 
 class REAttention(nn.Module):
-    """Conv SSIM-error-guided attention: (B,1,H,W) → soft mask (B,1,H,W) ∈[0,1]."""
+    """Conv error-guided attention: (B,2,H,W) → soft mask (B,1,H,W) ∈[0,1].
+    2 input channels: SSIM error map + high-frequency residual of the raw image.
+    The high-freq channel gives the module an explicit edge signal, so it doesn't
+    have to infer "thin rib edge vs. broad opacity blob" purely from error shape."""
     def __init__(self):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Conv2d(1, 16, 3, padding=1), nn.ReLU(),
+            nn.Conv2d(2, 16, 3, padding=1), nn.ReLU(),
             nn.Conv2d(16, 16, 3, padding=1), nn.ReLU(),
             nn.Conv2d(16,  1, 1),            nn.Sigmoid(),
         )
 
     def forward(self, e):
         return self.net(e)
+
+
+def high_freq(x, ksize=5):
+    """(B,1,H,W) -> (B,1,H,W) high-pass residual: |x - blur(x)|. Highlights sharp
+    structural edges (ribs, heart border) as an explicit feature for REAttention."""
+    blur = F.avg_pool2d(x, ksize, stride=1, padding=ksize // 2)
+    return (x - blur).abs()
 
 
 class LatentDisc(nn.Module):
@@ -821,77 +823,6 @@ print("Utilities defined.")
 
 # %% [markdown]
 # ---
-# ## **Cell 3.1** — Exp1: CNN-AE Baseline
-#
-# **Architecture:** `CNNEncoder → CNNDecoder`
-#
-# The simplest possible baseline: a plain convolutional autoencoder trained to minimise
-# a combined `0.7 × MSE + 0.3 × SSIM` reconstruction loss on normal images only.
-#
-# At inference, anomaly score = 99th-percentile SSIM error per image.
-# Normal images that the AE has learned to reconstruct faithfully score low;
-# unseen pneumonia patterns that the AE cannot reconstruct score high.
-#
-# **Optimisation:** Adam with cosine annealing (`eta_min = 1e-6`).
-# Horizontal random flip augmentation is applied during training to improve generalisation.
-#
-# This condition is the **anchor** for the ablation chain — C3, C4, and C5 all build on it.
-
-
-# %% [CELL 3.1]  Exp1 — CNN-AE Baseline
-
-print("\n" + "="*60)
-print("CONDITION 1 — CNN-AE Baseline")
-print("="*60)
-
-enc_c1 = CNNEncoder(LATENT_DIM).to(device)
-dec_c1 = CNNDecoder(LATENT_DIM).to(device)
-ensure_local('C1')
-if is_done('C1'):
-    scores_c1, _, _ = load_ckpt('C1')
-    load_weights('C1', enc1=enc_c1, dec=dec_c1)
-else:
-    opt_c1   = Adam(list(enc_c1.parameters()) + list(dec_c1.parameters()), lr=LR)
-    sched_c1 = torch.optim.lr_scheduler.CosineAnnealingLR(opt_c1, T_max=EPOCHS, eta_min=1e-6)
-    loader_c1     = make_loader(x_train_norm, BATCH_SIZE)
-    c1_epoch_loss = []
-    t0 = time.time()
-    for epoch in range(EPOCHS):
-        enc_c1.train(); dec_c1.train()
-        losses = []
-        for (xb,) in loader_c1:
-            xb = xb.to(device)
-            flip = torch.rand(xb.size(0), device=device) > 0.5
-            xb[flip] = xb[flip].flip(dims=[3])
-            opt_c1.zero_grad()
-            xhat = dec_c1(enc_c1(xb))
-            loss = 0.7 * mse_fn(xhat, xb) + 0.3 * ssim_loss_fn(xhat, xb)
-            loss.backward(); opt_c1.step()
-            losses.append(loss.item())
-        sched_c1.step()
-        c1_epoch_loss.append(np.mean(losses))
-        if (epoch + 1) % 10 == 0 or epoch == 0:
-            print(f"  Epoch {epoch+1:02d}/{EPOCHS}  loss={c1_epoch_loss[-1]:.5f}  "
-                  f"lr={sched_c1.get_last_lr()[0]:.2e}")
-    loss_history['C1'] = c1_epoch_loss
-    print(f"C1 training: {time.time()-t0:.1f}s")
-    enc_c1.eval(); dec_c1.eval()
-    scores_c1 = []
-    with torch.no_grad():
-        for i in range(0, len(x_test), BATCH_SIZE):
-            xb = torch.tensor(x_test[i:i+BATCH_SIZE]).to(device)
-            scores_c1.append(anomaly_score(xb, dec_c1(enc_c1(xb))).cpu().numpy())
-    scores_c1 = np.concatenate(scores_c1)
-    m_c1 = compute_metrics(scores_c1, binary_test)
-    print(f"\n  AUC-ROC={m_c1['auc_roc']:.4f}  AUC-PR={m_c1['auc_pr']:.4f}  F1={m_c1['f1']:.4f}")
-    all_results['C1'] = {**m_c1, 'label': 'CNN-AE Baseline'}
-    save_ckpt('C1', ['C1'], scores_c1, None, c1_epoch_loss,
-              enc1=enc_c1.state_dict(), dec=dec_c1.state_dict())
-
-
-
-# %% [markdown]
-# ---
 # ## **Cell 3.1-sweep** — Encoder downsampling comparison (max / avg / stride)
 #
 # **Question:** does the choice of downsampling operator inside `CNNEncoder`
@@ -1004,3 +935,605 @@ for down in ['max', 'avg', 'stride']:
         if not is_done(cond_id):
             save_ckpt(cond_id, [cond_id], scores, pix_maps, epoch_loss,
                       enc1=enc.state_dict(), dec=dec.state_dict())
+
+
+# %% [markdown]
+# ---
+# ## **Cell 3.1** — Exp1: CNN-AE Baseline
+#
+# **Architecture:** `CNNEncoder → CNNDecoder`
+#
+# The simplest possible baseline: a plain convolutional autoencoder trained to minimise
+# a combined `0.7 × MSE + 0.3 × SSIM` reconstruction loss on normal images only.
+#
+# At inference, anomaly score = 99th-percentile SSIM error per image.
+# Normal images that the AE has learned to reconstruct faithfully score low;
+# unseen pneumonia patterns that the AE cannot reconstruct score high.
+#
+# **Optimisation:** Adam with cosine annealing (`eta_min = 1e-6`).
+# Horizontal random flip augmentation is applied during training to improve generalisation.
+#
+# This condition is the **anchor** for the ablation chain — C3, C4, and C5 all build on it.
+
+
+# %% [CELL 3.1]  Exp1 — CNN-AE Baseline
+
+print("\n" + "="*60)
+print("CONDITION 1 — CNN-AE Baseline")
+print("="*60)
+
+enc_c1 = CNNEncoder(LATENT_DIM,down='stride').to(device)
+dec_c1 = CNNDecoder(LATENT_DIM).to(device)
+ensure_local('C1')
+if is_done('C1'):
+    scores_c1, _, _ = load_ckpt('C1')
+    load_weights('C1', enc1=enc_c1, dec=dec_c1)
+else:
+    opt_c1   = Adam(list(enc_c1.parameters()) + list(dec_c1.parameters()), lr=LR)
+    sched_c1 = torch.optim.lr_scheduler.CosineAnnealingLR(opt_c1, T_max=EPOCHS, eta_min=1e-6)
+    loader_c1     = make_loader(x_train_norm, BATCH_SIZE)
+    c1_epoch_loss = []
+    t0 = time.time()
+    for epoch in range(EPOCHS):
+        enc_c1.train(); dec_c1.train()
+        losses = []
+        for (xb,) in loader_c1:
+            xb = xb.to(device)
+            flip = torch.rand(xb.size(0), device=device) > 0.5
+            xb[flip] = xb[flip].flip(dims=[3])
+            opt_c1.zero_grad()
+            xhat = dec_c1(enc_c1(xb))
+            loss = 0.7 * mse_fn(xhat, xb) + 0.3 * ssim_loss_fn(xhat, xb)
+            loss.backward(); opt_c1.step()
+            losses.append(loss.item())
+        sched_c1.step()
+        c1_epoch_loss.append(np.mean(losses))
+        if (epoch + 1) % 10 == 0 or epoch == 0:
+            print(f"  Epoch {epoch+1:02d}/{EPOCHS}  loss={c1_epoch_loss[-1]:.5f}  "
+                  f"lr={sched_c1.get_last_lr()[0]:.2e}")
+    loss_history['C1'] = c1_epoch_loss
+    print(f"C1 training: {time.time()-t0:.1f}s")
+    enc_c1.eval(); dec_c1.eval()
+    scores_c1 = []
+    with torch.no_grad():
+        for i in range(0, len(x_test), BATCH_SIZE):
+            xb = torch.tensor(x_test[i:i+BATCH_SIZE]).to(device)
+            scores_c1.append(anomaly_score(xb, dec_c1(enc_c1(xb))).cpu().numpy())
+    scores_c1 = np.concatenate(scores_c1)
+    m_c1 = compute_metrics(scores_c1, binary_test)
+    print(f"\n  AUC-ROC={m_c1['auc_roc']:.4f}  AUC-PR={m_c1['auc_pr']:.4f}  F1={m_c1['f1']:.4f}")
+    all_results['C1'] = {**m_c1, 'label': 'CNN-AE Baseline'}
+    save_ckpt('C1', ['C1'], scores_c1, None, c1_epoch_loss,
+              enc1=enc_c1.state_dict(), dec=dec_c1.state_dict())
+
+
+# %% [markdown]
+# ---
+# ## **Cell 3.2** — Exp2: VAE Baseline
+#
+# **Architecture:** `VAEEncoder (μ + log σ² heads) → reparameterise → CNNDecoder`
+#
+# The VAE extends the CNN-AE with a **probabilistic latent space**.
+# The encoder outputs mean `μ` and log-variance `log σ²`; latent codes are sampled
+# via the reparameterisation trick during training. The loss is the **ELBO**:
+#
+# ```
+# ELBO = Reconstruction (0.7 × MSE + 0.3 × SSIM-loss) + β × KL(q(z|x) ‖ N(0,I))
+# ```
+#
+# At inference the deterministic mean `μ` is used (no sampling) for stable anomaly scores.
+# Scoring is identical to C1: 99th-percentile SSIM error.
+#
+# **Purpose:** compares a probabilistic model against the deterministic AE (C1) and the
+# adversarially regularised AAE (C3/C4/C5). All three impose a Gaussian prior on the
+# latent space — but by different mechanisms (KL term vs. discriminator).
+
+# %% [CELL 3.2]  Exp2 — VAE Baseline
+
+print("\n" + "="*60)
+print("CONDITION 2 — VAE Baseline")
+print("="*60)
+print("Probabilistic AE: same CNN backbone + reparameterised latent + KL term.")
+print("Scored with SSIM 99th-pct on reconstruction (consistent with C1/C3/C4/C5).\n")
+
+enc_vae = VAEEncoder(LATENT_DIM,down='stride').to(device)
+dec_vae = CNNDecoder(LATENT_DIM).to(device)
+
+if is_done('C2'):
+    scores_c2, _, _ = load_ckpt('C2')
+    load_weights('C2', enc1=enc_vae, dec=dec_vae)
+else:
+    opt_vae   = Adam(list(enc_vae.parameters()) + list(dec_vae.parameters()), lr=LR)
+    sched_vae = torch.optim.lr_scheduler.CosineAnnealingLR(opt_vae, T_max=EPOCHS, eta_min=1e-6)
+    loader_vae     = make_loader(x_train_norm, BATCH_SIZE)
+    vae_epoch_loss = []
+    t0 = time.time()
+    for epoch in range(EPOCHS):
+        enc_vae.train(); dec_vae.train()
+        losses = []
+        for (xb,) in loader_vae:
+            xb = xb.to(device)
+            flip = torch.rand(xb.size(0), device=device) > 0.5
+            xb[flip] = xb[flip].flip(dims=[3])
+            opt_vae.zero_grad()
+            z, mu, logvar = enc_vae(xb)
+            xhat = dec_vae(z)
+            loss = vae_elbo_loss(xb, xhat, mu, logvar, beta=1.0)
+            loss.backward(); opt_vae.step()
+            losses.append(loss.item())
+        sched_vae.step()
+        vae_epoch_loss.append(np.mean(losses))
+        if (epoch + 1) % 10 == 0 or epoch == 0:
+            print(f"  Epoch {epoch+1:02d}/{EPOCHS}  ELBO={vae_epoch_loss[-1]:.5f}  "
+                  f"lr={sched_vae.get_last_lr()[0]:.2e}")
+    loss_history['C2'] = vae_epoch_loss
+    print(f"C2 training: {time.time()-t0:.1f}s")
+    enc_vae.eval(); dec_vae.eval()
+    scores_c2 = []
+    with torch.no_grad():
+        for i in range(0, len(x_test), BATCH_SIZE):
+            xb = torch.tensor(x_test[i:i+BATCH_SIZE]).to(device)
+            mu, _ = enc_vae.encode(xb)
+            scores_c2.append(anomaly_score(xb, dec_vae(mu)).cpu().numpy())
+    scores_c2 = np.concatenate(scores_c2)
+    m_c2 = compute_metrics(scores_c2, binary_test)
+    print(f"\n  AUC-ROC={m_c2['auc_roc']:.4f}  AUC-PR={m_c2['auc_pr']:.4f}  F1={m_c2['f1']:.4f}")
+    all_results['C2'] = {**m_c2, 'label': 'VAE Baseline'}
+    save_ckpt('C2', ['C2'], scores_c2, None, vae_epoch_loss,
+              enc1=enc_vae.state_dict(), dec=dec_vae.state_dict())
+# %% [markdown]
+# ---
+# ## **Cell 3.3-sweep** — C3: CNN-AAE Ablation (adversarial regularisation, no attention)
+#
+# **Architecture:** `CNNEncoder (enc1) → CNNDecoder + LatentDisc`
+# Executes fro multiple `lambda_adv` values to check 
+# if the C3 < C1 result is consistent or a config artifact.
+# **LAMBDA_VALUES = [0.05, 0.1, 0.3, 0.6, 1.0]  LAMBDA_SEEDS  = [42, 1337]   
+
+# %% [CELL 3.3-sweep]  LAMBDA_ADV robustness check — is C3 < C1 a config artifact or consistent?
+# Retrains C3's exact architecture at several lambda_adv values (current default: 0.3),
+# a couple of seeds each. Isolated cond_id namespace ('C3_LADV{lam}_s{seed}') — never
+# touches the real 'C3' checkpoint/all_results entry used in the main ablation table.
+LAMBDA_VALUES = [0.05, 0.1, 0.3, 0.6, 1.0]
+LAMBDA_SEEDS  = [42, 1337]   # bump to 3 seeds later if a value looks borderline
+
+c3_lambda_sweep_results = []
+
+for lam in LAMBDA_VALUES:
+    for seed in LAMBDA_SEEDS:
+        random.seed(seed); np.random.seed(seed); torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+
+        cond_id = f'C3_LADV{lam}_s{seed}'
+        print(f"\n--- {cond_id} ---")
+
+        enc1 = CNNEncoder(LATENT_DIM, down='stride').to(device)
+        dec  = CNNDecoder(LATENT_DIM).to(device)
+        ld   = LatentDisc(LATENT_DIM).to(device)
+
+        ensure_local(cond_id)
+        if is_done(cond_id):
+            scores, sc_disc, _ = load_ckpt(cond_id)
+            load_weights(cond_id, enc1=enc1, dec=dec, disc=ld)
+            epoch_loss = loss_history[cond_id]
+        else:
+            opt_rec  = Adam(list(enc1.parameters()) + list(dec.parameters()), lr=LR, betas=(BETA1, 0.999))
+            opt_disc = Adam(ld.parameters(), lr=LR, betas=(BETA1, 0.999))
+            opt_gen  = Adam(enc1.parameters(), lr=LR, betas=(BETA1, 0.999))
+            sched_rec  = torch.optim.lr_scheduler.CosineAnnealingLR(opt_rec,  T_max=EPOCHS, eta_min=1e-6)
+            sched_disc = torch.optim.lr_scheduler.CosineAnnealingLR(opt_disc, T_max=EPOCHS, eta_min=1e-6)
+            sched_gen  = torch.optim.lr_scheduler.CosineAnnealingLR(opt_gen,  T_max=EPOCHS, eta_min=1e-6)
+            loader = make_loader(x_train_norm, BATCH_SIZE)
+
+            opt_warmup = Adam(list(enc1.parameters()) + list(dec.parameters()), lr=LR, betas=(BETA1, 0.999))
+            for epoch in range(WARMUP_EPOCHS):
+                enc1.train(); dec.train()
+                for (xb,) in loader:
+                    xb = xb.to(device)
+                    flip = torch.rand(xb.size(0), device=device) > 0.5
+                    xb[flip] = xb[flip].flip(dims=[3])
+                    opt_warmup.zero_grad()
+                    xhat = dec(enc1(xb))
+                    loss = 0.7 * mse_fn(xhat, xb) + 0.3 * ssim_loss_fn(xhat, xb)
+                    loss.backward(); opt_warmup.step()
+
+            epoch_loss = []
+            for epoch in range(EPOCHS):
+                enc1.train(); dec.train(); ld.train()
+                rec_l = []
+                for (xb,) in loader:
+                    xb = xb.to(device); n = xb.size(0)
+                    flip = torch.rand(n, device=device) > 0.5
+                    xb[flip] = xb[flip].flip(dims=[3])
+                    opt_rec.zero_grad()
+                    z1 = enc1(xb); x_hat1 = dec(z1)
+                    loss_rec = 0.7 * mse_fn(x_hat1, xb) + 0.3 * ssim_loss_fn(x_hat1, xb)
+                    loss_rec.backward(); opt_rec.step()
+                    opt_disc.zero_grad()
+                    with torch.no_grad():
+                        z_fake = enc1(xb)
+                    z_real = torch.randn(n, LATENT_DIM, device=device)
+                    loss_d = (-torch.mean(torch.log(ld(z_real) + EPS))
+                              - torch.mean(torch.log(1.0 - ld(z_fake) + EPS)))
+                    loss_d.backward()
+                    torch.nn.utils.clip_grad_norm_(ld.parameters(), max_norm=1.0)
+                    opt_disc.step()
+                    opt_gen.zero_grad()
+                    loss_g = lam * (-torch.mean(torch.log(ld(enc1(xb)) + EPS)))   # <-- swept value
+                    loss_g.backward()
+                    torch.nn.utils.clip_grad_norm_(enc1.parameters(), max_norm=1.0)
+                    opt_gen.step()
+                    rec_l.append(loss_rec.item())
+                sched_rec.step(); sched_disc.step(); sched_gen.step()
+                epoch_loss.append(np.mean(rec_l))
+
+            enc1.eval(); dec.eval(); ld.eval()
+            scores, sc_disc = [], []
+            with torch.no_grad():
+                for i in range(0, len(x_test), BATCH_SIZE):
+                    xb = torch.tensor(x_test[i:i+BATCH_SIZE]).to(device)
+                    z1 = enc1(xb); xhat = dec(z1)
+                    scores.append(anomaly_score(xb, xhat).cpu().numpy())
+                    sc_disc.append((1.0 - ld(z1)).squeeze(1).cpu().numpy())
+            scores  = np.concatenate(scores)
+            sc_disc = np.concatenate(sc_disc)
+
+        sc_fuse = 0.5 * normalise_scores(scores) + 0.5 * normalise_scores(sc_disc)
+        m       = compute_metrics(scores,  binary_test)
+        m_disc  = compute_metrics(sc_disc, binary_test)
+        m_fuse  = compute_metrics(sc_fuse, binary_test)
+
+        print(f"  lambda={lam}  SSIM AUC-ROC={m['auc_roc']:.4f}  disc AUC-ROC={m_disc['auc_roc']:.4f}  "
+              f"fuse AUC-ROC={m_fuse['auc_roc']:.4f}")
+
+        c3_lambda_sweep_results.append({
+            'lambda_adv': lam, 'seed': seed,
+            'ssim_auc_roc': m['auc_roc'], 'disc_auc_roc': m_disc['auc_roc'], 'fuse_auc_roc': m_fuse['auc_roc'],
+        })
+
+        all_results[cond_id] = {**m, 'label': f'C3 lambda={lam} s{seed}'}
+        if not is_done(cond_id):
+            save_ckpt(cond_id, [cond_id], scores, sc_disc, epoch_loss,
+                      enc1=enc1.state_dict(), dec=dec.state_dict(), disc=ld.state_dict())
+
+# %% [CELL 3.3-sweep-summary]  Does C3 < C1 hold across lambda_adv, or was 0.3 just unlucky?
+df_lambda = pd.DataFrame(c3_lambda_sweep_results)
+summary_lambda = df_lambda.groupby('lambda_adv')[['ssim_auc_roc', 'disc_auc_roc', 'fuse_auc_roc']].agg(['mean', 'std'])
+print(summary_lambda)
+
+c1_auc = all_results['C1']['auc_roc']
+print(f"\nC1 baseline AUC-ROC = {c1_auc:.4f}\n")
+for lam in sorted(df_lambda['lambda_adv'].unique()):
+    ssim_mean = df_lambda[df_lambda.lambda_adv == lam]['ssim_auc_roc'].mean()
+    verdict = 'C3 >= C1' if ssim_mean >= c1_auc else 'C3 <  C1'
+    print(f"  lambda_adv={lam:<5}  C3 SSIM mean={ssim_mean:.4f}  vs C1={c1_auc:.4f}  -> {verdict}")
+
+# Best lambda by MEAN across seeds (not max single run — avoids cherry-picking noise).
+# CELL 3.3 below reads this to train the one canonical C3 checkpoint.
+best_by_mean    = df_lambda.groupby('lambda_adv')['ssim_auc_roc'].mean()
+BEST_LAMBDA_ADV = float(best_by_mean.idxmax())
+print(f"\nBEST_LAMBDA_ADV = {BEST_LAMBDA_ADV}  (mean SSIM AUC-ROC = {best_by_mean.max():.4f})")
+
+
+# %% [markdown]
+# ---
+# ## **Cell 3.3** — C3: CNN-AAE Ablation (adversarial regularisation, no attention)
+#
+# **Architecture:** `CNNEncoder (enc1) → CNNDecoder + LatentDisc`
+#
+# Extends C1 by adding an adversarial latent discriminator — making this a classic
+# **Adversarial Autoencoder (AAE)**. There is no RE-Attention and no second encoder.
+#
+# **Three-phase training loop per batch:**
+# 1. **Reconstruction** — `enc1 + dec` minimise `0.7 × MSE + 0.3 × SSIM-loss`.
+# 2. **Discriminator** — `disc` learns to distinguish `z_real ~ N(0, I)` from `z_fake = enc1(x)`.
+# 3. **Generator (enc1 adversarial)** — only `enc1` is updated; the decoder is *not* included
+#    in this phase to prevent pulling it toward a Gaussian distribution and degrading reconstruction.
+#
+# A 10-epoch **warm-start** (reconstruction only) stabilises the latent space before
+# the discriminator is introduced.
+#
+# **Gradient clipping** (`max_norm = 1.0`) is applied to both the discriminator and enc1
+# in the adversarial phases to prevent sigmoid saturation collapse.
+#
+# **Ablation role:** C1 → C3 answers: *does adversarial latent regularisation alone help?*
+# C3 → C4 answers: *does RE-Attention add further value on top of AAE?*
+#
+# **Score fusion:** `combined = 0.5 × SSIM-score + 0.5 × (1 − disc(z1))`
+
+# %% [CELL 3.3]  C3 — CNN-AAE Ablation (adversarial regularisation, no attention)
+
+print("\n" + "="*60)
+print("CONDITION 3 — CNN-AAE  [ablation: adversarial without RE-Attention]")
+print("="*60)
+print("Adds latent discriminator to C1. enc1 latents pushed toward N(0,I).")
+print("No re_attn, no enc2 — tests adversarial regularisation alone.")
+print("C1→C3: does AAE help?  C3→C4: does RE-Attention add value?\n")
+
+enc1_c3 = CNNEncoder(LATENT_DIM,down='stride').to(device)
+dec_c3  = CNNDecoder(LATENT_DIM).to(device)
+ld_c3   = LatentDisc(LATENT_DIM).to(device)
+if is_done('C3'):
+    scores_c3, sc_disc_c3, _ = load_ckpt('C3')
+    sc_fuse_c3 = 0.5 * normalise_scores(scores_c3) + 0.5 * normalise_scores(sc_disc_c3)
+    load_weights('C3', enc1=enc1_c3, dec=dec_c3, disc=ld_c3)
+else:
+    opt_rec_c3  = Adam(list(enc1_c3.parameters()) + list(dec_c3.parameters()), lr=LR, betas=(BETA1, 0.999))
+    opt_disc_c3 = Adam(ld_c3.parameters(), lr=LR, betas=(BETA1, 0.999))
+    opt_gen_c3  = Adam(enc1_c3.parameters(), lr=LR, betas=(BETA1, 0.999))
+    sched_rec_c3  = torch.optim.lr_scheduler.CosineAnnealingLR(opt_rec_c3,  T_max=EPOCHS, eta_min=1e-6)
+    sched_disc_c3 = torch.optim.lr_scheduler.CosineAnnealingLR(opt_disc_c3, T_max=EPOCHS, eta_min=1e-6)
+    sched_gen_c3  = torch.optim.lr_scheduler.CosineAnnealingLR(opt_gen_c3,  T_max=EPOCHS, eta_min=1e-6)
+    loader_c3     = make_loader(x_train_norm, BATCH_SIZE)
+    c3_epoch_loss = []
+    print(f"Warm-start enc1+dec for {WARMUP_EPOCHS} epochs before activating disc...")
+    opt_warmup_c3 = Adam(list(enc1_c3.parameters()) + list(dec_c3.parameters()), lr=LR, betas=(BETA1, 0.999))
+    t_ws = time.time()
+    for epoch in range(WARMUP_EPOCHS):
+        enc1_c3.train(); dec_c3.train()
+        ws_l = []
+        for (xb,) in loader_c3:
+            xb = xb.to(device)
+            flip = torch.rand(xb.size(0), device=device) > 0.5
+            xb[flip] = xb[flip].flip(dims=[3])
+            opt_warmup_c3.zero_grad()
+            xhat = dec_c3(enc1_c3(xb))
+            loss = 0.7 * mse_fn(xhat, xb) + 0.3 * ssim_loss_fn(xhat, xb)
+            loss.backward(); opt_warmup_c3.step()
+            ws_l.append(loss.item())
+        if (epoch + 1) % 5 == 0 or epoch == 0:
+            print(f"  Warmup {epoch+1:02d}/{WARMUP_EPOCHS}  loss={np.mean(ws_l):.5f}")
+    print(f"Warm-start done ({time.time()-t_ws:.1f}s). Activating discriminator.\n")
+    t0 = time.time()
+    for epoch in range(EPOCHS):
+        enc1_c3.train(); dec_c3.train(); ld_c3.train()
+        rec_l, d_l, g_l = [], [], []
+        for (xb,) in loader_c3:
+            xb = xb.to(device); n = xb.size(0)
+            flip = torch.rand(n, device=device) > 0.5
+            xb[flip] = xb[flip].flip(dims=[3])
+            opt_rec_c3.zero_grad()
+            z1 = enc1_c3(xb); x_hat1 = dec_c3(z1)
+            loss_rec = 0.7 * mse_fn(x_hat1, xb) + 0.3 * ssim_loss_fn(x_hat1, xb)
+            loss_rec.backward(); opt_rec_c3.step()
+            opt_disc_c3.zero_grad()
+            with torch.no_grad():
+                z_fake = enc1_c3(xb)
+            z_real = torch.randn(n, LATENT_DIM, device=device)
+            loss_d = (-torch.mean(torch.log(ld_c3(z_real) + EPS))
+                      - torch.mean(torch.log(1.0 - ld_c3(z_fake) + EPS)))
+            loss_d.backward()
+            torch.nn.utils.clip_grad_norm_(ld_c3.parameters(), max_norm=1.0)
+            opt_disc_c3.step()
+            opt_gen_c3.zero_grad()
+            loss_g = BEST_LAMBDA_ADV * (-torch.mean(torch.log(ld_c3(enc1_c3(xb)) + EPS)))
+            loss_g.backward()
+            torch.nn.utils.clip_grad_norm_(enc1_c3.parameters(), max_norm=1.0)
+            opt_gen_c3.step()
+            rec_l.append(loss_rec.item()); d_l.append(loss_d.item()); g_l.append(loss_g.item())
+        sched_rec_c3.step(); sched_disc_c3.step(); sched_gen_c3.step()
+        c3_epoch_loss.append(np.mean(rec_l))
+        if (epoch + 1) % 10 == 0 or epoch == 0:
+            print(f"  Epoch {epoch+1:02d}/{EPOCHS}  Recon={c3_epoch_loss[-1]:.5f}  "
+                  f"Disc={np.mean(d_l):.4f}  Gen={np.mean(g_l):.4f}  "
+                  f"lr={sched_rec_c3.get_last_lr()[0]:.2e}")
+    loss_history['C3'] = c3_epoch_loss
+    print(f"C3 training: {time.time()-t0:.1f}s")
+    enc1_c3.eval(); dec_c3.eval(); ld_c3.eval()
+    scores_c3, sc_disc_c3 = [], []
+    with torch.no_grad():
+        for i in range(0, len(x_test), BATCH_SIZE):
+            xb = torch.tensor(x_test[i:i+BATCH_SIZE]).to(device)
+            z1 = enc1_c3(xb); xhat = dec_c3(z1)
+            scores_c3.append(anomaly_score(xb, xhat).cpu().numpy())
+            sc_disc_c3.append((1.0 - ld_c3(z1)).squeeze(1).cpu().numpy())
+    scores_c3  = np.concatenate(scores_c3)
+    sc_disc_c3 = np.concatenate(sc_disc_c3)
+    sc_fuse_c3 = 0.5 * normalise_scores(scores_c3) + 0.5 * normalise_scores(sc_disc_c3)
+    m_c3       = compute_metrics(scores_c3,  binary_test)
+    m_c3_disc  = compute_metrics(sc_disc_c3, binary_test)
+    m_c3_fuse  = compute_metrics(sc_fuse_c3, binary_test)
+    print(f"\n  SSIM primary  AUC-ROC={m_c3['auc_roc']:.4f}  AUC-PR={m_c3['auc_pr']:.4f}  F1={m_c3['f1']:.4f}")
+    print(f"  Disc score    AUC-ROC={m_c3_disc['auc_roc']:.4f}")
+    print(f"  Fusion        AUC-ROC={m_c3_fuse['auc_roc']:.4f}")
+    all_results['C3']      = {**m_c3,      'label': 'CNN-AAE (ablation, no attn)'}
+    all_results['C3_disc'] = {**m_c3_disc, 'label': 'CNN-AAE disc score'}
+    all_results['C3_fuse'] = {**m_c3_fuse, 'label': 'CNN-AAE fusion'}
+    save_ckpt('C3', ['C3','C3_disc','C3_fuse'], scores_c3, sc_disc_c3, c3_epoch_loss,
+              enc1=enc1_c3.state_dict(), dec=dec_c3.state_dict(), disc=ld_c3.state_dict())
+# %% [markdown]
+# ---
+# ## **Cell 3.4** — C4: CNN-RE-Attn-AAE *(Ours — Full Novel Method)*
+#
+# **Architecture:** `CNNEncoder (enc1) + CNNDecoder + REAttention + CNNEncoder (enc2) + LatentDisc`
+#
+# This is the complete proposed method. The key innovation is the **two-pass RE-Attention** mechanism:
+#
+# 1. **Pass 1 (reconstruction):** `enc1 → dec` reconstructs the image normally.
+# 2. **SSIM error map:** `(1 − SSIM)` computed between the input and reconstruction.
+#    Pixels where the model *failed* to reconstruct score high — these are candidate anomalous regions.
+# 3. **RE-Attention:** A small 3-layer conv network converts the SSIM error map into a
+#    soft spatial attention mask `att_img ∈ [0, 1]`.
+# 4. **Pass 2 (adversarial):** `enc2` encodes the attention-masked image `x × att_img`.
+#    The discriminator pushes `enc2`'s latent toward `N(0, I)`.
+#    Because enc2 only sees attended (potentially anomalous) regions, the disc learns
+#    whether those regions look like normal structure or anomaly.
+#
+# **Three-phase training (per batch):**
+# 1. **enc1 + dec** — reconstruction loss (SSIM error map computed but detached; no gradient to re_attn here).
+# 2. **Discriminator** — updated with `z_real ~ N(0, I)` vs `z2 = enc2(x × att)`.
+# 3. **re_attn + enc2** — adversarial generator loss; re_attn receives gradient here and learns
+#    to highlight regions that the discriminator finds non-Gaussian (i.e., anomalous).
+#
+# **SSIM vs MSE for attention signal:**
+# MSE error is dominated by sharp edges (ribs, heart border) — the wrong regions for pneumonia.
+# SSIM error correctly peaks at smooth consolidations that break the lung's structural texture.
+
+# %% [CELL 3.4]  C4 — CNN-RE-Attn-AAE  [NOVEL]
+
+print("\n" + "="*60)
+print("CONDITION 4 — CNN-RE-Attn-AAE  [NOVEL]")
+print("="*60)
+print("Full novel method: SSIM-guided RE-Attention + two-encoder AAE.")
+print("C3 vs C4 isolates the RE-Attention contribution on top of AAE.\n")
+
+enc1_c4    = CNNEncoder(LATENT_DIM,down='stride').to(device)
+enc2_c4    = CNNEncoder(LATENT_DIM,down='stride').to(device)
+dec_c4     = CNNDecoder(LATENT_DIM).to(device)
+re_attn_c4 = REAttention().to(device)
+ld_c4      = LatentDisc(LATENT_DIM).to(device)
+
+if is_done('C4'):
+    scores_c4, sc_disc_c4, attn_maps_c4 = load_ckpt('C4')
+    sc_fuse_c4 = 0.5 * normalise_scores(scores_c4) + 0.5 * normalise_scores(sc_disc_c4)
+    load_weights('C4', enc1=enc1_c4, enc2=enc2_c4, dec=dec_c4, re_attn=re_attn_c4, disc=ld_c4)
+else:
+    # opt_rec_c4 now owns enc1+dec+enc2+re_attn together — this is what "closes the loop":
+    # re_attn/enc2 get a reconstruction gradient (loss_rec2), not only an adversarial one.
+    # They ALSO still receive the adversarial gradient via opt_gen_c4 below (dual pressure —
+    # watch att_mean/att_std diagnostics printed per epoch for signs of instability/collapse).
+    opt_rec_c4  = Adam(list(enc1_c4.parameters()) + list(dec_c4.parameters())
+                        + list(enc2_c4.parameters()) + list(re_attn_c4.parameters()),
+                        lr=LR, betas=(BETA1, 0.999))
+    opt_disc_c4 = Adam(ld_c4.parameters(), lr=LR, betas=(BETA1, 0.999))
+    opt_gen_c4  = Adam(list(re_attn_c4.parameters()) + list(enc2_c4.parameters()), lr=LR, betas=(BETA1, 0.999))
+    sched_rec_c4  = torch.optim.lr_scheduler.CosineAnnealingLR(opt_rec_c4,  T_max=EPOCHS, eta_min=1e-6)
+    sched_disc_c4 = torch.optim.lr_scheduler.CosineAnnealingLR(opt_disc_c4, T_max=EPOCHS, eta_min=1e-6)
+    sched_gen_c4  = torch.optim.lr_scheduler.CosineAnnealingLR(opt_gen_c4,  T_max=EPOCHS, eta_min=1e-6)
+    loader_c4     = make_loader(x_train_norm, BATCH_SIZE)
+    c4_epoch_loss = []
+    print(f"Warm-start enc1+dec for {WARMUP_EPOCHS} epochs...")
+    opt_warmup_c4 = Adam(list(enc1_c4.parameters()) + list(dec_c4.parameters()), lr=LR, betas=(BETA1, 0.999))
+    t_ws = time.time()
+    for epoch in range(WARMUP_EPOCHS):
+        enc1_c4.train(); dec_c4.train()
+        ws_l = []
+        for (xb,) in loader_c4:
+            xb = xb.to(device)
+            flip = torch.rand(xb.size(0), device=device) > 0.5
+            xb[flip] = xb[flip].flip(dims=[3])
+            opt_warmup_c4.zero_grad()
+            xhat = dec_c4(enc1_c4(xb))
+            loss = 0.7 * mse_fn(xhat, xb) + 0.3 * ssim_loss_fn(xhat, xb)
+            loss.backward(); opt_warmup_c4.step()
+            ws_l.append(loss.item())
+        if (epoch + 1) % 5 == 0 or epoch == 0:
+            print(f"  Warmup {epoch+1:02d}/{WARMUP_EPOCHS}  loss={np.mean(ws_l):.5f}")
+    print(f"Warm-start done ({time.time()-t_ws:.1f}s). Activating RE-Attention + AAE.\n")
+
+    def _att_input(xb, x_hat):
+        """2-channel input to re_attn_c4: SSIM error map + high-freq residual."""
+        err = ssim_anomaly_map(xb, x_hat).view(xb.size(0), 1, IMAGE_SIZE, IMAGE_SIZE)
+        hf  = high_freq(xb)
+        return torch.cat([err, hf], dim=1)
+
+    c4_diagnostics = {'rec1': [], 'rec2': [], 'ae': [], 'disc': [], 'gen': [],
+                       'att_mean': [], 'att_std': []}
+    COLLAPSE_STD_THRESHOLD = 0.02   # att.std() below this -> mask likely collapsed to a constant
+
+    t0 = time.time()
+    for epoch in range(EPOCHS):
+        enc1_c4.train(); enc2_c4.train(); dec_c4.train()
+        re_attn_c4.train(); ld_c4.train()
+        rec1_l, rec2_l, ae_l, d_l, g_l, att_mean_l, att_std_l = [], [], [], [], [], [], []
+        for (xb,) in loader_c4:
+            xb = xb.to(device); n = xb.size(0)
+            flip = torch.rand(n, device=device) > 0.5
+            xb[flip] = xb[flip].flip(dims=[3])
+
+            # ── Phase 1: closed-loop reconstruction (enc1+dec+enc2+re_attn together) ──
+            opt_rec_c4.zero_grad()
+            z1 = enc1_c4(xb); x_hat1 = dec_c4(z1)
+            loss_rec1 = 0.7 * mse_fn(x_hat1, xb) + 0.3 * ssim_loss_fn(x_hat1, xb)
+
+            att    = re_attn_c4(_att_input(xb, x_hat1))   # NOT detached — gradient flows back through x_hat1 too
+            x_hat2 = dec_c4(enc2_c4(xb * att))
+            loss_rec2 = 0.7 * mse_fn(x_hat2, xb) + 0.3 * ssim_loss_fn(x_hat2, xb)
+            loss_ae   = torch.mean(1.0 - att)              # expansion loss: default mask open unless error justifies closing
+
+            (loss_rec1 + LAMBDA_REC2 * loss_rec2 + LAMBDA_AE * loss_ae).backward()
+            torch.nn.utils.clip_grad_norm_(
+                list(enc1_c4.parameters()) + list(dec_c4.parameters())
+                + list(enc2_c4.parameters()) + list(re_attn_c4.parameters()), max_norm=1.0)
+            opt_rec_c4.step()
+
+            # ── Phase 2: discriminator (ld_c4 only) — fresh no_grad forward, as before ──
+            opt_disc_c4.zero_grad()
+            with torch.no_grad():
+                z1_s = enc1_c4(xb); xh1_s = dec_c4(z1_s)
+                att_s = re_attn_c4(_att_input(xb, xh1_s))
+                z2_s  = enc2_c4(xb * att_s)
+            z_real = torch.randn(n, LATENT_DIM, device=device)
+            loss_d = (-torch.mean(torch.log(ld_c4(z_real) + EPS))
+                      - torch.mean(torch.log(1.0 - ld_c4(z2_s) + EPS)))
+            loss_d.backward()
+            torch.nn.utils.clip_grad_norm_(ld_c4.parameters(), max_norm=1.0)
+            opt_disc_c4.step()
+
+            # ── Phase 3: generator (re_attn+enc2, adversarial pressure) — unchanged in spirit ──
+            opt_gen_c4.zero_grad()
+            with torch.no_grad():
+                z1_g = enc1_c4(xb); xh1_g = dec_c4(z1_g)
+                att_input_g = _att_input(xb, xh1_g)
+            att_g  = re_attn_c4(att_input_g)
+            loss_g = LAMBDA_ADV * (-torch.mean(torch.log(ld_c4(enc2_c4(xb * att_g)) + EPS)))
+            loss_g.backward()
+            torch.nn.utils.clip_grad_norm_(
+                list(re_attn_c4.parameters()) + list(enc2_c4.parameters()), max_norm=1.0)
+            opt_gen_c4.step()
+
+            rec1_l.append(loss_rec1.item()); rec2_l.append(loss_rec2.item()); ae_l.append(loss_ae.item())
+            d_l.append(loss_d.item()); g_l.append(loss_g.item())
+            att_mean_l.append(att.mean().item()); att_std_l.append(att.std().item())
+        sched_rec_c4.step(); sched_disc_c4.step(); sched_gen_c4.step()
+        c4_epoch_loss.append(np.mean(rec1_l))
+        for key, vals in [('rec1', rec1_l), ('rec2', rec2_l), ('ae', ae_l),
+                           ('disc', d_l), ('gen', g_l), ('att_mean', att_mean_l), ('att_std', att_std_l)]:
+            c4_diagnostics[key].append(float(np.mean(vals)))
+        if (epoch + 1) % 10 == 0 or epoch == 0:
+            print(f"  Epoch {epoch+1:02d}/{EPOCHS}  Rec1={c4_diagnostics['rec1'][-1]:.5f}  "
+                  f"Rec2={c4_diagnostics['rec2'][-1]:.5f}  AE={c4_diagnostics['ae'][-1]:.4f}  "
+                  f"Disc={c4_diagnostics['disc'][-1]:.4f}  Gen={c4_diagnostics['gen'][-1]:.4f}  "
+                  f"att_mean={c4_diagnostics['att_mean'][-1]:.3f}  att_std={c4_diagnostics['att_std'][-1]:.3f}  "
+                  f"lr={sched_rec_c4.get_last_lr()[0]:.2e}")
+        if c4_diagnostics['att_std'][-1] < COLLAPSE_STD_THRESHOLD:
+            print(f"  ⚠ WARNING epoch {epoch+1}: att.std()={c4_diagnostics['att_std'][-1]:.4f} "
+                  f"< {COLLAPSE_STD_THRESHOLD} — attention may be collapsing toward a constant mask.")
+    loss_history['C4'] = c4_epoch_loss
+    print(f"C4 training: {time.time()-t0:.1f}s")
+    enc1_c4.eval(); enc2_c4.eval(); dec_c4.eval(); re_attn_c4.eval(); ld_c4.eval()
+    scores_c4, sc_disc_c4, attn_maps_c4 = [], [], []
+    with torch.no_grad():
+        for i in range(0, len(x_test), BATCH_SIZE):
+            xb = torch.tensor(x_test[i:i+BATCH_SIZE]).to(device); n = xb.size(0)
+            z1 = enc1_c4(xb); x_hat1 = dec_c4(z1)
+            att_img = re_attn_c4(_att_input(xb, x_hat1))
+            x_hat2  = dec_c4(enc2_c4(xb * att_img))
+            scores_c4.append(anomaly_score(xb, x_hat2).cpu().numpy())   # <-- scored on x_hat2 now: the closed loop
+            sc_disc_c4.append((1.0 - ld_c4(enc2_c4(xb * att_img))).squeeze(1).cpu().numpy())
+            attn_maps_c4.append(att_img.squeeze(1).cpu().numpy())
+    scores_c4    = np.concatenate(scores_c4)
+    sc_disc_c4   = np.concatenate(sc_disc_c4)
+    sc_fuse_c4   = 0.5 * normalise_scores(scores_c4) + 0.5 * normalise_scores(sc_disc_c4)
+    attn_maps_c4 = np.concatenate(attn_maps_c4)
+    m_c4       = compute_metrics(scores_c4,  binary_test)
+    m_c4_disc  = compute_metrics(sc_disc_c4, binary_test)
+    m_c4_fuse  = compute_metrics(sc_fuse_c4, binary_test)
+    print(f"\n  SSIM primary  AUC-ROC={m_c4['auc_roc']:.4f}  AUC-PR={m_c4['auc_pr']:.4f}  F1={m_c4['f1']:.4f}")
+    print(f"  Disc score    AUC-ROC={m_c4_disc['auc_roc']:.4f}")
+    print(f"  Fusion        AUC-ROC={m_c4_fuse['auc_roc']:.4f}")
+    all_results['C4']      = {**m_c4,      'label': 'CNN-RE-Attn-AAE (Ours)'}
+    all_results['C4_disc'] = {**m_c4_disc, 'label': 'CNN-RE-Attn-AAE disc'}
+    all_results['C4_fuse'] = {**m_c4_fuse, 'label': 'CNN-RE-Attn-AAE fusion'}
+    save_ckpt('C4', ['C4','C4_disc','C4_fuse'], scores_c4, sc_disc_c4, c4_epoch_loss,
+              attn_maps=attn_maps_c4,
+              enc1=enc1_c4.state_dict(), enc2=enc2_c4.state_dict(),
+              dec=dec_c4.state_dict(), re_attn=re_attn_c4.state_dict(),
+              disc=ld_c4.state_dict())
+    with open(f'{CKPT_DIR}/C4_diagnostics.json', 'w') as f:
+        json.dump(c4_diagnostics, f, indent=2)
+    print(f'  [C4] per-epoch diagnostics (rec1/rec2/ae/disc/gen/att_mean/att_std) saved to '
+          f'{CKPT_DIR}/C4_diagnostics.json')
+
+
