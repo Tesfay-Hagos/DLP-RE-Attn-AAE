@@ -657,6 +657,63 @@ def high_freq(x, ksize=5):
     return (x - blur).abs()
 
 
+# ── Synthetic-anomaly training helpers (shared by C3.4, C3.4b; kept here rather
+# than in any one condition cell so they're guaranteed defined before every
+# condition that needs them, regardless of which cells get re-run individually) ──
+
+def make_synthetic_anomaly(xb):
+    """(B,1,H,W) -> (x_synth, mask). A smooth random blob region (low-res noise,
+    bilinearly upsampled so edges are organic, not blocky) is brightened to mimic
+    a consolidation-like density increase. mask=1 inside the synthetic anomaly,
+    0 elsewhere — ground truth for supervising re_attn directly, replacing the
+    discriminator. This is a simplified DRAEM variant: the original pastes
+    textures from an external dataset, this uses a synthetic intensity
+    perturbation instead, self-contained and appropriate for grayscale medical images.
+    """
+    n, c, h, w = xb.shape
+    noise = torch.rand(n, 1, 8, 8, device=xb.device)
+    blob  = F.interpolate(noise, size=(h, w), mode='bilinear', align_corners=False)
+    mask  = (blob > blob.mean(dim=[2, 3], keepdim=True)).float()
+    mask  = F.avg_pool2d(mask, 9, stride=1, padding=4)          # soften edges
+    bright  = (xb + 0.35).clamp(0, 1)                            # consolidation ~ locally denser/brighter
+    x_synth = xb * (1 - mask) + bright * mask
+    return x_synth, mask
+
+def _make_lung_prior(size=IMAGE_SIZE, device='cpu'):
+    """Two overlapping ellipses approximating a left/right lung field at the fixed
+    128x128 frame this pipeline always uses. Simplification of true lung segmentation
+    (no segmentation model available in this pipeline) — a fixed anatomical prior,
+    same spirit as AnatPaste's threshold-based lung mask, cheaper to compute."""
+    yy, xx = torch.meshgrid(torch.linspace(0, 1, size), torch.linspace(0, 1, size), indexing='ij')
+    left  = (((xx - 0.32) / 0.22) ** 2 + ((yy - 0.52) / 0.38) ** 2) <= 1.0
+    right = (((xx - 0.68) / 0.22) ** 2 + ((yy - 0.52) / 0.38) ** 2) <= 1.0
+    prior = (left | right).float().to(device)
+    return prior.view(1, 1, size, size)
+
+def make_synthetic_anomaly_anat(xb, lung_prior):
+    """Same blob generator as make_synthetic_anomaly, but restricted to
+    lung_prior — the AnatPaste-style anatomy restriction."""
+    n, c, h, w = xb.shape
+    noise = torch.rand(n, 1, 8, 8, device=xb.device)
+    blob  = F.interpolate(noise, size=(h, w), mode='bilinear', align_corners=False)
+    mask  = (blob > blob.mean(dim=[2, 3], keepdim=True)).float()
+    mask  = F.avg_pool2d(mask, 9, stride=1, padding=4)
+    mask  = mask * lung_prior
+    bright  = (xb + 0.35).clamp(0, 1)
+    x_synth = xb * (1 - mask) + bright * mask
+    return x_synth, mask
+
+def focal_bce(pred, target, gamma=2.0, alpha=0.25, eps=1e-8):
+    """Lin et al. 2017 (RetinaNet), adapted to dense per-pixel mask supervision.
+    Down-weights the easy majority class (att≈1 on the ~90%+ non-anomalous pixels)
+    so the rare positive (mask=1, 'close here') class isn't drowned out."""
+    pred = pred.clamp(eps, 1 - eps)
+    pt      = torch.where(target == 1, pred, 1 - pred)
+    alpha_t = torch.where(target == 1, torch.as_tensor(alpha, device=pred.device),
+                                        torch.as_tensor(1 - alpha, device=pred.device))
+    return (-alpha_t * (1 - pt).pow(gamma) * torch.log(pt)).mean()
+
+
 class LatentDisc(nn.Module):
     """MLP discriminator: latent → P(looks Gaussian)."""
     def __init__(self, latent_dim):
@@ -1349,12 +1406,12 @@ else:
 # ---
 # ## **Cell 3.4** — C3.4: Denoising-AE control (required — isolates the denoising gain from the attention gain)
 #
-# C3.5's pass 1 trains on `synth → clean`, not `clean → clean` like C1 — that's a **denoising
+# C3.4b's pass 1 trains on `synth → clean`, not `clean → clean` like C1 — that's a **denoising
 # autoencoder**, and DAEs are not a neutral change: Kascenas, Pugeault & O'Neil (MIDL 2022)
 # show a coarse-noise DAE alone reaches SOTA unsupervised tumour detection in brain MRI,
-# beating VAEs outright. Without this control, C3.5's number conflates "denoising training
-# helps" with "attention helps" — exactly the confound we just fixed for the discriminator.
-# `enc1 + dec` only, same corruption as C3.4b, no attention, no second encoder.
+# beating VAEs outright. Without this control, C3.4b's number would conflate "denoising
+# training helps" with "attention/refinement helps" — the same confound we already fixed
+# once for the discriminator. `enc1 + dec` only, same corruption as C3.4b, no attention, no second encoder.
 
 # %% [CELL 3.4]  C3.4 — Denoising-AE control (no attention)
 
@@ -1418,7 +1475,7 @@ else:
 # ## **Cell 3.4b** — C3.4b: RE-Attn iterative refinement, anatomy-restricted synthetic supervision
 # *(Ours — extends C3.4 — Full Novel Method)*
 #
-# **Three changes from C3.5, each grounded in a specific published result:**
+# **Three design decisions, each grounded in a specific published result:**
 #
 # 1. **Synthetic anomalies restricted to a lung-field prior**, not pasted anywhere in the frame —
 #    AnatPaste (Sato et al., *iScience* 2023) showed anatomy-restricted synthetic lesions on CXR
@@ -1429,7 +1486,8 @@ else:
 #    DRAEM (Zavrtanik et al., ICCV 2021) showed a discriminatively-trained segmentation head
 #    outperforms residual-based scoring "by a large margin" — once `re_attn` has real
 #    supervision, throwing its output away and scoring a noisier downstream residual instead
-#    (what C3.5 does) discards the most direct signal available.
+#    discards the most direct signal available (the residual score is still saved as
+#    `C3.4b_resid`, for comparison).
 # 3. **Iterative shared-weight refinement**, `K` steps, same `re_attn`/`enc2`/`dec` every step,
 #    deep-supervised at each step — the learned counterpart to IterMask² (Liang et al., MICCAI
 #    2024), which performs the same error→mask→reconstruct cycle with a hand-designed
@@ -1437,48 +1495,14 @@ else:
 #    to show whether refinement converges.
 #
 # **Class imbalance fix:** a synthetic blob covers ~5–15% of pixels, so unweighted BCE is
-# dominated by the majority "keep open" class and cheaply satisfied by `a → 1` — the same
-# collapse C3.5 risked, just slower. `focal_bce` (Lin et al., ICCV 2017) down-weights the
-# easy majority class instead.
-
-# %% [CELL 3.4b]  Anatomy-restricted synthesis + focal loss for C3.4b
-
-def _make_lung_prior(size=IMAGE_SIZE, device='cpu'):
-    """Two overlapping ellipses approximating a left/right lung field at the fixed
-    128x128 frame this pipeline always uses. Simplification of true lung segmentation
-    (no segmentation model available in this pipeline) — a fixed anatomical prior,
-    same spirit as AnatPaste's threshold-based lung mask, cheaper to compute."""
-    yy, xx = torch.meshgrid(torch.linspace(0, 1, size), torch.linspace(0, 1, size), indexing='ij')
-    left  = (((xx - 0.32) / 0.22) ** 2 + ((yy - 0.52) / 0.38) ** 2) <= 1.0
-    right = (((xx - 0.68) / 0.22) ** 2 + ((yy - 0.52) / 0.38) ** 2) <= 1.0
-    prior = (left | right).float().to(device)
-    return prior.view(1, 1, size, size)
-
-def make_synthetic_anomaly_anat(xb, lung_prior):
-    """Same blob generator as C3.5's make_synthetic_anomaly, but restricted to
-    lung_prior — the AnatPaste-style anatomy restriction."""
-    n, c, h, w = xb.shape
-    noise = torch.rand(n, 1, 8, 8, device=xb.device)
-    blob  = F.interpolate(noise, size=(h, w), mode='bilinear', align_corners=False)
-    mask  = (blob > blob.mean(dim=[2, 3], keepdim=True)).float()
-    mask  = F.avg_pool2d(mask, 9, stride=1, padding=4)
-    mask  = mask * lung_prior
-    bright  = (xb + 0.35).clamp(0, 1)
-    x_synth = xb * (1 - mask) + bright * mask
-    return x_synth, mask
-
-def focal_bce(pred, target, gamma=2.0, alpha=0.25, eps=1e-8):
-    """Lin et al. 2017 (RetinaNet), adapted to dense per-pixel mask supervision.
-    Down-weights the easy majority class (att≈1 on the ~90%+ non-anomalous pixels)
-    so the rare positive (mask=1, 'close here') class isn't drowned out."""
-    pred = pred.clamp(eps, 1 - eps)
-    pt      = torch.where(target == 1, pred, 1 - pred)
-    alpha_t = torch.where(target == 1, torch.as_tensor(alpha, device=pred.device),
-                                        torch.as_tensor(1 - alpha, device=pred.device))
-    return (-alpha_t * (1 - pt).pow(gamma) * torch.log(pt)).mean()
-
+# dominated by the majority "keep open" class and cheaply satisfied by `a → 1` — a mask
+# collapsed to a constant, the same failure mode diagnosed in the old discriminator-based C4.
+# `focal_bce` (Lin et al., ICCV 2017) down-weights the easy majority class instead.
 
 # %% [CELL 3.4b]  C3.4b — RE-Attn iterative refinement  [NOVEL — FLAGSHIP, extends C3.4]
+# make_synthetic_anomaly / _make_lung_prior / make_synthetic_anomaly_anat / focal_bce
+# are all defined once in CELL 6 (with high_freq) — guaranteed available here regardless
+# of which cells get individually re-run, unlike the earlier cross-cell dependency bug.
 
 print("\n" + "="*60)
 print("CONDITION 3.4b — RE-Attn iterative refinement, anatomy-restricted synthesis  [NOVEL]")
