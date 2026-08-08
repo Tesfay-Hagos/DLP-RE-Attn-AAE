@@ -1423,8 +1423,12 @@ else:
     print(f"Warm-start done ({time.time()-t_ws:.1f}s). Activating RE-Attention + AAE.\n")
 
     def _att_input(xb, x_hat):
-        """2-channel input to re_attn_c4: SSIM error map + high-freq residual."""
-        err = ssim_anomaly_map(xb, x_hat).view(xb.size(0), 1, IMAGE_SIZE, IMAGE_SIZE)
+        """2-channel input to re_attn_c4: SSIM error map (detached) + high-freq residual.
+        The error map is detached so loss_rec2 can't backprop past it into enc1/dec —
+        re_attn's OWN weights still get full gradient (detach only cuts the upstream
+        path), but enc1/dec are never incentivised to shape their error map for
+        attention's convenience instead of just reconstructing well."""
+        err = ssim_anomaly_map(xb, x_hat).detach().view(xb.size(0), 1, IMAGE_SIZE, IMAGE_SIZE)
         hf  = high_freq(xb)
         return torch.cat([err, hf], dim=1)
 
@@ -1447,7 +1451,7 @@ else:
             z1 = enc1_c4(xb); x_hat1 = dec_c4(z1)
             loss_rec1 = 0.7 * mse_fn(x_hat1, xb) + 0.3 * ssim_loss_fn(x_hat1, xb)
 
-            att    = re_attn_c4(_att_input(xb, x_hat1))   # NOT detached — gradient flows back through x_hat1 too
+            att    = re_attn_c4(_att_input(xb, x_hat1))   # error map detached inside _att_input; re_attn's own weights still get gradient
             x_hat2 = dec_c4(enc2_c4(xb * att))
             loss_rec2 = 0.7 * mse_fn(x_hat2, xb) + 0.3 * ssim_loss_fn(x_hat2, xb)
             loss_ae   = torch.mean(1.0 - att)              # expansion loss: default mask open unless error justifies closing
@@ -1503,34 +1507,42 @@ else:
     loss_history['C4'] = c4_epoch_loss
     print(f"C4 training: {time.time()-t0:.1f}s")
     enc1_c4.eval(); enc2_c4.eval(); dec_c4.eval(); re_attn_c4.eval(); ld_c4.eval()
-    scores_c4, sc_disc_c4, attn_maps_c4 = [], [], []
+    scores_c4, scores_c4_pass1, sc_disc_c4, attn_maps_c4 = [], [], [], []
     with torch.no_grad():
         for i in range(0, len(x_test), BATCH_SIZE):
             xb = torch.tensor(x_test[i:i+BATCH_SIZE]).to(device); n = xb.size(0)
             z1 = enc1_c4(xb); x_hat1 = dec_c4(z1)
             att_img = re_attn_c4(_att_input(xb, x_hat1))
             x_hat2  = dec_c4(enc2_c4(xb * att_img))
-            scores_c4.append(anomaly_score(xb, x_hat2).cpu().numpy())   # <-- scored on x_hat2 now: the closed loop
+            scores_c4.append(anomaly_score(xb, x_hat2).cpu().numpy())         # <-- PRIMARY: scored on x_hat2, the closed loop
+            scores_c4_pass1.append(anomaly_score(xb, x_hat1).cpu().numpy())   # sanity check: should land near C1's AUC-ROC
             sc_disc_c4.append((1.0 - ld_c4(enc2_c4(xb * att_img))).squeeze(1).cpu().numpy())
             attn_maps_c4.append(att_img.squeeze(1).cpu().numpy())
-    scores_c4    = np.concatenate(scores_c4)
-    sc_disc_c4   = np.concatenate(sc_disc_c4)
-    sc_fuse_c4   = 0.5 * normalise_scores(scores_c4) + 0.5 * normalise_scores(sc_disc_c4)
-    attn_maps_c4 = np.concatenate(attn_maps_c4)
-    m_c4       = compute_metrics(scores_c4,  binary_test)
-    m_c4_disc  = compute_metrics(sc_disc_c4, binary_test)
-    m_c4_fuse  = compute_metrics(sc_fuse_c4, binary_test)
+    scores_c4       = np.concatenate(scores_c4)
+    scores_c4_pass1 = np.concatenate(scores_c4_pass1)
+    sc_disc_c4      = np.concatenate(sc_disc_c4)
+    sc_fuse_c4      = 0.5 * normalise_scores(scores_c4) + 0.5 * normalise_scores(sc_disc_c4)
+    attn_maps_c4    = np.concatenate(attn_maps_c4)
+    m_c4        = compute_metrics(scores_c4,  binary_test)
+    m_c4_pass1  = compute_metrics(scores_c4_pass1, binary_test)
+    m_c4_disc   = compute_metrics(sc_disc_c4, binary_test)
+    m_c4_fuse   = compute_metrics(sc_fuse_c4, binary_test)
     print(f"\n  SSIM primary  AUC-ROC={m_c4['auc_roc']:.4f}  AUC-PR={m_c4['auc_pr']:.4f}  F1={m_c4['f1']:.4f}")
+    print(f"  Pass-1 sanity AUC-ROC={m_c4_pass1['auc_roc']:.4f}  "
+          f"(should land near C1's {all_results.get('C1', {}).get('auc_roc', float('nan')):.4f} "
+          f"— confirms pass 1 behaves like a plain AE, so any C4-vs-pass1 gap is attributable to the gated pass 2)")
     print(f"  Disc score    AUC-ROC={m_c4_disc['auc_roc']:.4f}")
     print(f"  Fusion        AUC-ROC={m_c4_fuse['auc_roc']:.4f}")
-    all_results['C4']      = {**m_c4,      'label': 'CNN-RE-Attn-AAE (Ours)'}
-    all_results['C4_disc'] = {**m_c4_disc, 'label': 'CNN-RE-Attn-AAE disc'}
-    all_results['C4_fuse'] = {**m_c4_fuse, 'label': 'CNN-RE-Attn-AAE fusion'}
-    save_ckpt('C4', ['C4','C4_disc','C4_fuse'], scores_c4, sc_disc_c4, c4_epoch_loss,
+    all_results['C4']       = {**m_c4,       'label': 'CNN-RE-Attn-AAE (Ours)'}
+    all_results['C4_pass1'] = {**m_c4_pass1, 'label': 'CNN-RE-Attn-AAE pass-1 sanity (~C1)'}
+    all_results['C4_disc']  = {**m_c4_disc,  'label': 'CNN-RE-Attn-AAE disc'}
+    all_results['C4_fuse']  = {**m_c4_fuse,  'label': 'CNN-RE-Attn-AAE fusion'}
+    save_ckpt('C4', ['C4','C4_pass1','C4_disc','C4_fuse'], scores_c4, sc_disc_c4, c4_epoch_loss,
               attn_maps=attn_maps_c4,
               enc1=enc1_c4.state_dict(), enc2=enc2_c4.state_dict(),
               dec=dec_c4.state_dict(), re_attn=re_attn_c4.state_dict(),
               disc=ld_c4.state_dict())
+    np.save(f'{CKPT_DIR}/C4_pass1_scores.npy', scores_c4_pass1)
     with open(f'{CKPT_DIR}/C4_diagnostics.json', 'w') as f:
         json.dump(c4_diagnostics, f, indent=2)
     print(f'  [C4] per-epoch diagnostics (rec1/rec2/ae/disc/gen/att_mean/att_std) saved to '
