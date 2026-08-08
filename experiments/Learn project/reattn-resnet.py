@@ -181,8 +181,9 @@ BETA1         = 0.5
 EPOCHS        = 80  if not SAMPLE_MODE else 2
 WARMUP_EPOCHS = 20  if not SAMPLE_MODE else 1
 LAMBDA_ADV    = 0.3
-LAMBDA_REC2   = 0.5   # C4: weight of the second (attention-gated) reconstruction loss
-LAMBDA_AE     = 0.3   # C4: weight of the attention-expansion regularizer mean(1-att), prevents collapse
+LAMBDA_REC2   = 0.5   # C3.5/C4: weight of the second (attention-gated) reconstruction loss
+LAMBDA_AE     = 0.3   # C4 (rejected): weight of the attention-expansion regularizer mean(1-att)
+LAMBDA_SEG    = 1.0   # C3.5: weight of the BCE mask-supervision loss against synthetic anomalies
 BATCH_SIZE    = 32  if not SAMPLE_MODE else 4
 EPS           = 1e-8
 TEST_NORMAL   = 2000 if not SAMPLE_MODE else 10
@@ -1039,6 +1040,7 @@ print("Scored with SSIM 99th-pct on reconstruction (consistent with C1/C3/C4/C5)
 enc_vae = VAEEncoder(LATENT_DIM,down='stride').to(device)
 dec_vae = CNNDecoder(LATENT_DIM).to(device)
 
+ensure_local('C2')
 if is_done('C2'):
     scores_c2, _, _ = load_ckpt('C2')
     load_weights('C2', enc1=enc_vae, dec=dec_vae)
@@ -1254,6 +1256,7 @@ print("C1→C3: does AAE help?  C3→C4: does RE-Attention add value?\n")
 enc1_c3 = CNNEncoder(LATENT_DIM,down='stride').to(device)
 dec_c3  = CNNDecoder(LATENT_DIM).to(device)
 ld_c3   = LatentDisc(LATENT_DIM).to(device)
+ensure_local('C3')
 if is_done('C3'):
     scores_c3, sc_disc_c3, _ = load_ckpt('C3')
     sc_fuse_c3 = 0.5 * normalise_scores(scores_c3) + 0.5 * normalise_scores(sc_disc_c3)
@@ -1344,208 +1347,282 @@ else:
               enc1=enc1_c3.state_dict(), dec=dec_c3.state_dict(), disc=ld_c3.state_dict())
 # %% [markdown]
 # ---
-# ## **Cell 3.4** — C4: CNN-RE-Attn-AAE *(Ours — Full Novel Method)*
+# ## **Cell 3.4** — C3.4: Denoising-AE control (required — isolates the denoising gain from the attention gain)
 #
-# **Architecture:** `CNNEncoder (enc1) + CNNDecoder + REAttention + CNNEncoder (enc2) + LatentDisc`
-#
-# This is the complete proposed method. The key innovation is the **two-pass RE-Attention** mechanism:
-#
-# 1. **Pass 1 (reconstruction):** `enc1 → dec` reconstructs the image normally.
-# 2. **SSIM error map:** `(1 − SSIM)` computed between the input and reconstruction.
-#    Pixels where the model *failed* to reconstruct score high — these are candidate anomalous regions.
-# 3. **RE-Attention:** A small 3-layer conv network converts the SSIM error map into a
-#    soft spatial attention mask `att_img ∈ [0, 1]`.
-# 4. **Pass 2 (adversarial):** `enc2` encodes the attention-masked image `x × att_img`.
-#    The discriminator pushes `enc2`'s latent toward `N(0, I)`.
-#    Because enc2 only sees attended (potentially anomalous) regions, the disc learns
-#    whether those regions look like normal structure or anomaly.
-#
-# **Three-phase training (per batch):**
-# 1. **enc1 + dec** — reconstruction loss (SSIM error map computed but detached; no gradient to re_attn here).
-# 2. **Discriminator** — updated with `z_real ~ N(0, I)` vs `z2 = enc2(x × att)`.
-# 3. **re_attn + enc2** — adversarial generator loss; re_attn receives gradient here and learns
-#    to highlight regions that the discriminator finds non-Gaussian (i.e., anomalous).
-#
-# **SSIM vs MSE for attention signal:**
-# MSE error is dominated by sharp edges (ribs, heart border) — the wrong regions for pneumonia.
-# SSIM error correctly peaks at smooth consolidations that break the lung's structural texture.
+# C3.5's pass 1 trains on `synth → clean`, not `clean → clean` like C1 — that's a **denoising
+# autoencoder**, and DAEs are not a neutral change: Kascenas, Pugeault & O'Neil (MIDL 2022)
+# show a coarse-noise DAE alone reaches SOTA unsupervised tumour detection in brain MRI,
+# beating VAEs outright. Without this control, C3.5's number conflates "denoising training
+# helps" with "attention helps" — exactly the confound we just fixed for the discriminator.
+# `enc1 + dec` only, same corruption as C3.4b, no attention, no second encoder.
 
-# %% [CELL 3.4]  C4 — CNN-RE-Attn-AAE  [NOVEL]
+# %% [CELL 3.4]  C3.4 — Denoising-AE control (no attention)
 
 print("\n" + "="*60)
-print("CONDITION 4 — CNN-RE-Attn-AAE  [NOVEL]")
+print("CONDITION 3.4 — Denoising-AE control  [no attention]")
 print("="*60)
-print("Full novel method: SSIM-guided RE-Attention + two-encoder AAE.")
-print("C3 vs C4 isolates the RE-Attention contribution on top of AAE.\n")
+print("Isolates the denoising-training gain from the attention gain in C3.4b.\n")
 
-enc1_c4    = CNNEncoder(LATENT_DIM,down='stride').to(device)
-enc2_c4    = CNNEncoder(LATENT_DIM,down='stride').to(device)
-dec_c4     = CNNDecoder(LATENT_DIM).to(device)
-re_attn_c4 = REAttention().to(device)
-ld_c4      = LatentDisc(LATENT_DIM).to(device)
+enc1_c34 = CNNEncoder(LATENT_DIM, down='stride').to(device)
+dec_c34  = CNNDecoder(LATENT_DIM).to(device)
 
-if is_done('C4'):
-    scores_c4, sc_disc_c4, attn_maps_c4 = load_ckpt('C4')
-    sc_fuse_c4 = 0.5 * normalise_scores(scores_c4) + 0.5 * normalise_scores(sc_disc_c4)
-    load_weights('C4', enc1=enc1_c4, enc2=enc2_c4, dec=dec_c4, re_attn=re_attn_c4, disc=ld_c4)
+ensure_local('C3.4')
+if is_done('C3.4'):
+    scores_c34, _, _ = load_ckpt('C3.4')
+    load_weights('C3.4', enc1=enc1_c34, dec=dec_c34)
 else:
-    # opt_rec_c4 now owns enc1+dec+enc2+re_attn together — this is what "closes the loop":
-    # re_attn/enc2 get a reconstruction gradient (loss_rec2), not only an adversarial one.
-    # They ALSO still receive the adversarial gradient via opt_gen_c4 below (dual pressure —
-    # watch att_mean/att_std diagnostics printed per epoch for signs of instability/collapse).
-    opt_rec_c4  = Adam(list(enc1_c4.parameters()) + list(dec_c4.parameters())
-                        + list(enc2_c4.parameters()) + list(re_attn_c4.parameters()),
-                        lr=LR, betas=(BETA1, 0.999))
-    opt_disc_c4 = Adam(ld_c4.parameters(), lr=LR, betas=(BETA1, 0.999))
-    opt_gen_c4  = Adam(list(re_attn_c4.parameters()) + list(enc2_c4.parameters()), lr=LR, betas=(BETA1, 0.999))
-    sched_rec_c4  = torch.optim.lr_scheduler.CosineAnnealingLR(opt_rec_c4,  T_max=EPOCHS, eta_min=1e-6)
-    sched_disc_c4 = torch.optim.lr_scheduler.CosineAnnealingLR(opt_disc_c4, T_max=EPOCHS, eta_min=1e-6)
-    sched_gen_c4  = torch.optim.lr_scheduler.CosineAnnealingLR(opt_gen_c4,  T_max=EPOCHS, eta_min=1e-6)
-    loader_c4     = make_loader(x_train_norm, BATCH_SIZE)
-    c4_epoch_loss = []
-    print(f"Warm-start enc1+dec for {WARMUP_EPOCHS} epochs...")
-    opt_warmup_c4 = Adam(list(enc1_c4.parameters()) + list(dec_c4.parameters()), lr=LR, betas=(BETA1, 0.999))
+    opt_c34   = Adam(list(enc1_c34.parameters()) + list(dec_c34.parameters()), lr=LR, betas=(BETA1, 0.999))
+    sched_c34 = torch.optim.lr_scheduler.CosineAnnealingLR(opt_c34, T_max=EPOCHS, eta_min=1e-6)
+    loader_c34     = make_loader(x_train_norm, BATCH_SIZE)
+    c34_epoch_loss = []
+    t0 = time.time()
+    for epoch in range(EPOCHS):
+        enc1_c34.train(); dec_c34.train()
+        losses = []
+        for (xb,) in loader_c34:
+            xb = xb.to(device); n = xb.size(0)
+            flip = torch.rand(n, device=device) > 0.5
+            xb[flip] = xb[flip].flip(dims=[3])
+            apply = (torch.rand(n, device=device) < 0.5).view(-1, 1, 1, 1).float()
+            x_synth, _ = make_synthetic_anomaly(xb)
+            x_in = xb * (1 - apply) + x_synth * apply       # p=0.5 corruption, matches C3.4b
+            opt_c34.zero_grad()
+            x_hat = dec_c34(enc1_c34(x_in))
+            loss = 0.7 * mse_fn(x_hat, xb) + 0.3 * ssim_loss_fn(x_hat, xb)   # target ALWAYS clean
+            loss.backward(); opt_c34.step()
+            losses.append(loss.item())
+        sched_c34.step()
+        c34_epoch_loss.append(np.mean(losses))
+        if (epoch + 1) % 10 == 0 or epoch == 0:
+            print(f"  Epoch {epoch+1:02d}/{EPOCHS}  loss={c34_epoch_loss[-1]:.5f}  "
+                  f"lr={sched_c34.get_last_lr()[0]:.2e}")
+    loss_history['C3.4'] = c34_epoch_loss
+    print(f"C3.4 training: {time.time()-t0:.1f}s")
+    enc1_c34.eval(); dec_c34.eval()
+    scores_c34 = []
+    with torch.no_grad():
+        for i in range(0, len(x_test), BATCH_SIZE):
+            xb = torch.tensor(x_test[i:i+BATCH_SIZE]).to(device)   # REAL images, no corruption
+            scores_c34.append(anomaly_score(xb, dec_c34(enc1_c34(xb))).cpu().numpy())
+    scores_c34 = np.concatenate(scores_c34)
+    m_c34 = compute_metrics(scores_c34, binary_test)
+    print(f"\n  AUC-ROC={m_c34['auc_roc']:.4f}  AUC-PR={m_c34['auc_pr']:.4f}  F1={m_c34['f1']:.4f}  "
+          f"(compare to C1={all_results.get('C1', {}).get('auc_roc', float('nan')):.4f} to see the denoising-alone effect)")
+    all_results['C3.4'] = {**m_c34, 'label': 'Denoising-AE control (no attention)'}
+    save_ckpt('C3.4', ['C3.4'], scores_c34, None, c34_epoch_loss,
+              enc1=enc1_c34.state_dict(), dec=dec_c34.state_dict())
+
+
+# %% [markdown]
+# ---
+# ## **Cell 3.4b** — C3.4b: RE-Attn iterative refinement, anatomy-restricted synthetic supervision
+# *(Ours — extends C3.4 — Full Novel Method)*
+#
+# **Three changes from C3.5, each grounded in a specific published result:**
+#
+# 1. **Synthetic anomalies restricted to a lung-field prior**, not pasted anywhere in the frame —
+#    AnatPaste (Sato et al., *iScience* 2023) showed anatomy-restricted synthetic lesions on CXR
+#    beat unrestricted placement, the highest-performing UAD model in their comparison, precisely
+#    because an unrestricted generator teaches "detect any sharp/bright region" instead of
+#    "detect a plausible pathology location."
+# 2. **Score from the mask, not the reconstruction residual**: `s = quantile(1 - a_K, 0.99)`.
+#    DRAEM (Zavrtanik et al., ICCV 2021) showed a discriminatively-trained segmentation head
+#    outperforms residual-based scoring "by a large margin" — once `re_attn` has real
+#    supervision, throwing its output away and scoring a noisier downstream residual instead
+#    (what C3.5 does) discards the most direct signal available.
+# 3. **Iterative shared-weight refinement**, `K` steps, same `re_attn`/`enc2`/`dec` every step,
+#    deep-supervised at each step — the learned counterpart to IterMask² (Liang et al., MICCAI
+#    2024), which performs the same error→mask→reconstruct cycle with a hand-designed
+#    thresholding rule instead of a learned operator. `K` is swept at inference (no retraining)
+#    to show whether refinement converges.
+#
+# **Class imbalance fix:** a synthetic blob covers ~5–15% of pixels, so unweighted BCE is
+# dominated by the majority "keep open" class and cheaply satisfied by `a → 1` — the same
+# collapse C3.5 risked, just slower. `focal_bce` (Lin et al., ICCV 2017) down-weights the
+# easy majority class instead.
+
+# %% [CELL 3.4b]  Anatomy-restricted synthesis + focal loss for C3.4b
+
+def _make_lung_prior(size=IMAGE_SIZE, device='cpu'):
+    """Two overlapping ellipses approximating a left/right lung field at the fixed
+    128x128 frame this pipeline always uses. Simplification of true lung segmentation
+    (no segmentation model available in this pipeline) — a fixed anatomical prior,
+    same spirit as AnatPaste's threshold-based lung mask, cheaper to compute."""
+    yy, xx = torch.meshgrid(torch.linspace(0, 1, size), torch.linspace(0, 1, size), indexing='ij')
+    left  = (((xx - 0.32) / 0.22) ** 2 + ((yy - 0.52) / 0.38) ** 2) <= 1.0
+    right = (((xx - 0.68) / 0.22) ** 2 + ((yy - 0.52) / 0.38) ** 2) <= 1.0
+    prior = (left | right).float().to(device)
+    return prior.view(1, 1, size, size)
+
+def make_synthetic_anomaly_anat(xb, lung_prior):
+    """Same blob generator as C3.5's make_synthetic_anomaly, but restricted to
+    lung_prior — the AnatPaste-style anatomy restriction."""
+    n, c, h, w = xb.shape
+    noise = torch.rand(n, 1, 8, 8, device=xb.device)
+    blob  = F.interpolate(noise, size=(h, w), mode='bilinear', align_corners=False)
+    mask  = (blob > blob.mean(dim=[2, 3], keepdim=True)).float()
+    mask  = F.avg_pool2d(mask, 9, stride=1, padding=4)
+    mask  = mask * lung_prior
+    bright  = (xb + 0.35).clamp(0, 1)
+    x_synth = xb * (1 - mask) + bright * mask
+    return x_synth, mask
+
+def focal_bce(pred, target, gamma=2.0, alpha=0.25, eps=1e-8):
+    """Lin et al. 2017 (RetinaNet), adapted to dense per-pixel mask supervision.
+    Down-weights the easy majority class (att≈1 on the ~90%+ non-anomalous pixels)
+    so the rare positive (mask=1, 'close here') class isn't drowned out."""
+    pred = pred.clamp(eps, 1 - eps)
+    pt      = torch.where(target == 1, pred, 1 - pred)
+    alpha_t = torch.where(target == 1, torch.as_tensor(alpha, device=pred.device),
+                                        torch.as_tensor(1 - alpha, device=pred.device))
+    return (-alpha_t * (1 - pt).pow(gamma) * torch.log(pt)).mean()
+
+
+# %% [CELL 3.4b]  C3.4b — RE-Attn iterative refinement  [NOVEL — FLAGSHIP, extends C3.4]
+
+print("\n" + "="*60)
+print("CONDITION 3.4b — RE-Attn iterative refinement, anatomy-restricted synthesis  [NOVEL]")
+print("="*60)
+print("Extends C3.4: adds K-step shared-weight mask refinement, scored on the mask itself.\n")
+
+K_TRAIN = 3
+K_EVAL_MAX = 4
+
+enc1_c34b    = CNNEncoder(LATENT_DIM, down='stride').to(device)
+enc2_c34b    = CNNEncoder(LATENT_DIM, down='stride').to(device)
+dec_c34b     = CNNDecoder(LATENT_DIM).to(device)
+re_attn_c34b = REAttention().to(device)
+LUNG_PRIOR   = _make_lung_prior(IMAGE_SIZE, device)
+
+ensure_local('C3.4b')
+if is_done('C3.4b'):
+    scores_c34b, _, attn_maps_c34b = load_ckpt('C3.4b')
+    load_weights('C3.4b', enc1=enc1_c34b, enc2=enc2_c34b, dec=dec_c34b, re_attn=re_attn_c34b)
+else:
+    opt_c34b   = Adam(list(enc1_c34b.parameters()) + list(enc2_c34b.parameters())
+                       + list(dec_c34b.parameters()) + list(re_attn_c34b.parameters()),
+                       lr=LR, betas=(BETA1, 0.999))
+    sched_c34b = torch.optim.lr_scheduler.CosineAnnealingLR(opt_c34b, T_max=EPOCHS, eta_min=1e-6)
+    loader_c34b     = make_loader(x_train_norm, BATCH_SIZE)
+    c34b_epoch_loss = []
+
+    print(f"Warm-start enc1+dec for {WARMUP_EPOCHS} epochs (clean reconstruction)...")
+    opt_warmup_c34b = Adam(list(enc1_c34b.parameters()) + list(dec_c34b.parameters()), lr=LR, betas=(BETA1, 0.999))
     t_ws = time.time()
     for epoch in range(WARMUP_EPOCHS):
-        enc1_c4.train(); dec_c4.train()
+        enc1_c34b.train(); dec_c34b.train()
         ws_l = []
-        for (xb,) in loader_c4:
+        for (xb,) in loader_c34b:
             xb = xb.to(device)
             flip = torch.rand(xb.size(0), device=device) > 0.5
             xb[flip] = xb[flip].flip(dims=[3])
-            opt_warmup_c4.zero_grad()
-            xhat = dec_c4(enc1_c4(xb))
+            opt_warmup_c34b.zero_grad()
+            xhat = dec_c34b(enc1_c34b(xb))
             loss = 0.7 * mse_fn(xhat, xb) + 0.3 * ssim_loss_fn(xhat, xb)
-            loss.backward(); opt_warmup_c4.step()
+            loss.backward(); opt_warmup_c34b.step()
             ws_l.append(loss.item())
         if (epoch + 1) % 5 == 0 or epoch == 0:
             print(f"  Warmup {epoch+1:02d}/{WARMUP_EPOCHS}  loss={np.mean(ws_l):.5f}")
-    print(f"Warm-start done ({time.time()-t_ws:.1f}s). Activating RE-Attention + AAE.\n")
+    print(f"Warm-start done ({time.time()-t_ws:.1f}s). Activating iterative refinement.\n")
 
-    def _att_input(xb, x_hat):
-        """2-channel input to re_attn_c4: SSIM error map (detached) + high-freq residual.
-        The error map is detached so loss_rec2 can't backprop past it into enc1/dec —
-        re_attn's OWN weights still get full gradient (detach only cuts the upstream
-        path), but enc1/dec are never incentivised to shape their error map for
-        attention's convenience instead of just reconstructing well."""
-        err = ssim_anomaly_map(xb, x_hat).detach().view(xb.size(0), 1, IMAGE_SIZE, IMAGE_SIZE)
-        hf  = high_freq(xb)
-        return torch.cat([err, hf], dim=1)
-
-    c4_diagnostics = {'rec1': [], 'rec2': [], 'ae': [], 'disc': [], 'gen': [],
-                       'att_mean': [], 'att_std': []}
-    COLLAPSE_STD_THRESHOLD = 0.02   # att.std() below this -> mask likely collapsed to a constant
+    c34b_diagnostics = {'rec0': [], 'rec_iter': [], 'seg': [], 'att_mean': [], 'att_std': []}
+    COLLAPSE_STD_THRESHOLD = 0.02
 
     t0 = time.time()
     for epoch in range(EPOCHS):
-        enc1_c4.train(); enc2_c4.train(); dec_c4.train()
-        re_attn_c4.train(); ld_c4.train()
-        rec1_l, rec2_l, ae_l, d_l, g_l, att_mean_l, att_std_l = [], [], [], [], [], [], []
-        for (xb,) in loader_c4:
+        enc1_c34b.train(); enc2_c34b.train(); dec_c34b.train(); re_attn_c34b.train()
+        rec0_l, rec_iter_l, seg_l, att_mean_l, att_std_l = [], [], [], [], []
+        for (xb,) in loader_c34b:
             xb = xb.to(device); n = xb.size(0)
             flip = torch.rand(n, device=device) > 0.5
             xb[flip] = xb[flip].flip(dims=[3])
 
-            # ── Phase 1: closed-loop reconstruction (enc1+dec+enc2+re_attn together) ──
-            opt_rec_c4.zero_grad()
-            z1 = enc1_c4(xb); x_hat1 = dec_c4(z1)
-            loss_rec1 = 0.7 * mse_fn(x_hat1, xb) + 0.3 * ssim_loss_fn(x_hat1, xb)
+            apply = (torch.rand(n, device=device) < 0.5).view(-1, 1, 1, 1).float()
+            x_synth, m_full = make_synthetic_anomaly_anat(xb, LUNG_PRIOR)
+            x_in = xb * (1 - apply) + x_synth * apply     # p=0.5: half the batch stays clean
+            m    = m_full * apply                          # mask=0 everywhere on the clean half
 
-            att    = re_attn_c4(_att_input(xb, x_hat1))   # error map detached inside _att_input; re_attn's own weights still get gradient
-            x_hat2 = dec_c4(enc2_c4(xb * att))
-            loss_rec2 = 0.7 * mse_fn(x_hat2, xb) + 0.3 * ssim_loss_fn(x_hat2, xb)
-            loss_ae   = torch.mean(1.0 - att)              # expansion loss: default mask open unless error justifies closing
+            opt_c34b.zero_grad()
+            z1 = enc1_c34b(x_in); x_hat0 = dec_c34b(z1)
+            loss_rec0 = 0.7 * mse_fn(x_hat0, xb) + 0.3 * ssim_loss_fn(x_hat0, xb)
 
-            (loss_rec1 + LAMBDA_REC2 * loss_rec2 + LAMBDA_AE * loss_ae).backward()
+            e = ssim_anomaly_map(x_in, x_hat0).detach().view(n, 1, IMAGE_SIZE, IMAGE_SIZE)
+            seg_terms, rec_terms = [], []
+            att = None
+            for t in range(K_TRAIN):
+                hf  = high_freq(x_in)
+                att = re_attn_c34b(torch.cat([e, hf], dim=1))
+                seg_terms.append(focal_bce(att, 1.0 - m))
+                x_hat_t = dec_c34b(enc2_c34b(x_in * att))
+                rec_terms.append(0.7 * mse_fn(x_hat_t, xb) + 0.3 * ssim_loss_fn(x_hat_t, xb))
+                e = ssim_anomaly_map(x_in, x_hat_t).detach().view(n, 1, IMAGE_SIZE, IMAGE_SIZE)
+            loss_seg      = torch.stack(seg_terms).mean()       # deep supervision: every step
+            loss_rec_iter = torch.stack(rec_terms).mean()
+
+            (loss_rec0 + LAMBDA_REC2 * loss_rec_iter + LAMBDA_SEG * loss_seg).backward()
             torch.nn.utils.clip_grad_norm_(
-                list(enc1_c4.parameters()) + list(dec_c4.parameters())
-                + list(enc2_c4.parameters()) + list(re_attn_c4.parameters()), max_norm=1.0)
-            opt_rec_c4.step()
+                list(enc1_c34b.parameters()) + list(enc2_c34b.parameters())
+                + list(dec_c34b.parameters()) + list(re_attn_c34b.parameters()), max_norm=1.0)
+            opt_c34b.step()
 
-            # ── Phase 2: discriminator (ld_c4 only) — fresh no_grad forward, as before ──
-            opt_disc_c4.zero_grad()
-            with torch.no_grad():
-                z1_s = enc1_c4(xb); xh1_s = dec_c4(z1_s)
-                att_s = re_attn_c4(_att_input(xb, xh1_s))
-                z2_s  = enc2_c4(xb * att_s)
-            z_real = torch.randn(n, LATENT_DIM, device=device)
-            loss_d = (-torch.mean(torch.log(ld_c4(z_real) + EPS))
-                      - torch.mean(torch.log(1.0 - ld_c4(z2_s) + EPS)))
-            loss_d.backward()
-            torch.nn.utils.clip_grad_norm_(ld_c4.parameters(), max_norm=1.0)
-            opt_disc_c4.step()
-
-            # ── Phase 3: generator (re_attn+enc2, adversarial pressure) — unchanged in spirit ──
-            opt_gen_c4.zero_grad()
-            with torch.no_grad():
-                z1_g = enc1_c4(xb); xh1_g = dec_c4(z1_g)
-                att_input_g = _att_input(xb, xh1_g)
-            att_g  = re_attn_c4(att_input_g)
-            loss_g = LAMBDA_ADV * (-torch.mean(torch.log(ld_c4(enc2_c4(xb * att_g)) + EPS)))
-            loss_g.backward()
-            torch.nn.utils.clip_grad_norm_(
-                list(re_attn_c4.parameters()) + list(enc2_c4.parameters()), max_norm=1.0)
-            opt_gen_c4.step()
-
-            rec1_l.append(loss_rec1.item()); rec2_l.append(loss_rec2.item()); ae_l.append(loss_ae.item())
-            d_l.append(loss_d.item()); g_l.append(loss_g.item())
+            rec0_l.append(loss_rec0.item()); rec_iter_l.append(loss_rec_iter.item()); seg_l.append(loss_seg.item())
             att_mean_l.append(att.mean().item()); att_std_l.append(att.std().item())
-        sched_rec_c4.step(); sched_disc_c4.step(); sched_gen_c4.step()
-        c4_epoch_loss.append(np.mean(rec1_l))
-        for key, vals in [('rec1', rec1_l), ('rec2', rec2_l), ('ae', ae_l),
-                           ('disc', d_l), ('gen', g_l), ('att_mean', att_mean_l), ('att_std', att_std_l)]:
-            c4_diagnostics[key].append(float(np.mean(vals)))
+        sched_c34b.step()
+        c34b_epoch_loss.append(np.mean(rec0_l))
+        for key, vals in [('rec0', rec0_l), ('rec_iter', rec_iter_l), ('seg', seg_l),
+                           ('att_mean', att_mean_l), ('att_std', att_std_l)]:
+            c34b_diagnostics[key].append(float(np.mean(vals)))
         if (epoch + 1) % 10 == 0 or epoch == 0:
-            print(f"  Epoch {epoch+1:02d}/{EPOCHS}  Rec1={c4_diagnostics['rec1'][-1]:.5f}  "
-                  f"Rec2={c4_diagnostics['rec2'][-1]:.5f}  AE={c4_diagnostics['ae'][-1]:.4f}  "
-                  f"Disc={c4_diagnostics['disc'][-1]:.4f}  Gen={c4_diagnostics['gen'][-1]:.4f}  "
-                  f"att_mean={c4_diagnostics['att_mean'][-1]:.3f}  att_std={c4_diagnostics['att_std'][-1]:.3f}  "
-                  f"lr={sched_rec_c4.get_last_lr()[0]:.2e}")
-        if c4_diagnostics['att_std'][-1] < COLLAPSE_STD_THRESHOLD:
-            print(f"  ⚠ WARNING epoch {epoch+1}: att.std()={c4_diagnostics['att_std'][-1]:.4f} "
-                  f"< {COLLAPSE_STD_THRESHOLD} — attention may be collapsing toward a constant mask.")
-    loss_history['C4'] = c4_epoch_loss
-    print(f"C4 training: {time.time()-t0:.1f}s")
-    enc1_c4.eval(); enc2_c4.eval(); dec_c4.eval(); re_attn_c4.eval(); ld_c4.eval()
-    scores_c4, scores_c4_pass1, sc_disc_c4, attn_maps_c4 = [], [], [], []
+            print(f"  Epoch {epoch+1:02d}/{EPOCHS}  Rec0={c34b_diagnostics['rec0'][-1]:.5f}  "
+                  f"RecIter={c34b_diagnostics['rec_iter'][-1]:.5f}  Seg={c34b_diagnostics['seg'][-1]:.4f}  "
+                  f"att_mean={c34b_diagnostics['att_mean'][-1]:.3f}  att_std={c34b_diagnostics['att_std'][-1]:.3f}  "
+                  f"lr={sched_c34b.get_last_lr()[0]:.2e}")
+        if c34b_diagnostics['att_std'][-1] < COLLAPSE_STD_THRESHOLD:
+            print(f"  ⚠ WARNING epoch {epoch+1}: att.std()={c34b_diagnostics['att_std'][-1]:.4f} "
+                  f"< {COLLAPSE_STD_THRESHOLD} — mask may be collapsing toward a constant.")
+    loss_history['C3.4b'] = c34b_epoch_loss
+    print(f"C3.4b training: {time.time()-t0:.1f}s")
+
+    enc1_c34b.eval(); enc2_c34b.eval(); dec_c34b.eval(); re_attn_c34b.eval()
+    scores_c34b, scores_c34b_resid, attn_maps_c34b = [], [], []
+    k_curve_scores = {k: [] for k in range(1, K_EVAL_MAX + 1)}   # per-K s_mask, collected across all batches
     with torch.no_grad():
         for i in range(0, len(x_test), BATCH_SIZE):
-            xb = torch.tensor(x_test[i:i+BATCH_SIZE]).to(device); n = xb.size(0)
-            z1 = enc1_c4(xb); x_hat1 = dec_c4(z1)
-            att_img = re_attn_c4(_att_input(xb, x_hat1))
-            x_hat2  = dec_c4(enc2_c4(xb * att_img))
-            scores_c4.append(anomaly_score(xb, x_hat2).cpu().numpy())         # <-- PRIMARY: scored on x_hat2, the closed loop
-            scores_c4_pass1.append(anomaly_score(xb, x_hat1).cpu().numpy())   # sanity check: should land near C1's AUC-ROC
-            sc_disc_c4.append((1.0 - ld_c4(enc2_c4(xb * att_img))).squeeze(1).cpu().numpy())
-            attn_maps_c4.append(att_img.squeeze(1).cpu().numpy())
-    scores_c4       = np.concatenate(scores_c4)
-    scores_c4_pass1 = np.concatenate(scores_c4_pass1)
-    sc_disc_c4      = np.concatenate(sc_disc_c4)
-    sc_fuse_c4      = 0.5 * normalise_scores(scores_c4) + 0.5 * normalise_scores(sc_disc_c4)
-    attn_maps_c4    = np.concatenate(attn_maps_c4)
-    m_c4        = compute_metrics(scores_c4,  binary_test)
-    m_c4_pass1  = compute_metrics(scores_c4_pass1, binary_test)
-    m_c4_disc   = compute_metrics(sc_disc_c4, binary_test)
-    m_c4_fuse   = compute_metrics(sc_fuse_c4, binary_test)
-    print(f"\n  SSIM primary  AUC-ROC={m_c4['auc_roc']:.4f}  AUC-PR={m_c4['auc_pr']:.4f}  F1={m_c4['f1']:.4f}")
-    print(f"  Pass-1 sanity AUC-ROC={m_c4_pass1['auc_roc']:.4f}  "
-          f"(should land near C1's {all_results.get('C1', {}).get('auc_roc', float('nan')):.4f} "
-          f"— confirms pass 1 behaves like a plain AE, so any C4-vs-pass1 gap is attributable to the gated pass 2)")
-    print(f"  Disc score    AUC-ROC={m_c4_disc['auc_roc']:.4f}")
-    print(f"  Fusion        AUC-ROC={m_c4_fuse['auc_roc']:.4f}")
-    all_results['C4']       = {**m_c4,       'label': 'CNN-RE-Attn-AAE (Ours)'}
-    all_results['C4_pass1'] = {**m_c4_pass1, 'label': 'CNN-RE-Attn-AAE pass-1 sanity (~C1)'}
-    all_results['C4_disc']  = {**m_c4_disc,  'label': 'CNN-RE-Attn-AAE disc'}
-    all_results['C4_fuse']  = {**m_c4_fuse,  'label': 'CNN-RE-Attn-AAE fusion'}
-    save_ckpt('C4', ['C4','C4_pass1','C4_disc','C4_fuse'], scores_c4, sc_disc_c4, c4_epoch_loss,
-              attn_maps=attn_maps_c4,
-              enc1=enc1_c4.state_dict(), enc2=enc2_c4.state_dict(),
-              dec=dec_c4.state_dict(), re_attn=re_attn_c4.state_dict(),
-              disc=ld_c4.state_dict())
-    np.save(f'{CKPT_DIR}/C4_pass1_scores.npy', scores_c4_pass1)
-    with open(f'{CKPT_DIR}/C4_diagnostics.json', 'w') as f:
-        json.dump(c4_diagnostics, f, indent=2)
-    print(f'  [C4] per-epoch diagnostics (rec1/rec2/ae/disc/gen/att_mean/att_std) saved to '
-          f'{CKPT_DIR}/C4_diagnostics.json')
-
-
+            xb = torch.tensor(x_test[i:i+BATCH_SIZE]).to(device); n = xb.size(0)   # REAL images, no corruption
+            z1 = enc1_c34b(xb); x_hat = dec_c34b(z1)
+            e = ssim_anomaly_map(xb, x_hat).view(n, 1, IMAGE_SIZE, IMAGE_SIZE)
+            att = None
+            for t in range(1, K_EVAL_MAX + 1):
+                hf  = high_freq(xb)
+                att = re_attn_c34b(torch.cat([e, hf], dim=1))
+                x_hat = dec_c34b(enc2_c34b(xb * att))
+                e = ssim_anomaly_map(xb, x_hat).view(n, 1, IMAGE_SIZE, IMAGE_SIZE)
+                s_mask_t = torch.quantile((1.0 - att).view(n, -1), 0.99, dim=1)
+                k_curve_scores[t].append(s_mask_t.cpu().numpy())
+                if t == K_TRAIN:
+                    scores_c34b.append(s_mask_t.cpu().numpy())
+                    scores_c34b_resid.append(anomaly_score(xb, x_hat).cpu().numpy())
+                    attn_maps_c34b.append(att.squeeze(1).cpu().numpy())
+    scores_c34b       = np.concatenate(scores_c34b)
+    scores_c34b_resid = np.concatenate(scores_c34b_resid)
+    attn_maps_c34b    = np.concatenate(attn_maps_c34b)
+    m_c34b       = compute_metrics(scores_c34b, binary_test)
+    m_c34b_resid = compute_metrics(scores_c34b_resid, binary_test)
+    print(f"\n  s_mask (K={K_TRAIN}, PRIMARY)  AUC-ROC={m_c34b['auc_roc']:.4f}  AUC-PR={m_c34b['auc_pr']:.4f}  F1={m_c34b['f1']:.4f}")
+    print("  Convergence curve (s_mask AUC-ROC vs. K, no retraining needed):")
+    k_curve_aucs = {}
+    for k in range(1, K_EVAL_MAX + 1):
+        auc_k = compute_metrics(np.concatenate(k_curve_scores[k]), binary_test)['auc_roc']
+        k_curve_aucs[k] = auc_k
+        print(f"    K={k}:  AUC-ROC={auc_k:.4f}" + ("  <- trained K" if k == K_TRAIN else ""))
+    print(f"  s_resid (K={K_TRAIN})           AUC-ROC={m_c34b_resid['auc_roc']:.4f}")
+    all_results['C3.4b']       = {**m_c34b,       'label': f'RE-Attn iterative refinement K={K_TRAIN} (Ours)'}
+    all_results['C3.4b_resid'] = {**m_c34b_resid, 'label': f'RE-Attn iterative refinement residual score K={K_TRAIN}'}
+    save_ckpt('C3.4b', ['C3.4b','C3.4b_resid'], scores_c34b, scores_c34b_resid, c34b_epoch_loss,
+              attn_maps=attn_maps_c34b,
+              enc1=enc1_c34b.state_dict(), enc2=enc2_c34b.state_dict(),
+              dec=dec_c34b.state_dict(), re_attn=re_attn_c34b.state_dict())
+    with open(f'{CKPT_DIR}/C3.4b_diagnostics.json', 'w') as f:
+        json.dump(c34b_diagnostics, f, indent=2)
+    with open(f'{CKPT_DIR}/C3.4b_k_curve.json', 'w') as f:
+        json.dump({str(k): v for k, v in k_curve_aucs.items()}, f, indent=2)
