@@ -229,6 +229,13 @@ def restore_from_wandb(cond, run_version, entity=None):
     group = f'ablation-{run_version}'   # matches _art_name in save_ckpt exactly — no sanitizing here
     art_name = f'{entity}/{WANDB_PROJECT}/{group}-{cond.lower()}-ckpt:latest'
     art = api.artifact(art_name)
+    # Remove any pre-existing files for this condition FIRST. art.download() overwrites only
+    # the files the artifact contains, so downloading on top of a different run's leftovers
+    # can silently produce a checkpoint whose .npy arrays and .pth weights came from
+    # DIFFERENT models — which then yields plausible-looking but wrong analysis numbers.
+    import glob as _glob
+    for _stale in _glob.glob(f'{CKPT_DIR}/{cond}_*'):
+        os.remove(_stale)
     art.download(root=CKPT_DIR)
     print(f'  [{cond}] restored from wandb ({run_version}) -> {CKPT_DIR}')
 
@@ -330,6 +337,21 @@ def load_ckpt(cond):
     attn_p     = f'{CKPT_DIR}/{cond}_attn.npy'
     disc_sc    = np.load(disc_p)    if os.path.exists(disc_p) else None
     attn_maps  = np.load(attn_p)   if os.path.exists(attn_p) else None
+    # Integrity check: save_ckpt writes every file for a condition in one call, so their
+    # mtimes should be seconds apart. A large spread means the .npy arrays and .pth weights
+    # came from different runs — exactly the failure that makes saved metrics disagree with
+    # fresh inference from the same checkpoint.
+    import glob as _glob
+    _files = _glob.glob(f'{CKPT_DIR}/{cond}_*')
+    if len(_files) > 1:
+        _mt = {f: os.path.getmtime(f) for f in _files}
+        _spread = max(_mt.values()) - min(_mt.values())
+        if _spread > 300:   # >5 min apart == not one save
+            print(f'  [{cond}] WARNING: checkpoint files span {_spread/60:.1f} min — arrays and '
+                  f'weights may be from DIFFERENT runs. Verify with fresh inference before '
+                  f'trusting saved metrics.')
+            for f in sorted(_mt, key=_mt.get):
+                print(f'      {time.strftime("%H:%M:%S", time.localtime(_mt[f]))}  {os.path.basename(f)}')
     print(f'  [{cond}] loaded from checkpoint (version {RUN_VERSION}).')
     return scores, disc_sc, attn_maps
 
@@ -339,8 +361,21 @@ def load_weights(cond, **models):
         p = f'{CKPT_DIR}/{cond}_{name}.pth'
         if os.path.exists(p):
             model.load_state_dict(torch.load(p, map_location=device))
+            # Put the module in eval mode immediately. load_weights is only ever called on the
+            # reload path, where the very next thing is inference — but nn.Module defaults to
+            # TRAIN mode, so BatchNorm would use batch statistics AND mutate its running stats
+            # on every forward. Measured effect: ~0.003 output difference per forward, which is
+            # what made reloaded-checkpoint metrics disagree with fresh inference from the same
+            # weights. Training cells call .train() explicitly in their loops, so this is safe.
+            model.eval()
         else:
-            print(f'  [{cond}] weight file missing: {p}')
+            # Previously this only printed — so a missing file left that sub-module at RANDOM
+            # INIT while everything downstream carried on and produced meaningless-but-plausible
+            # metrics. Fail loudly instead.
+            raise FileNotFoundError(
+                f"[{cond}] weight file missing: {p}\n"
+                f"  Refusing to continue with '{name}' left at random initialisation. "
+                f"Delete the condition's checkpoint and retrain, or restore a complete artifact.")
 
 
 
@@ -428,6 +463,11 @@ def load_images(patient_ids, train_dir, size, tag):
     return arr
 
 if SAMPLE_MODE:
+    # Seed here so the smoke-test data is IDENTICAL across runs. Without this the fake test
+    # set is regenerated differently every run, so a checkpoint saved in one run and reloaded
+    # in the next is evaluated on different images — which looks exactly like a corrupted
+    # checkpoint and makes local reload verification meaningless.
+    np.random.seed(SPLIT_SEED)
     x_train_norm = np.random.rand(30, 1, IMAGE_SIZE, IMAGE_SIZE).astype(np.float32)
     x_test_norm  = np.random.rand(TEST_NORMAL,  1, IMAGE_SIZE, IMAGE_SIZE).astype(np.float32)
     x_test_opa   = np.random.rand(TEST_OPACITY, 1, IMAGE_SIZE, IMAGE_SIZE).astype(np.float32)
@@ -714,6 +754,23 @@ def focal_bce(pred, target, gamma=2.0, alpha=0.25, eps=1e-8):
     return (-alpha_t * (1 - pt).pow(gamma) * torch.log(pt)).mean()
 
 
+def focal_bce_logits(logits, target, gamma=2.0, alpha=0.25):
+    """Numerically-stable focal loss on PRE-sigmoid logits (torchvision's formulation).
+
+    Why this exists: the post-sigmoid `focal_bce` above clamps to [1e-8, 1-1e-8], and
+    `clamp` has ZERO gradient outside its range. Once the segmentation head becomes
+    confident (|logit| > ~20) those pixels stop producing any gradient at all — measured:
+    max-grad drops to exactly 0.0 at logit ±20, while this version keeps ~6e-5. That is
+    what stalled C3.5U's Seg loss (0.5125 -> 0.5145, rising) around epoch 30-40.
+    binary_cross_entropy_with_logits is log-sum-exp stable, so no clamp is needed."""
+    p  = torch.sigmoid(logits)
+    ce = F.binary_cross_entropy_with_logits(logits, target, reduction='none')
+    pt = torch.where(target == 1, p, 1 - p)
+    at = torch.where(target == 1, torch.as_tensor(alpha, device=logits.device),
+                                   torch.as_tensor(1 - alpha, device=logits.device))
+    return (at * (1 - pt).pow(gamma) * ce).mean()
+
+
 def dice_loss(pred, target, eps=1.0):
     """Soft Dice. Focal BCE rewards getting most pixels right; Dice specifically
     rewards OVERLAP with the true region, which is what forces tight boundaries
@@ -749,8 +806,10 @@ class UNetAD(nn.Module):
       reconstructive: UNetAD(1, 1)  x_in -> x_hat
       discriminative: UNetAD(2, 1)  concat(x_in, x_hat) -> anomaly segmentation
     """
-    def __init__(self, in_ch=1, out_ch=1, base=32):
+    def __init__(self, in_ch=1, out_ch=1, base=32, out_act='sigmoid'):
         super().__init__()
+        self.out_act = out_act   # 'sigmoid' for the reconstruction net; None (logits) for the
+                                  # segmentation head, so focal_bce_logits stays numerically stable
         self.e1, self.e2, self.e3 = _unet_block(in_ch, base), _unet_block(base, base*2), _unet_block(base*2, base*4)
         self.b  = _unet_block(base*4, base*8)
         self.u3 = nn.ConvTranspose2d(base*8, base*4, 2, stride=2); self.d3 = _unet_block(base*8, base*4)
@@ -767,7 +826,8 @@ class UNetAD(nn.Module):
         d3 = self.d3(torch.cat([self.u3(b),  e3], 1))
         d2 = self.d2(torch.cat([self.u2(d3), e2], 1))
         d1 = self.d1(torch.cat([self.u1(d2), e1], 1))
-        return torch.sigmoid(self.out(d1))
+        out = self.out(d1)
+        return torch.sigmoid(out) if self.out_act == 'sigmoid' else out
 
 LUNG_PRIOR = _make_lung_prior(IMAGE_SIZE, device)   # shared by C3.4 and C3.4b — both must use the
                                                      # SAME (restricted) generator to be a valid control pair
@@ -2011,7 +2071,7 @@ print("="*60)
 print("No bottleneck (Kascenas MIDL'22) + U-Net segmentation head over concat(x, x_hat) (DRAEM ICCV'21).\n")
 
 recon_c35u = UNetAD(1, 1, base=32).to(device)
-disc_c35u  = UNetAD(2, 1, base=32).to(device)
+disc_c35u  = UNetAD(2, 1, base=32, out_act=None).to(device)   # logits
 print(f"  recon params: {sum(p.numel() for p in recon_c35u.parameters()):,}  "
       f"seg params: {sum(p.numel() for p in disc_c35u.parameters()):,}")
 
@@ -2044,9 +2104,19 @@ else:
             opt_c35u.zero_grad()
             x_hat = recon_c35u(x_in)                                   # restore clean from corrupted
             loss_rec = 0.7 * mse_fn(x_hat, xb) + 0.3 * ssim_loss_fn(x_hat, xb)
-            seg = disc_c35u(torch.cat([x_in, x_hat], dim=1))           # DRAEM: segment from the PAIR
-            loss_seg = focal_bce(seg, m) + dice_loss(seg, m)           # focal handles imbalance, dice forces overlap
-            (loss_rec + LAMBDA_SEG * loss_seg).backward()
+            seg_logits = disc_c35u(torch.cat([x_in, x_hat], dim=1))    # DRAEM: segment from the PAIR
+            seg = torch.sigmoid(seg_logits)
+            loss_seg = focal_bce_logits(seg_logits, m) + dice_loss(seg, m)
+            total = loss_rec + LAMBDA_SEG * loss_seg
+            if not torch.isfinite(total):
+                raise FloatingPointError(
+                    f"C3.5U non-finite loss at epoch {epoch+1}: "
+                    f"rec={loss_rec.item()} seg={loss_seg.item()} "
+                    f"focal={focal_bce_logits(seg_logits, m).item()} dice={dice_loss(seg, m).item()} "
+                    f"| x_hat finite={bool(torch.isfinite(x_hat).all())} "
+                    f"logits finite={bool(torch.isfinite(seg_logits).all())} "
+                    f"logit_absmax={float(seg_logits.abs().max())}")
+            total.backward()
             torch.nn.utils.clip_grad_norm_(
                 list(recon_c35u.parameters()) + list(disc_c35u.parameters()), max_norm=1.0)
             opt_c35u.step()
@@ -2076,7 +2146,7 @@ else:
         for i in range(0, len(x_test), BATCH_SIZE):
             xb = torch.tensor(x_test[i:i+BATCH_SIZE]).to(device); n = xb.size(0)   # REAL images, uncorrupted
             x_hat = recon_c35u(xb)
-            seg   = disc_c35u(torch.cat([xb, x_hat], dim=1))
+            seg   = torch.sigmoid(disc_c35u(torch.cat([xb, x_hat], dim=1)))
             scores_c35u.append(torch.quantile(seg.view(n, -1), 0.99, dim=1).cpu().numpy())
             segmaps_c35u.append(seg.squeeze(1).cpu().numpy())
     scores_c35u  = np.concatenate(scores_c35u)
@@ -2140,3 +2210,36 @@ for k in range(1, K_EVAL_MAX + 1):
 with open(f'{CKPT_DIR}/C3.4b_k_curve_full.json', 'w') as f:
     json.dump({str(k): v for k, v in k_curve_full.items()}, f, indent=2)
 print(f"Saved {CKPT_DIR}/C3.4b_k_curve_full.json")
+
+
+# %% [CELL 3.4b-verify]  Saved arrays vs fresh inference — which one reflects the loaded weights?
+# The k-curve cell recomputes from weights; the check cells read arrays saved in the
+# checkpoint. If those disagree, the .npy arrays and the .pth weights came from different
+# models and one set of conclusions is built on stale data. Run AFTER CELL 3.4b-kcurve.
+for _n in ['scores_c34b', 'attn_maps_c34b', '_scores_by_k', '_maps_by_k', 'K_TRAIN']:
+    if _n not in globals():
+        raise NameError(f"'{_n}' missing — run CELL 3.4b then CELL 3.4b-kcurve first.")
+
+_fresh_scores = np.concatenate(_scores_by_k[K_TRAIN])
+_fresh_maps   = np.concatenate(_maps_by_k[K_TRAIN])
+print(f"Comparing SAVED checkpoint arrays vs FRESH inference at K={K_TRAIN}:")
+print(f"  scores  shape saved={scores_c34b.shape} fresh={_fresh_scores.shape}")
+print(f"  scores  max|diff| = {np.abs(scores_c34b - _fresh_scores).max():.6f}")
+print(f"  masks   max|diff| = {np.abs(attn_maps_c34b - _fresh_maps).max():.6f}")
+print(f"  image AUC  saved={compute_metrics(scores_c34b, binary_test)['auc_roc']:.4f}   "
+      f"fresh={compute_metrics(_fresh_scores, binary_test)['auc_roc']:.4f}")
+print(f"  pixel in-lung saved={pixel_auroc_inlung(1.0-attn_maps_c34b, test_boxes, binary_test, LUNG_PRIOR):.4f}   "
+      f"fresh={pixel_auroc_inlung(1.0-_fresh_maps, test_boxes, binary_test, LUNG_PRIOR):.4f}")
+if np.abs(scores_c34b - _fresh_scores).max() < 1e-4:
+    print("  -> IDENTICAL: arrays match the weights; the earlier disagreement was elsewhere.")
+else:
+    print("  -> MISMATCH: the checkpoint's .npy arrays do NOT come from the checkpoint's .pth weights.")
+    print("     The FRESH numbers reflect the model you actually have. Treat the saved-array")
+    print("     numbers (and every conclusion drawn from them) as stale until C3.4b is re-run")
+    print("     end-to-end in one session so arrays and weights are written together.")
+
+# Was every weight file actually found? load_weights only PRINTS on a miss, it does not raise —
+# a silently missing file leaves that sub-module at random init.
+for _nm in ['enc1', 'enc2', 'dec', 're_attn']:
+    _p = f'{CKPT_DIR}/C3.4b_{_nm}.pth'
+    print(f"  weight file {_nm:<8} {'present' if os.path.exists(_p) else 'MISSING -> random init!'}")
