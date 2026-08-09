@@ -714,6 +714,65 @@ def focal_bce(pred, target, gamma=2.0, alpha=0.25, eps=1e-8):
     return (-alpha_t * (1 - pt).pow(gamma) * torch.log(pt)).mean()
 
 
+def dice_loss(pred, target, eps=1.0):
+    """Soft Dice. Focal BCE rewards getting most pixels right; Dice specifically
+    rewards OVERLAP with the true region, which is what forces tight boundaries
+    rather than a diffuse blob that happens to cover the lesion."""
+    num = 2.0 * (pred * target).sum(dim=[1, 2, 3]) + eps
+    den = pred.sum(dim=[1, 2, 3]) + target.sum(dim=[1, 2, 3]) + eps
+    return (1.0 - num / den).mean()
+
+
+def _unet_block(cin, cout):
+    return nn.Sequential(
+        nn.Conv2d(cin, cout, 3, padding=1), nn.BatchNorm2d(cout), nn.ReLU(inplace=True),
+        nn.Conv2d(cout, cout, 3, padding=1), nn.BatchNorm2d(cout), nn.ReLU(inplace=True))
+
+
+class UNetAD(nn.Module):
+    """U-Net with skip connections and NO information bottleneck.
+
+    Replaces the CNNEncoder->128-dim-vector->CNNDecoder pipeline for the
+    synthetic-supervision conditions, for two measured reasons:
+
+    * Kascenas et al. (MIDL 2022) — the denoising-AE result this project builds on —
+      states denoising AEs "do not require bottlenecks and can employ skip connections
+      to give high resolution fidelity", and that bottleneck architectures "tend to give
+      poor reconstructions of not only the anomalous but also the normal parts". The
+      CNNEncoder path compresses 16384 px -> 128 dims (128:1), i.e. exactly the
+      architecture that paper identifies as the problem.
+    * REAttention has a 5x5 receptive field; RSNA opacity boxes are ~31x38 px at this
+      resolution, so it cannot see a lesion as an object at all. This U-Net's receptive
+      field is ~68 px — a whole lesion plus context.
+
+    Used for both sub-networks, mirroring DRAEM (Zavrtanik et al., ICCV 2021):
+      reconstructive: UNetAD(1, 1)  x_in -> x_hat
+      discriminative: UNetAD(2, 1)  concat(x_in, x_hat) -> anomaly segmentation
+    """
+    def __init__(self, in_ch=1, out_ch=1, base=32):
+        super().__init__()
+        self.e1, self.e2, self.e3 = _unet_block(in_ch, base), _unet_block(base, base*2), _unet_block(base*2, base*4)
+        self.b  = _unet_block(base*4, base*8)
+        self.u3 = nn.ConvTranspose2d(base*8, base*4, 2, stride=2); self.d3 = _unet_block(base*8, base*4)
+        self.u2 = nn.ConvTranspose2d(base*4, base*2, 2, stride=2); self.d2 = _unet_block(base*4, base*2)
+        self.u1 = nn.ConvTranspose2d(base*2, base,   2, stride=2); self.d1 = _unet_block(base*2, base)
+        self.out  = nn.Conv2d(base, out_ch, 1)
+        self.pool = nn.MaxPool2d(2)
+
+    def forward(self, x):
+        e1 = self.e1(x)
+        e2 = self.e2(self.pool(e1))
+        e3 = self.e3(self.pool(e2))
+        b  = self.b(self.pool(e3))
+        d3 = self.d3(torch.cat([self.u3(b),  e3], 1))
+        d2 = self.d2(torch.cat([self.u2(d3), e2], 1))
+        d1 = self.d1(torch.cat([self.u1(d2), e1], 1))
+        return torch.sigmoid(self.out(d1))
+
+LUNG_PRIOR = _make_lung_prior(IMAGE_SIZE, device)   # shared by C3.4 and C3.4b — both must use the
+                                                     # SAME (restricted) generator to be a valid control pair
+
+
 class LatentDisc(nn.Module):
     """MLP discriminator: latent → P(looks Gaussian)."""
     def __init__(self, latent_dim):
@@ -838,6 +897,27 @@ def pixel_auroc(maps_np, boxes_dict, binary_arr):
             continue
         gt_all.append(boxes_to_mask(boxes_dict[idx]).flatten())
         pred_all.append(maps_np[idx].flatten())
+    if not gt_all:
+        return np.nan
+    gt, pred = np.concatenate(gt_all), np.concatenate(pred_all)
+    return roc_auc_score(gt, pred) if len(np.unique(gt)) > 1 else np.nan
+
+def pixel_auroc_inlung(maps_np, boxes_dict, binary_arr, lung_mask, thr=0.5):
+    """Same as pixel_auroc, but restricted to lung-field pixels only. pixel_auroc
+    pools ALL pixels (including image borders/background), so any lung-shaped map
+    scores well above chance for free — RSNA boxes are always inside the lung
+    field, "pneumonia occurs in lungs, not corners" isn't a real localization
+    finding. Restricting evaluation to in-lung pixels asks the real question:
+    within the lung, does the map find the lesion specifically? A uniform
+    in-lung map (e.g. a fixed lung-shaped prior) should collapse to ~0.5 here."""
+    lung = (lung_mask.squeeze().cpu().numpy() > thr).flatten() if torch.is_tensor(lung_mask) \
+           else (lung_mask.squeeze() > thr).flatten()
+    gt_all, pred_all = [], []
+    for idx in range(len(binary_arr)):
+        if binary_arr[idx] == 0 or idx not in boxes_dict:
+            continue
+        gt_all.append(boxes_to_mask(boxes_dict[idx]).flatten()[lung])
+        pred_all.append(maps_np[idx].flatten()[lung])
     if not gt_all:
         return np.nan
     gt, pred = np.concatenate(gt_all), np.concatenate(pred_all)
@@ -1423,10 +1503,10 @@ print("Isolates the denoising-training gain from the attention gain in C3.4b.\n"
 enc1_c34 = CNNEncoder(LATENT_DIM, down='stride').to(device)
 dec_c34  = CNNDecoder(LATENT_DIM).to(device)
 
-ensure_local('C3.4')
-if is_done('C3.4'):
-    scores_c34, _, _ = load_ckpt('C3.4')
-    load_weights('C3.4', enc1=enc1_c34, dec=dec_c34)
+ensure_local('C3.4-a')
+if is_done('C3.4-a'):
+    scores_c34, _, _ = load_ckpt('C3.4-a')
+    load_weights('C3.4-a', enc1=enc1_c34, dec=dec_c34)
 else:
     opt_c34   = Adam(list(enc1_c34.parameters()) + list(dec_c34.parameters()), lr=LR, betas=(BETA1, 0.999))
     sched_c34 = torch.optim.lr_scheduler.CosineAnnealingLR(opt_c34, T_max=EPOCHS, eta_min=1e-6)
@@ -1441,7 +1521,7 @@ else:
             flip = torch.rand(n, device=device) > 0.5
             xb[flip] = xb[flip].flip(dims=[3])
             apply = (torch.rand(n, device=device) < 0.5).view(-1, 1, 1, 1).float()
-            x_synth, _ = make_synthetic_anomaly(xb)
+            x_synth, _ = make_synthetic_anomaly_anat(xb, LUNG_PRIOR)   # same generator as C3.4b — valid control
             x_in = xb * (1 - apply) + x_synth * apply       # p=0.5 corruption, matches C3.4b
             opt_c34.zero_grad()
             x_hat = dec_c34(enc1_c34(x_in))
@@ -1453,7 +1533,7 @@ else:
         if (epoch + 1) % 10 == 0 or epoch == 0:
             print(f"  Epoch {epoch+1:02d}/{EPOCHS}  loss={c34_epoch_loss[-1]:.5f}  "
                   f"lr={sched_c34.get_last_lr()[0]:.2e}")
-    loss_history['C3.4'] = c34_epoch_loss
+    loss_history['C3.4-a'] = c34_epoch_loss
     print(f"C3.4 training: {time.time()-t0:.1f}s")
     enc1_c34.eval(); dec_c34.eval()
     scores_c34 = []
@@ -1465,8 +1545,8 @@ else:
     m_c34 = compute_metrics(scores_c34, binary_test)
     print(f"\n  AUC-ROC={m_c34['auc_roc']:.4f}  AUC-PR={m_c34['auc_pr']:.4f}  F1={m_c34['f1']:.4f}  "
           f"(compare to C1={all_results.get('C1', {}).get('auc_roc', float('nan')):.4f} to see the denoising-alone effect)")
-    all_results['C3.4'] = {**m_c34, 'label': 'Denoising-AE control (no attention)'}
-    save_ckpt('C3.4', ['C3.4'], scores_c34, None, c34_epoch_loss,
+    all_results['C3.4-a'] = {**m_c34, 'label': 'Denoising-AE control (no attention)'}
+    save_ckpt('C3.4-a', ['C3.4-a'], scores_c34, None, c34_epoch_loss,
               enc1=enc1_c34.state_dict(), dec=dec_c34.state_dict())
 
 
@@ -1516,11 +1596,12 @@ enc1_c34b    = CNNEncoder(LATENT_DIM, down='stride').to(device)
 enc2_c34b    = CNNEncoder(LATENT_DIM, down='stride').to(device)
 dec_c34b     = CNNDecoder(LATENT_DIM).to(device)
 re_attn_c34b = REAttention().to(device)
-LUNG_PRIOR   = _make_lung_prior(IMAGE_SIZE, device)
+# LUNG_PRIOR now defined once in CELL 6, shared with C3.4
 
 ensure_local('C3.4b')
 if is_done('C3.4b'):
-    scores_c34b, _, attn_maps_c34b = load_ckpt('C3.4b')
+    # disc slot holds the residual score for C3.4b — keep it named, later cells use it
+    scores_c34b, scores_c34b_resid, attn_maps_c34b = load_ckpt('C3.4b')
     load_weights('C3.4b', enc1=enc1_c34b, enc2=enc2_c34b, dec=dec_c34b, re_attn=re_attn_c34b)
 else:
     opt_c34b   = Adam(list(enc1_c34b.parameters()) + list(enc2_c34b.parameters())
@@ -1610,6 +1691,9 @@ else:
     enc1_c34b.eval(); enc2_c34b.eval(); dec_c34b.eval(); re_attn_c34b.eval()
     scores_c34b, scores_c34b_resid, attn_maps_c34b = [], [], []
     k_curve_scores = {k: [] for k in range(1, K_EVAL_MAX + 1)}   # per-K s_mask, collected across all batches
+    attn_maps_by_k = {k: [] for k in range(1, K_EVAL_MAX + 1)}   # per-K masks — needed to pixel-check EVERY K,
+                                                                   # not just K_TRAIN (a fast K might localize
+                                                                   # better even if a slower K wins image-AUC)
     with torch.no_grad():
         for i in range(0, len(x_test), BATCH_SIZE):
             xb = torch.tensor(x_test[i:i+BATCH_SIZE]).to(device); n = xb.size(0)   # REAL images, no corruption
@@ -1623,6 +1707,7 @@ else:
                 e = ssim_anomaly_map(xb, x_hat).view(n, 1, IMAGE_SIZE, IMAGE_SIZE)
                 s_mask_t = torch.quantile((1.0 - att).view(n, -1), 0.99, dim=1)
                 k_curve_scores[t].append(s_mask_t.cpu().numpy())
+                attn_maps_by_k[t].append(att.squeeze(1).cpu().numpy())
                 if t == K_TRAIN:
                     scores_c34b.append(s_mask_t.cpu().numpy())
                     scores_c34b_resid.append(anomaly_score(xb, x_hat).cpu().numpy())
@@ -1633,12 +1718,17 @@ else:
     m_c34b       = compute_metrics(scores_c34b, binary_test)
     m_c34b_resid = compute_metrics(scores_c34b_resid, binary_test)
     print(f"\n  s_mask (K={K_TRAIN}, PRIMARY)  AUC-ROC={m_c34b['auc_roc']:.4f}  AUC-PR={m_c34b['auc_pr']:.4f}  F1={m_c34b['f1']:.4f}")
-    print("  Convergence curve (s_mask AUC-ROC vs. K, no retraining needed):")
-    k_curve_aucs = {}
+    print("  Convergence curve — image-level AUC-ROC AND pixel-AUROC vs. K, no retraining needed:")
+    print("  (a K that wins image-AUC but loses pixel-AUROC is a K that's guessing right for the wrong reason)")
+    k_curve_aucs, k_curve_pixel_aucs = {}, {}
     for k in range(1, K_EVAL_MAX + 1):
-        auc_k = compute_metrics(np.concatenate(k_curve_scores[k]), binary_test)['auc_roc']
-        k_curve_aucs[k] = auc_k
-        print(f"    K={k}:  AUC-ROC={auc_k:.4f}" + ("  <- trained K" if k == K_TRAIN else ""))
+        auc_k       = compute_metrics(np.concatenate(k_curve_scores[k]), binary_test)['auc_roc']
+        maps_k      = np.concatenate(attn_maps_by_k[k])
+        pix_auc_k   = pixel_auroc(1.0 - maps_k, test_boxes, binary_test)
+        k_curve_aucs[k]       = auc_k
+        k_curve_pixel_aucs[k] = pix_auc_k
+        print(f"    K={k}:  image AUC-ROC={auc_k:.4f}   pixel-AUROC={pix_auc_k:.4f}" +
+              ("  <- trained K" if k == K_TRAIN else ""))
     print(f"  s_resid (K={K_TRAIN})           AUC-ROC={m_c34b_resid['auc_roc']:.4f}")
     all_results['C3.4b']       = {**m_c34b,       'label': f'RE-Attn iterative refinement K={K_TRAIN} (Ours)'}
     all_results['C3.4b_resid'] = {**m_c34b_resid, 'label': f'RE-Attn iterative refinement residual score K={K_TRAIN}'}
@@ -1649,4 +1739,404 @@ else:
     with open(f'{CKPT_DIR}/C3.4b_diagnostics.json', 'w') as f:
         json.dump(c34b_diagnostics, f, indent=2)
     with open(f'{CKPT_DIR}/C3.4b_k_curve.json', 'w') as f:
-        json.dump({str(k): v for k, v in k_curve_aucs.items()}, f, indent=2)
+        json.dump({str(k): {'image_auc': k_curve_aucs[k], 'pixel_auroc': k_curve_pixel_aucs[k]}
+                   for k in k_curve_aucs}, f, indent=2)
+    # NOTE: only K_TRAIN's masks (attn_maps_c34b) get persisted to disk/wandb — K=1/2/4's
+    # masks (attn_maps_by_k) only exist transiently in THIS session. If the checkpoint gets
+    # reloaded later (is_done branch), use the standalone re-inference snippet to regenerate
+    # a specific K's masks on demand rather than assuming attn_maps_by_k still exists.
+
+
+# %% [markdown]
+# ---
+# ## **Cell 3.4b-check** — Does the mask find pneumonia, or the synthetic generator's signature?
+# A good image-level AUC alone doesn't prove `re_attn` learned to localize anomalies — it could
+# be exploiting some global statistic that happens to correlate with the synthetic corruption.
+# Two checks, using `attn_maps_c34b` (saved at K=3) directly, no retraining:
+# 1. **Pixel-AUROC on `1 - att`** against the radiologist boxes — compare against the ~0.68
+#    the raw SSIM error map got in the encoder sweep. Well above it = the mask is spatially real.
+#    Near chance while image-AUC is high = the model found a shortcut, not pneumonia.
+# 2. **Visual check** — ten real opacity cases, `1 - att` overlaid next to the ground-truth box.
+
+# %% [CELL 3.4b-check]  Pixel-AUROC + visual mask inspection (no retraining)
+
+pix_auroc_c34b = pixel_auroc(1.0 - attn_maps_c34b, test_boxes, binary_test)
+print(f"C3.4b pixel-AUROC (1-att, K={K_TRAIN}): {pix_auroc_c34b:.4f}  (compare to ~0.68 from raw SSIM error map)")
+
+def _plot_mask_grid(indices, title, savepath):
+    fig, axes = plt.subplots(2, len(indices), figsize=(3 * len(indices), 6))
+    scale = IMAGE_SIZE / ORIG_SIZE
+    for col, idx in enumerate(indices):
+        img  = x_test[idx, 0]
+        amap = 1.0 - attn_maps_c34b[idx]
+        for row in (0, 1):
+            axes[row, col].imshow(img if row == 0 else amap,
+                                   cmap='gray' if row == 0 else 'inferno',
+                                   vmin=None if row == 0 else 0, vmax=None if row == 0 else 1)
+            for (x, y, w, h) in test_boxes.get(idx, []):
+                axes[row, col].add_patch(patches.Rectangle(
+                    (x * scale, y * scale), w * scale, h * scale,
+                    linewidth=1.5, edgecolor='lime', facecolor='none'))
+            axes[row, col].axis('off')
+        axes[0, col].set_title(f'idx {idx}')
+    fig.suptitle(title)
+    plt.tight_layout()
+    plt.savefig(savepath, dpi=150)
+    plt.show()
+    print(f'Saved to {savepath}')
+
+opacity_idxs = [i for i in range(len(binary_test)) if binary_test[i] == 1 and i in test_boxes]
+_plot_mask_grid(opacity_idxs[:10], 'Opacity cases: image+box (top) vs 1-att (bottom)',
+                f'{OUTPUT_DIR}/c34b_mask_inspection.png')
+
+
+# %% [markdown]
+# ---
+# ## **Cell 3.4b-check2** — Is the mask real, or a fixed lung-shaped template?
+# The visual check above showed the mask lighting up broadly over both lungs regardless of
+# where the box is — consistent with `re_attn` having learned the SYNTHETIC GENERATOR's
+# spatial prior (`LUNG_PRIOR` restricts corruption to the lung field) rather than pathology
+# itself. Four cheap checks, no retraining, that isolate exactly this:
+# 1. Does a completely FIXED, input-independent lung-shaped map score similarly to the
+#    learned mask? If yes, the mask has learned nothing input-dependent.
+# 2. Does the per-image mask deviate meaningfully from the population-average mask?
+# 3. Do normal (no pneumonia) images get the same mask as opacity images?
+# 4. Is the score separation (normal vs. opacity) real, or riding on the 3rd decimal place?
+
+# %% [CELL 3.4b-check2]  Shortcut diagnostics (no retraining)
+
+# 1. Score a FIXED lung prior as if it were the anomaly map for every image.
+prior_np    = LUNG_PRIOR.squeeze().cpu().numpy()
+const_maps  = np.repeat(prior_np[None], len(attn_maps_c34b), axis=0)
+auc_prior_only = pixel_auroc(const_maps, test_boxes, binary_test)
+print(f"1. Fixed lung-prior-only pixel-AUROC: {auc_prior_only:.4f}  "
+      f"(learned mask: {pix_auroc_c34b:.4f} — if these are close, the mask added ~nothing)")
+
+# 2. Is the learned mask actually input-dependent, or one fixed template?
+mean_mask   = (1.0 - attn_maps_c34b).mean(0)
+auc_mean_only = pixel_auroc(np.repeat(mean_mask[None], len(attn_maps_c34b), 0), test_boxes, binary_test)
+dev_std     = float(((1.0 - attn_maps_c34b) - mean_mask).std())
+print(f"2. Population-average-mask-only pixel-AUROC: {auc_mean_only:.4f}  "
+      f"| per-image deviation std: {dev_std:.4f}  (near 0 = outputting ~one fixed template)")
+
+# 3. Normal vs. opacity masks, visually — should look different if the mask responds to pathology.
+normal_idxs = [i for i in np.where(binary_test == 0)[0][:5]]
+opac_5_idxs = [i for i in np.where(binary_test == 1)[0][:5]]
+_plot_mask_grid([i for i in normal_idxs if i in test_boxes] or normal_idxs[:5],
+                'Normal cases (should show NO strong closure if mask is real)',
+                f'{OUTPUT_DIR}/c34b_mask_normal.png')
+_plot_mask_grid([i for i in opac_5_idxs if i in test_boxes] or opac_5_idxs[:5],
+                'Opacity cases (comparison)', f'{OUTPUT_DIR}/c34b_mask_opacity.png')
+
+# 4. Score distribution — is normal-vs-opacity separation real or third-decimal noise?
+s_normal = scores_c34b[binary_test == 0]
+s_opac   = scores_c34b[binary_test == 1]
+print(f"4. s_mask  normal: mean={s_normal.mean():.4f} std={s_normal.std():.4f}  |  "
+      f"opacity: mean={s_opac.mean():.4f} std={s_opac.std():.4f}")
+fig, ax = plt.subplots(figsize=(6, 4))
+ax.hist(s_normal, bins=30, alpha=0.6, label='normal', color=PAL['C1'])
+ax.hist(s_opac,   bins=30, alpha=0.6, label='opacity', color=PAL['C4'])
+ax.set_xlabel('s_mask'); ax.legend(); ax.set_title('C3.4b score distribution by class')
+plt.tight_layout()
+plt.savefig(f'{OUTPUT_DIR}/c34b_score_hist.png', dpi=150)
+plt.show()
+print(f'Saved to {OUTPUT_DIR}/c34b_score_hist.png')
+
+
+# %% [markdown]
+# ---
+# ## **Cell 3.4b-check3** — Fix the metric, not just the model
+# `pixel_auroc` pools ALL pixels (including image borders/background) as negatives.
+# RSNA boxes are always inside the lung field, so ANY lung-shaped map — including a
+# completely fixed, non-learned one — separates positives from negatives well on this
+# metric, purely from anatomy, before the model has done anything. `pixel_auroc_inlung`
+# restricts both ground truth and prediction to lung-field pixels only, asking the
+# question that actually matters: within the lung, does the map find the lesion?
+# The fixed prior should collapse to ~0.50 here, since it's uniform inside the lung —
+# if the learned mask clears that, the localization signal may be real after all.
+
+# %% [CELL 3.4b-check3]  In-lung pixel-AUROC — does the confounded metric change the verdict?
+
+pauc_prior_inlung = pixel_auroc_inlung(const_maps, test_boxes, binary_test, LUNG_PRIOR)
+pauc_c34b_inlung  = pixel_auroc_inlung(1.0 - attn_maps_c34b, test_boxes, binary_test, LUNG_PRIOR)
+print(f"In-lung pixel-AUROC:")
+print(f"  Fixed lung prior : {pauc_prior_inlung:.4f}  (expect ~0.50 — uniform inside the lung, no info)")
+print(f"  Learned mask (K={K_TRAIN}): {pauc_c34b_inlung:.4f}")
+if pauc_c34b_inlung > pauc_prior_inlung + 0.05:
+    print("  -> Learned mask clears the (now honest) baseline — localization signal may be real.")
+else:
+    print("  -> Learned mask still doesn't clear the baseline — confirms the shortcut, not a metric artifact.")
+
+
+# %% [markdown]
+# ---
+# ## **Cell 3.4b-export** — Analysis bundle for offline / local investigation
+# The wandb checkpoint artifacts contain scores, masks and weights — but NOT `test_boxes`,
+# `binary_test` or `x_test`, which are derived from the RSNA DICOMs and only exist inside a
+# Kaggle session. That means none of the localization analysis (pixel-AUROC, in-lung
+# pixel-AUROC, overlay figures, per-case failure analysis) can be reproduced anywhere else
+# from wandb alone. This cell exports exactly the arrays those analyses need.
+#
+# Stored as float16 and restricted to opacity-cases-with-boxes where possible, to keep the
+# download modest. Everything needed to recompute every pixel-level number in Cells
+# 3.4b-check / check2 / check3 offline, plus per-case breakdowns that are impractical to
+# eyeball inside the notebook.
+
+# %% [CELL 3.4b-export]  Export analysis bundle (scores + masks + boxes + images + prior)
+
+import zipfile
+
+# ── Preflight: this cell exports SESSION STATE, so it needs the cells that build that
+# state to have run in THIS kernel. After a session restart, re-run them in order rather
+# than jumping straight here — otherwise you get a bare NameError on whichever line
+# happens to touch a missing variable first, which says nothing useful.
+_REQUIRED = {
+    'OUTPUT_DIR':        'CELL 1.4  (config)',
+    'IMAGE_SIZE':        'CELL 1.4  (config)',
+    'ORIG_SIZE':         'CELL 1.4  (config)',
+    'RUN_VERSION':       'CELL 1.4  (config)',
+    'all_results':       'CELL 1.5  (checkpoint helpers)',
+    'binary_test':       'CELL 2.0  (data preparation)',
+    'test_boxes':        'CELL 2.0  (data preparation)',
+    'x_test':            'CELL 2.0  (data preparation)',
+    'LUNG_PRIOR':        'CELL 6    (model architectures + synth helpers)',
+    'K_TRAIN':           'CELL 3.4b (C3.4b training)',
+    'K_EVAL_MAX':        'CELL 3.4b (C3.4b training)',
+    'scores_c34b':       'CELL 3.4b (C3.4b training)',
+    'scores_c34b_resid': 'CELL 3.4b (C3.4b training)',
+    'attn_maps_c34b':    'CELL 3.4b (C3.4b training)',
+    'pix_auroc_c34b':    'CELL 3.4b-check   (pixel-AUROC + mask inspection)',
+    'pauc_c34b_inlung':  'CELL 3.4b-check3  (in-lung pixel-AUROC)',
+    'pauc_prior_inlung': 'CELL 3.4b-check3  (in-lung pixel-AUROC)',
+}
+_missing = {n: c for n, c in _REQUIRED.items() if n not in globals()}
+if _missing:
+    _lines = '\n'.join(f'    {n:<20} <- run {c}' for n, c in _missing.items())
+    raise NameError(
+        f"Analysis export can't run — {len(_missing)} session variable(s) missing "
+        f"(kernel restarted, or cells run out of order):\n{_lines}\n"
+        "  Re-run those cells first. Conditions already checkpointed will reload from "
+        "wandb/disk rather than retrain, so this is usually fast."
+    )
+
+ANALYSIS_DIR = f'{OUTPUT_DIR}/analysis_bundle'
+os.makedirs(ANALYSIS_DIR, exist_ok=True)
+
+# Opacity cases WITH radiologist boxes — the only ones any pixel-level metric uses.
+box_idxs = np.array(sorted(i for i in range(len(binary_test))
+                            if binary_test[i] == 1 and i in test_boxes), dtype=np.int64)
+# A matched sample of normals, for normal-vs-opacity mask comparisons.
+norm_idxs = np.where(binary_test == 0)[0][:len(box_idxs)]
+keep_idxs = np.concatenate([norm_idxs, box_idxs])
+
+np.save(f'{ANALYSIS_DIR}/keep_idxs.npy',   keep_idxs)
+np.save(f'{ANALYSIS_DIR}/binary_test.npy', binary_test)
+np.save(f'{ANALYSIS_DIR}/x_test_subset.npy',   x_test[keep_idxs].astype(np.float16))
+np.save(f'{ANALYSIS_DIR}/attn_c34b_subset.npy', attn_maps_c34b[keep_idxs].astype(np.float16))
+np.save(f'{ANALYSIS_DIR}/lung_prior.npy',  LUNG_PRIOR.squeeze().cpu().numpy().astype(np.float16))
+
+# Full-length image-level scores for every condition that has them in THIS session.
+# Guarded: some are only defined on the fresh-train path, others only after a reload.
+for name, var in [('c34b_s_mask', 'scores_c34b'), ('c34b_s_resid', 'scores_c34b_resid'),
+                   ('scores_c1', 'scores_c1'), ('scores_c2', 'scores_c2'),
+                   ('scores_c3', 'scores_c3'), ('scores_c34', 'scores_c34')]:
+    if var in dir() and eval(var) is not None:
+        np.save(f'{ANALYSIS_DIR}/{name}.npy', np.asarray(eval(var)))
+    else:
+        print(f'  (skipped {name} — {var} not defined in this session)')
+
+# test_boxes -> JSON (numpy scalars aren't JSON-serialisable as-is).
+boxes_json = {str(int(k)): [[float(b) for b in box] for box in v] for k, v in test_boxes.items()}
+with open(f'{ANALYSIS_DIR}/test_boxes.json', 'w') as f:
+    json.dump(boxes_json, f)
+with open(f'{ANALYSIS_DIR}/meta.json', 'w') as f:
+    json.dump({'IMAGE_SIZE': IMAGE_SIZE, 'ORIG_SIZE': ORIG_SIZE, 'K_TRAIN': K_TRAIN,
+               'K_EVAL_MAX': K_EVAL_MAX, 'RUN_VERSION': RUN_VERSION,
+               # Reference values computed IN-NOTEBOOK at full float32 precision. The arrays
+               # above are stored as float16 to keep the download small — recompute these two
+               # offline and compare. A meaningful mismatch means float16 quantization is
+               # material for this data, and the export should be switched to float32.
+               'ref_pixel_auroc_pooled':  float(pix_auroc_c34b),
+               'ref_pixel_auroc_inlung':  float(pauc_c34b_inlung),
+               'ref_pixel_auroc_inlung_prior': float(pauc_prior_inlung),
+               'all_results': {k: {kk: (float(vv) if isinstance(vv, (int, float, np.floating)) else vv)
+                                   for kk, vv in v.items()} for k, v in all_results.items()}}, f, indent=2)
+
+zip_path = f'{OUTPUT_DIR}/analysis_bundle.zip'
+with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+    for root, _, files in os.walk(ANALYSIS_DIR):
+        for fname in files:
+            fp = os.path.join(root, fname)
+            zf.write(fp, os.path.relpath(fp, ANALYSIS_DIR))
+print(f'analysis_bundle.zip ready ({os.path.getsize(zip_path)/1e6:.1f} MB) — download from the Output tab.')
+for root, _, files in os.walk(ANALYSIS_DIR):
+    for fname in sorted(files):
+        print(f'  {fname:<28} {os.path.getsize(os.path.join(root, fname))/1e3:>9.1f} KB')
+
+# %% [markdown]
+# ---
+# ## **Cell 3.5U** — C3.5U: DRAEM-style U-Net, the proven architecture
+#
+# **Why this exists.** C3.4b's localization failure is not only the generator shortcut —
+# it is structural, and measurably so:
+#
+# | | C3.4b | C3.5U |
+# |---|---|---|
+# | Reconstruction path | 16384 px -> **128-dim bottleneck** -> image | U-Net, **no bottleneck**, skip connections |
+# | Segmentation head | 3 convs, 2,641 params, **5x5** receptive field | U-Net, ~1.9M params, **~68px** receptive field |
+# | Head input | `(SSIM error, high-freq)` | `concat(x, x_hat)` — the pair DRAEM segments from |
+# | Lesion size at 128px | ~31x38 px (**6-8x larger than the head can see**) | fits inside the receptive field |
+#
+# So C3.4b implemented the *objectives* of Kascenas et al. (denoising) and DRAEM
+# (discriminative segmentation scoring) while keeping an architecture both papers
+# explicitly argue against. This cell uses the architecture those results actually
+# depend on, unchanged, so we learn whether the approach works here at all before
+# adding anything novel on top.
+#
+# **Deliberately K=1 (single-shot, pure DRAEM).** The iterative refinement — the part
+# that is genuinely unclaimed relative to DRAEM (single-shot) and IterMask2 (iterative
+# but rule-based, not learned) — is the NEXT step, and it needs this cell as its control.
+# Bundling them would repeat the exact confound we spent this whole study removing:
+# an improvement you cannot attribute.
+#
+# **Note on target polarity:** unlike C3.4b (where `att` was a *keep* mask supervised
+# toward `1-m`), the segmentation head here predicts the **anomaly** directly, target `m`,
+# following DRAEM. So the anomaly map is `seg` itself, not `1-seg`.
+
+# %% [CELL 3.5U]  C3.5U — DRAEM-style U-Net reconstructive + discriminative sub-networks
+
+print("\n" + "="*60)
+print("CONDITION 3.5U — DRAEM-style U-Net (proven architecture, K=1)")
+print("="*60)
+print("No bottleneck (Kascenas MIDL'22) + U-Net segmentation head over concat(x, x_hat) (DRAEM ICCV'21).\n")
+
+recon_c35u = UNetAD(1, 1, base=32).to(device)
+disc_c35u  = UNetAD(2, 1, base=32).to(device)
+print(f"  recon params: {sum(p.numel() for p in recon_c35u.parameters()):,}  "
+      f"seg params: {sum(p.numel() for p in disc_c35u.parameters()):,}")
+
+ensure_local('C3.5U')
+if is_done('C3.5U'):
+    scores_c35u, _, segmaps_c35u = load_ckpt('C3.5U')
+    load_weights('C3.5U', recon=recon_c35u, disc=disc_c35u)
+else:
+    opt_c35u   = Adam(list(recon_c35u.parameters()) + list(disc_c35u.parameters()),
+                      lr=LR, betas=(BETA1, 0.999))
+    sched_c35u = torch.optim.lr_scheduler.CosineAnnealingLR(opt_c35u, T_max=EPOCHS, eta_min=1e-6)
+    loader_c35u     = make_loader(x_train_norm, BATCH_SIZE)
+    c35u_epoch_loss = []
+    c35u_diag = {'rec': [], 'seg': [], 'seg_mean_anom': [], 'seg_mean_clean': []}
+
+    t0 = time.time()
+    for epoch in range(EPOCHS):
+        recon_c35u.train(); disc_c35u.train()
+        rec_l, seg_l, sma_l, smc_l = [], [], [], []
+        for (xb,) in loader_c35u:
+            xb = xb.to(device); n = xb.size(0)
+            flip = torch.rand(n, device=device) > 0.5
+            xb[flip] = xb[flip].flip(dims=[3])
+
+            apply = (torch.rand(n, device=device) < 0.5).view(-1, 1, 1, 1).float()
+            x_synth, m_full = make_synthetic_anomaly_anat(xb, LUNG_PRIOR)
+            x_in = xb * (1 - apply) + x_synth * apply
+            m    = (m_full * apply > 0.5).float()      # binary target; 0 everywhere on the clean half
+
+            opt_c35u.zero_grad()
+            x_hat = recon_c35u(x_in)                                   # restore clean from corrupted
+            loss_rec = 0.7 * mse_fn(x_hat, xb) + 0.3 * ssim_loss_fn(x_hat, xb)
+            seg = disc_c35u(torch.cat([x_in, x_hat], dim=1))           # DRAEM: segment from the PAIR
+            loss_seg = focal_bce(seg, m) + dice_loss(seg, m)           # focal handles imbalance, dice forces overlap
+            (loss_rec + LAMBDA_SEG * loss_seg).backward()
+            torch.nn.utils.clip_grad_norm_(
+                list(recon_c35u.parameters()) + list(disc_c35u.parameters()), max_norm=1.0)
+            opt_c35u.step()
+
+            rec_l.append(loss_rec.item()); seg_l.append(loss_seg.item())
+            with torch.no_grad():
+                anom = m > 0.5
+                sma_l.append(float(seg[anom].mean()) if anom.any() else float('nan'))
+                smc_l.append(float(seg[~anom].mean()))
+        sched_c35u.step()
+        c35u_epoch_loss.append(float(np.mean(rec_l)))
+        for k, v in [('rec', rec_l), ('seg', seg_l), ('seg_mean_anom', sma_l), ('seg_mean_clean', smc_l)]:
+            c35u_diag[k].append(float(np.nanmean(v)))
+        if (epoch + 1) % 10 == 0 or epoch == 0:
+            print(f"  Epoch {epoch+1:02d}/{EPOCHS}  Rec={c35u_diag['rec'][-1]:.5f}  "
+                  f"Seg={c35u_diag['seg'][-1]:.4f}  "
+                  f"seg@anomaly={c35u_diag['seg_mean_anom'][-1]:.3f}  "
+                  f"seg@clean={c35u_diag['seg_mean_clean'][-1]:.3f}  "
+                  f"lr={sched_c35u.get_last_lr()[0]:.2e}")
+    print(f"C3.5U training: {time.time()-t0:.1f}s")
+    # seg@anomaly should climb well above seg@clean — that separation IS the learning signal,
+    # and unlike C3.4b's att_std it says directly whether the head discriminates lesion vs. not.
+
+    recon_c35u.eval(); disc_c35u.eval()
+    scores_c35u, segmaps_c35u = [], []
+    with torch.no_grad():
+        for i in range(0, len(x_test), BATCH_SIZE):
+            xb = torch.tensor(x_test[i:i+BATCH_SIZE]).to(device); n = xb.size(0)   # REAL images, uncorrupted
+            x_hat = recon_c35u(xb)
+            seg   = disc_c35u(torch.cat([xb, x_hat], dim=1))
+            scores_c35u.append(torch.quantile(seg.view(n, -1), 0.99, dim=1).cpu().numpy())
+            segmaps_c35u.append(seg.squeeze(1).cpu().numpy())
+    scores_c35u  = np.concatenate(scores_c35u)
+    segmaps_c35u = np.concatenate(segmaps_c35u)
+
+    m_c35u = compute_metrics(scores_c35u, binary_test)
+    pauc_pooled_c35u = pixel_auroc(segmaps_c35u, test_boxes, binary_test)
+    pauc_inlung_c35u = pixel_auroc_inlung(segmaps_c35u, test_boxes, binary_test, LUNG_PRIOR)
+    print(f"\n  Image AUC-ROC={m_c35u['auc_roc']:.4f}  AUC-PR={m_c35u['auc_pr']:.4f}  F1={m_c35u['f1']:.4f}")
+    print(f"  pixel-AUROC pooled : {pauc_pooled_c35u:.4f}   (fixed-prior baseline ~0.7540 — must beat this)")
+    print(f"  pixel-AUROC in-lung: {pauc_inlung_c35u:.4f}   (fixed-prior baseline  0.5000 — the honest test)")
+    all_results['C3.5U'] = {**m_c35u, 'pixel_auroc_pooled': float(pauc_pooled_c35u),
+                            'pixel_auroc_inlung': float(pauc_inlung_c35u),
+                            'label': 'DRAEM-style U-Net (proven arch, K=1)'}
+    save_ckpt('C3.5U', ['C3.5U'], scores_c35u, None, c35u_epoch_loss,
+              attn_maps=segmaps_c35u, recon=recon_c35u.state_dict(), disc=disc_c35u.state_dict())
+    with open(f'{CKPT_DIR}/C3.5U_diagnostics.json', 'w') as f:
+        json.dump(c35u_diag, f, indent=2)
+
+
+# %% [markdown]
+# ---
+# ## **Cell 3.4b-kcurve** — per-K image AUC + pixel-AUROC, works on a RELOADED checkpoint
+# The K-sweep inside CELL 3.4b lives in that cell's `else:` (train-only) branch, so a session
+# that reloads C3.4b from wandb/disk skips it entirely and never gets `k_curve_*`. This cell
+# recomputes the whole sweep by re-running inference with whatever weights are in memory —
+# no retraining — so the K=1-vs-K=3 localization question is answerable after a reload.
+
+# %% [CELL 3.4b-kcurve]  Per-K sweep from loaded weights (no retraining)
+
+for _n in ['enc1_c34b', 'enc2_c34b', 'dec_c34b', 're_attn_c34b', 'x_test', 'binary_test',
+           'test_boxes', 'LUNG_PRIOR', 'K_EVAL_MAX']:
+    if _n not in globals():
+        raise NameError(f"'{_n}' missing — run CELL 3.4b (it reloads from checkpoint if already trained) first.")
+
+enc1_c34b.eval(); enc2_c34b.eval(); dec_c34b.eval(); re_attn_c34b.eval()
+_maps_by_k   = {k: [] for k in range(1, K_EVAL_MAX + 1)}
+_scores_by_k = {k: [] for k in range(1, K_EVAL_MAX + 1)}
+with torch.no_grad():
+    for i in range(0, len(x_test), BATCH_SIZE):
+        xb = torch.tensor(x_test[i:i+BATCH_SIZE]).to(device); n = xb.size(0)
+        x_hat = dec_c34b(enc1_c34b(xb))
+        e = ssim_anomaly_map(xb, x_hat).view(n, 1, IMAGE_SIZE, IMAGE_SIZE)
+        for t in range(1, K_EVAL_MAX + 1):
+            att   = re_attn_c34b(torch.cat([e, high_freq(xb)], dim=1))
+            x_hat = dec_c34b(enc2_c34b(xb * att))
+            e     = ssim_anomaly_map(xb, x_hat).view(n, 1, IMAGE_SIZE, IMAGE_SIZE)
+            _scores_by_k[t].append(torch.quantile((1.0 - att).view(n, -1), 0.99, dim=1).cpu().numpy())
+            _maps_by_k[t].append(att.squeeze(1).cpu().numpy())
+
+print(f"C3.4b per-K sweep (trained K={K_TRAIN}). Baselines: pooled fixed-prior ~0.7540, in-lung fixed-prior 0.5000")
+print(f"  {'K':<4}{'image AUC':>12}{'pixel pooled':>15}{'pixel in-lung':>16}")
+k_curve_full = {}
+for k in range(1, K_EVAL_MAX + 1):
+    maps_k = np.concatenate(_maps_by_k[k])
+    auc_k  = compute_metrics(np.concatenate(_scores_by_k[k]), binary_test)['auc_roc']
+    pp_k   = pixel_auroc(1.0 - maps_k, test_boxes, binary_test)
+    pl_k   = pixel_auroc_inlung(1.0 - maps_k, test_boxes, binary_test, LUNG_PRIOR)
+    k_curve_full[k] = {'image_auc': float(auc_k), 'pixel_pooled': float(pp_k), 'pixel_inlung': float(pl_k)}
+    print(f"  {k:<4}{auc_k:>12.4f}{pp_k:>15.4f}{pl_k:>16.4f}" + ("   <- trained K" if k == K_TRAIN else ""))
+with open(f'{CKPT_DIR}/C3.4b_k_curve_full.json', 'w') as f:
+    json.dump({str(k): v for k, v in k_curve_full.items()}, f, indent=2)
+print(f"Saved {CKPT_DIR}/C3.4b_k_curve_full.json")
