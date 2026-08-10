@@ -1,0 +1,91 @@
+================================================================================
+NOTES FROM READING MedIAnomaly IN FULL (arXiv 2404.04518v1, pages 1-8)
+Medical Image Analysis 2025 | doi 10.1016/j.media.2025.103500
+================================================================================
+
+################ A. THINGS THAT INVALIDATE DIRECT COMPARISON ################
+
+A1. THEIR RSNA SPLIT != OURS.  (Sec 3.1.1, Table 2)
+    Theirs : 3851 normal TRAIN ; TEST = 1000 normal + 1000 abnormal
+    Ours   : TEST_NORMAL=2000 + TEST_OPACITY=2000
+    => our AUCs are NOT directly comparable to their 87.5 / 86.5 / 80.0.
+    ACTION: switch to 1000+1000 test if we want to quote their table as baselines.
+
+A2. THEY EXPLICITLY REJECT PIXEL-LEVEL AUC.  (Sec 3.1.4)
+    "We do not employ the pixel-level AUC since it is insensitive to false
+     positives, which is particularly relevant in medical images where the
+     majority of pixels are negative."
+    They use AP_pix and best-possible Dice ([Dice]) instead.
+    => WE HAVE BEEN USING PIXEL-AUROC THROUGHOUT. Add AP_pix + Dice.
+    => *** THIS IS ALSO OUR OPENING ***: they ASSERT pixel-AUC is bad; we
+       MEASURED how bad, with a fixed-anatomy control (lung prior = 0.7540
+       pooled, 0.5000 in-lung). That is concrete evidence for their assertion,
+       plus a constructive fix. Cite them, then quantify.
+
+A3. INPUT SIZE / NETWORK SIZE (Sec 4.2.1, Tables 8-11)
+    "using an input size of 64x64 achieves comparable performance to ... 128x128"
+    "increasing the depth or width of the reconstruction networks does not yield
+     performance gains"
+    CONCLUSION (their words): "reconstruction-based AD on medical images does NOT
+    benefit from large resolutions or large networks."
+    => We used 128x128. 64x64 would be ~4x cheaper at equal performance.
+
+################ B. WHERE OUR RESULTS CORROBORATE / EXTEND THEM ################
+
+B1. OUR CAPACITY FINDING IS INDEPENDENT CONFIRMATION + AN EXTENSION.
+    They: bigger networks do not help reconstruction-based medical AD.
+    We  : bigger networks actively HURT under synthetic supervision, and we
+          measured the mechanism -- 2,641-param head -> 0.675 in-lung (real
+          signal); 1,928,129-param U-Net -> 1.0000 synthetic / 0.489 real (chance).
+    => They observe "no gain"; we show "active harm, via proxy memorisation",
+       with the synthetic-vs-real gap as the measurement.
+
+B2. THEY STATE THE SSL FAILURE MECHANISM; WE QUANTIFIED IT.  (Sec 4.1)
+    "reconstruction methods significantly outperform SSL methods in pixel-level
+     AnoSeg ... SSL methods trained through synthetic anomaly classification rely
+     on the similarity between synthetic abnormal patterns and real anomalies.
+     They struggle to recognize real abnormal regions when these regions exhibit
+     significant differences in appearance compared to synthetic anomalies."
+    Ours: synthetic 1.0000 vs real 0.6110 image AUC; in-lung 0.4885 (chance),
+          reproduced across TWO generators differing 5x in lesion size
+          (coverage 0.247 -> 0.051 changed real performance by 0.0002).
+    => We provide the missing quantification of a mechanism they only describe.
+
+B3. THEY CALL ANATPASTE UNSTABLE — consistent with our negative result. (Sec 4.1)
+    "excluding the use of ImageNet weights, the SOTA SSL method is the two-stage
+     AnatPaste. However, this method exhibits unstable performance across
+     different datasets. It fails to outperform the vanilla AE on LAG and
+     BraTS2021, indicating a high sensitivity to abnormal patterns."
+    => Our anatomy-restricted generator underperforming is not an implementation
+       failure; the benchmark reports the same fragility.
+
+B4. PIXEL-LEVEL ON RSNA IS A GAP. (Sec 3.1.2, Table 2)
+    Their AnoSeg is evaluated on BraTS2021 ONLY (voxel-level tumour masks).
+    RSNA is AnoCls only. => Pixel-level AD on chest radiographs with box-derived
+    GT is NOT covered by the benchmark. That is our space.
+
+################ C. THE BEST METHODS TO ADOPT ################
+
+C1. IMAGE-LEVEL (AnoCls), their SOTA: AE-PL, AE-U, FAE-SSIM.
+    RSNA: AE-PL 87.5 | AE-U 86.5 | GANomaly 80.0.
+    "the ImageNet weights are highly effective and powerful for medical AD" —
+    most SOTA relies on them; AE-U and DAE are the exceptions that do NOT.
+
+C2. PIXEL-LEVEL (AnoSeg), their SOTA: **DAE (denoising AE with a customised UNet)**
+    "the best AnoSeg is achieved by DAE, surpassing the second-best method by a
+     margin of nearly 20% [Dice] ... attributed to the customized UNet
+     architecture ... The denoising training approach utilized by DAE effectively
+     overcomes [the skip-connection leakage] issue."
+    NOTE the tension they resolve: Mao et al. 2020 showed UNet skip connections
+    LEAK abnormal information to the decoder; denoising training fixes that.
+    => OUR C3.4 (denoising AE) and C3.5U (UNet) are each half of DAE. Combining
+       them correctly = denoising-trained UNet = their best segmentation method.
+       This is the strongest positive method available to us for LOCALISATION.
+
+################ D. CONCRETE TODO ################
+  D1. Re-split RSNA test to 1000+1000 to be comparable with Table 6.
+  D2. Add AP_pix and best-Dice alongside (not instead of) our in-lung AUROC.
+  D3. Implement AE-PL (perceptual loss + ImageNet VGG) -> target ~87.5 image AUC.
+  D4. Implement DAE (denoising-trained UNet, NO synthetic-anomaly classification
+      head) -> their best pixel-level method; our best shot at real localisation.
+  D5. Consider 64x64 inputs (4x cheaper, no reported loss).

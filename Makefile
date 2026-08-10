@@ -10,6 +10,9 @@ IPYNB_RESNET := experiments/re_attn_aae_kaggle-RSNA-ResNet.ipynb
 PY_Learn    := experiments/Learn project/reattn-resnet.py
 IPYNB_Learn := experiments/Learn project/reattn-resnet.ipynb
 
+PY_DENOISE    := experiments/Learn project/donoising_syntehtic/denoising_syntetic_exp.py
+IPYNB_DENOISE := experiments/Learn project/donoising_syntehtic/denoising_syntetic_exp.ipynb
+
 # GNU Make splits prerequisite lists on whitespace, so a bare path containing a
 # space (like "Learn project/...") is silently parsed as two separate targets.
 # Escaping the space lets Make (>=3.82) treat it as one token instead.
@@ -17,8 +20,10 @@ empty :=
 space := $(empty) $(empty)
 PY_Learn_ESC    := $(subst $(space),\ ,$(PY_Learn))
 IPYNB_Learn_ESC := $(subst $(space),\ ,$(IPYNB_Learn))
+PY_DENOISE_ESC    := $(subst $(space),\ ,$(PY_DENOISE))
+IPYNB_DENOISE_ESC := $(subst $(space),\ ,$(IPYNB_DENOISE))
 
-.PHONY: help notebook notebook-rsna notebook-resnet notebook-Learn notebook-all clean push
+.PHONY: help notebook notebook-rsna notebook-resnet notebook-Learn notebook-denoise notebook-all clean push
 
 help: ## Show this help
 	@awk ' \
@@ -60,12 +65,19 @@ $(IPYNB_Learn_ESC): $(PY_Learn_ESC)
 	jupytext --to notebook --output "$(IPYNB_Learn)" "$(PY_Learn)"
 	@echo "Generated: $(IPYNB_Learn)"
 
+## Convert denoising/synthetic .py → .ipynb
+notebook-denoise: $(IPYNB_DENOISE_ESC)
+
+$(IPYNB_DENOISE_ESC): $(PY_DENOISE_ESC)
+	jupytext --to notebook --output "$(IPYNB_DENOISE)" "$(PY_DENOISE)"
+	@echo "Generated: $(IPYNB_DENOISE)"
+
 ## Convert all notebooks
-notebook-all: notebook notebook-rsna notebook-resnet notebook-Learn
+notebook-all: notebook notebook-rsna notebook-resnet notebook-Learn notebook-denoise
 
 ## Remove generated notebooks
 clean:
-	rm -f $(IPYNB) $(IPYNB_RSNA) $(IPYNB_RESNET) $(IPYNB_Learn_ESC)
+	rm -f $(IPYNB) $(IPYNB_RSNA) $(IPYNB_RESNET) $(IPYNB_Learn_ESC) $(IPYNB_DENOISE_ESC)
 	@echo "Removed generated notebooks"
 
 ## Regenerate all notebooks and push

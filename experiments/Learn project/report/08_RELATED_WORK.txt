@@ -1,0 +1,146 @@
+================================================================================
+RELATED WORK — high-impact venues, prioritised for a CXR/RSNA anomaly-detection
+thesis.  Download via UniVR (Elsevier / IEEE / SpringerLink).
+STATUS KEY:  [VERIFIED] found + described via search   [READ ME] must read full text
+================================================================================
+
+################################################################################
+TIER 1 — DIRECTLY ON YOUR DATASET / TASK.  Cite all of these.
+################################################################################
+
+[1] MedIAnomaly: A comparative study of anomaly detection in medical images
+    Cai et al. — MEDICAL IMAGE ANALYSIS, 2025  (Elsevier, IF ~10.7)
+    arXiv 2404.04518 | code: github.com/caiyu6666/MedIAnomaly
+    doi via ScienceDirect S1361841525000489
+    [VERIFIED] Benchmarks 30 methods x 7 datasets, INCLUDING RSNA PNEUMONIA.
+    RSNA results (Table 6):  AE-PL 87.5+-0.2 | AE-U 86.5+-0.9 | GANomaly 80.0+-0.8
+                             CutPaste (self-supervised synthetic) ~60-75
+    Concludes the reconstruction assumption is UNRESOLVED: models reconstruct
+    unseen anomalies (Problem I) AND produce false positives on normal tissue
+    (Problem II).
+    >> WHY IT MATTERS TO YOU: this is THE reference for your dataset. Your
+       C3.5U/C3.5Ub = 0.611 sits inside their published CutPaste range, so your
+       negative result REPRODUCES a benchmark finding rather than contradicting
+       one. AE-PL (perceptual loss) is your target baseline to beat/match.
+    >> ACTION: read Table 6 in full; copy their exact RSNA split protocol if
+       possible so your numbers are directly comparable.
+
+[2] Dual-Distribution Discrepancy for Anomaly Detection in Chest X-Rays (DDAD)
+    Cai et al. — MICCAI 2022; extended journal version in Medical Image Analysis
+    arXiv 2206.03935
+    [VERIFIED] Uses known-normal PLUS unlabeled images. Inter-discrepancy between
+    two module ensembles + intra-discrepancy within the normal-only module as the
+    anomaly score. Evaluated on three CXR datasets including RSNA.
+    >> Same group as [1]. Strong, directly comparable, RSNA numbers available.
+
+[3] Exploiting Structural Consistency of Chest Anatomy for Unsupervised Anomaly
+    Detection in Radiography Images  (SimSID; earlier version SQUID)
+    Xiang et al. — IEEE TPAMI 2024 (IF ~20) ; SQUID at CVPR 2023
+    arXiv 2403.08689 | SQUID arXiv 2111.13495 | code: github.com/tiangexiang/SQUID
+    [VERIFIED] Space-aware memory queue + deep feature in-painting. Exploits the
+    fact that chest anatomy is spatially CONSISTENT across patients.
+    SQUID: beats 13 SOTA UAD methods by >=5 AUC points on two CXR benchmarks.
+    SimSID: +8.0 / +5.0 / +9.9 AUC on ZhangLab / COVIDx / CheXpert.
+    >> WHY IT MATTERS TO YOU: this is the strongest counter-argument to your
+       "lung prior is a shortcut" finding — they EXPLOIT spatial consistency
+       deliberately and successfully. You must position against it: their spatial
+       prior is learned per-region and used for in-painting; yours was an
+       unintended geometric shortcut that inflated the pooled pixel metric.
+
+[4] Anatomy-aware self-supervised learning for anomaly detection in chest
+    radiographs  (AnatPaste)
+    Sato et al. — iScience (Cell Press) 2023
+    arXiv 2205.04282 | ScienceDirect S258900422301163X
+    [VERIFIED] Anatomy-restricted synthetic anomaly pasting on CXR using a
+    threshold-based lung mask. Highest-performing UAD model in their comparison.
+    >> YOUR DIRECT PREDECESSOR. Your lung-prior generator is an adaptation of
+       this. CRITICAL NUANCE YOU FOUND: their gains are reported at IMAGE level;
+       you show the same anatomy restriction can INFLATE pixel-level metrics via
+       a geometric shortcut (fixed prior = 0.7540 pooled). That nuance is your
+       methodological contribution — check their paper carefully to confirm they
+       do not already report an in-lung/restricted pixel metric.
+
+[5] Viral Pneumonia Screening on Chest X-Rays Using Confidence-Aware Anomaly
+    Detection (CAAD)
+    Zhang et al. — IEEE TRANSACTIONS ON MEDICAL IMAGING, 2021
+    [VERIFIED via search] Confidence-aware anomaly detection for CXR pneumonia.
+    >> Classic TMI reference for the exact clinical task.
+
+[6] Dual-domain adversarial learning and feature constraint for unsupervised
+    anomaly detection in chest X-rays
+    Frontiers in Medicine, 2026 — doi 10.3389/fmed.2026.1757295
+    [READ ME - HIGH PRIORITY] The title is extremely close to your ORIGINAL
+    project title ("dual-domain ... adversarial"). You MUST read this before
+    writing: it either (a) scoops part of your original framing, in which case
+    cite and differentiate, or (b) is the ideal direct comparison point.
+
+################################################################################
+TIER 2 — METHODOLOGICAL FOUNDATIONS you already build on
+################################################################################
+
+[7]  DRAEM — Zavrtanik, Kristan, Skocaj — ICCV 2021 — arXiv 2108.07610
+     Reconstructive + discriminative sub-networks; segmentation IS the score.
+     Basis of your C3.5U/C3.5Ub.
+
+[8]  Kascenas, Pugeault, O'Neil — Denoising AEs for brain MRI — MIDL 2022
+     + journal extension: "The role of noise in denoising models for anomaly
+     detection in medical images", Medical Image Analysis 2023.
+     KEY CLAIM: denoising AEs need NO bottleneck and benefit from skip
+     connections; bottlenecks give poor reconstruction of normal tissue too.
+     >> Basis of your C3.4/C3.5U architectural argument.
+
+[9]  CutPaste — Li, Sohn, Yoon, Pfister — CVPR 2021
+     The self-supervised synthetic-anomaly family. In [1] it scores 60-75 on RSNA.
+
+[10] CAVGA — Venkataramanan et al. — ECCV 2020 — arXiv 1911.08616
+     Attention expansion loss; CONVOLUTIONAL latent to preserve spatial info.
+
+[11] IterMask^2 — Liang et al. — MICCAI 2024 — arXiv 2406.02422
+     Iterative RULE-BASED mask refinement. Your K-step LEARNED refinement is the
+     learned counterpart (though your result: K=1 dominates, iteration hurts).
+
+[12] AMAE: Adaptation of Pre-Trained Masked Autoencoder for Dual-Distribution
+     Anomaly Detection in Chest X-Rays — arXiv 2307.12721
+     Pretrained-feature adaptation for CXR AD. Relevant to the AE-PL direction.
+
+[13] Focal loss — Lin et al. — ICCV 2017.  Baur et al. — Autoencoders for
+     unsupervised anomaly segmentation in brain MR: a comparative study —
+     Medical Image Analysis 2021 (the classic reconstruction-AD comparison).
+
+################################################################################
+TIER 3 — THE CRITIQUE / EVALUATION GENRE.  Your protocol contribution lives here,
+so you MUST engage with these rather than claim novelty over them.
+################################################################################
+
+[14] Meissen et al. — Challenging current semi-supervised anomaly segmentation
+     methods for brain MRI (2021). Simple FLAIR intensity thresholding beats deep
+     UAD methods.
+[15] Meissen, Wiestler, Kaissis, Rueckert — "On the pitfalls of using the residual
+     error as anomaly score" — MIDL 2022. SOTA UAD effectively does
+     "white-object detection".
+[16] Lagogiannis et al. — Unsupervised pathology detection: a deep dive into the
+     state of the art — IEEE TRANS. MEDICAL IMAGING, 2024.
+     >> YOUR fixed-lung-prior control (0.7540 pooled vs 0.5000 in-lung) belongs to
+        this tradition. Do NOT present "trivial baseline beats deep method" as new.
+        The narrower, plausibly-unclaimed point is: ANATOMY-RESTRICTED SYNTHETIC
+        GENERATORS induce a geometric shortcut that inflates POOLED pixel metrics,
+        and evaluation must therefore be lung-restricted.
+
+################################################################################
+HOW TO FRAME YOUR CONTRIBUTION AGAINST THIS LITERATURE
+################################################################################
+  vs [1] MedIAnomaly : you reproduce their finding that synthetic/self-supervised
+        methods underperform on RSNA, and you EXPLAIN it (proxy overfitting with a
+        measured capacity dependence: 2.6k-param head -> 0.675 in-lung;
+        1.9M-param head -> 0.489 = chance).
+  vs [4] AnatPaste    : you show their anatomy restriction, while helping image-level
+        detection, creates a pixel-level evaluation confound.
+  vs [3] SQUID/SimSID : they exploit spatial consistency deliberately and well; you
+        must distinguish "deliberate learned spatial prior" from "accidental
+        geometric shortcut". This is the most dangerous reviewer question.
+  vs [14-16]          : you extend the trivial-baseline critique to a NEW cause
+        (synthetic generator geometry) and propose a concrete fix (in-lung metric).
+  POSITIVE DIRECTION  : AE-PL (perceptual loss) is the proven RSNA leader at 87.5.
+        Adding your error-guided attention on TOP of a perceptual-error map is a
+        well-motivated increment the benchmark does not cover (it reports image
+        level only for RSNA).

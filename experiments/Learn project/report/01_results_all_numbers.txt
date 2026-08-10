@@ -74,3 +74,29 @@ LAMBDA_ADV SWEEP for C3 (5 values x 2 seeds), SSIM AUC-ROC mean
   rest. So the sweep tested "adversarial step on vs off", NOT strength. To sweep
   lambda properly, fold terms into ONE backward pass on ONE optimiser.
   ALSO: BEST_LAMBDA_ADV was selected on the TEST set. Note as a limitation.
+
+================================================================================
+CORRECTED C3.4b NUMBERS (2026-08-10, AFTER the BatchNorm .eval() fix)
+================================================================================
+The earlier "fresh inference" numbers (K=3 -> 0.9500) were an ARTIFACT of BUG 1
+(load_weights not calling .eval() -> train-mode BatchNorm). After the fix, saved
+arrays and fresh inference AGREE EXACTLY:
+
+  K      image AUC   pixel pooled   pixel in-lung
+  1        0.8490       0.7198         0.6748   <- BEST on BOTH metrics
+  2        0.8389       0.7294         0.6549
+  3        0.8374       0.7278         0.6519   (trained K)
+  4        0.8336       0.7272         0.6507
+
+  verify: image AUC saved=0.8374 fresh=0.8374 ; in-lung saved=0.6519 fresh=0.6519
+  (raw max|diff| 1.6e-4 = cudnn.benchmark float nondeterminism, NOT a mismatch;
+   the verify cell threshold has been changed to compare METRICS, not bits.)
+
+REVISED CONCLUSIONS:
+  - ITERATION PURELY HURTS. K=1 dominates on image AUC and in-lung. The earlier
+    "detection improves / localization degrades trade-off" was an artifact of the
+    BatchNorm bug. Report K=1.
+  - C3.4b K=1 (0.8490) vs C3.4-a denoising control (0.8467) = +0.002 -> WITHIN NOISE.
+    The attention adds nothing at the IMAGE level over the denoising control.
+  - BUT in-lung 0.6748 vs chance 0.5000 is a REAL localisation signal (+0.175).
+    C3.4b is the best localizer produced in this project.

@@ -1,0 +1,125 @@
+================================================================================
+VERIFIED CITATIONS — resolved via title_selection/fetch_paper_details.py
+(Semantic Scholar / Crossref / arXiv APIs). DOIs and links checked programmatically.
+================================================================================
+
+[1] MedIAnomaly: A comparative study of anomaly detection in medical images
+    Authors : Yu Cai, Weiwen Zhang, Hao Chen, Kwang-Ting Cheng
+    Year    : 2025    Venue: Medical Image Analysis    Citations: 0
+    DOI     : 10.1016/j.media.2025.103500
+    DOI link: https://doi.org/10.1016/j.media.2025.103500
+    S2      : https://doi.org/10.1016/j.media.2025.103500
+    ROLE    : BENCHMARK on RSNA — 30 methods, 7 datasets. AE-PL 87.5 on RSNA
+
+[2] MedIAnomaly: A comparative study of anomaly detection in medical images
+    Authors : Yu Cai, Weiwen Zhang, Hao Chen, Kwang-Ting Cheng
+    Year    : 2024    Venue: arXiv    Citations: 0
+    arXiv   : https://arxiv.org/abs/2404.04518
+    S2      : https://arxiv.org/abs/2404.04518
+    ROLE    : MedIAnomaly preprint
+
+[3] Dual-Distribution Discrepancy for Anomaly Detection in Chest X-Rays
+    Authors : Yu Cai, Hao Chen, Xin Yang, Yu Zhou et al.
+    Year    : 2022    Venue: arXiv    Citations: 0
+    arXiv   : https://arxiv.org/abs/2206.03935
+    S2      : https://arxiv.org/abs/2206.03935
+    ROLE    : Dual-Distribution Discrepancy, CXR incl RSNA (MICCAI22 + journal)
+
+[4] Exploiting Structural Consistency of Chest Anatomy for Unsupervised Anomaly Detection in Radiography Images
+    Authors : Tiange Xiang, Yixiao Zhang, Yongyi Lu, Alan L. Yuille et al.
+    Year    : 2024    Venue: IEEE Transactions on Pattern Analysis and Machine Intelligence    Citations: 24
+    DOI     : 10.1109/TPAMI.2024.3382009
+    DOI link: https://doi.org/10.1109/TPAMI.2024.3382009
+    arXiv   : https://arxiv.org/abs/2403.08689
+    S2      : https://api.semanticscholar.org/graph/v1/paper/ARXIV:2403.08689
+    ROLE    : SimSID TPAMI 2024 — structural consistency of chest anatomy
+
+[5] SQUID: Deep Feature In-Painting for Unsupervised Anomaly Detection
+    Authors : Tiange Xiang, Yixiao Zhang, Yongyi Lu, Alan L. Yuille et al.
+    Year    : 2021    Venue: arXiv    Citations: 0
+    arXiv   : https://arxiv.org/abs/2111.13495
+    S2      : https://arxiv.org/abs/2111.13495
+    ROLE    : SQUID CVPR 2023 — space-aware memory queue, deep feature in-painting
+
+[6] Anatomy-aware Self-supervised Learning for Anomaly Detection in Chest Radiographs
+    Authors : Junya Sato, Yuki Suzuki, Tomohiro Wataya, Daiki Nishigaki et al.
+    Year    : 2022    Venue: arXiv    Citations: 0
+    arXiv   : https://arxiv.org/abs/2205.04282
+    S2      : https://arxiv.org/abs/2205.04282
+    ROLE    : AnatPaste iScience 2023 — anatomy-aware synthesis CXR (our generator basis)
+
+[7] DRÆM – A discriminatively trained reconstruction embedding for surface anomaly detection
+    Authors : Vitjan Zavrtanik, M. Kristan, D. Skočaj
+    Year    : 2021    Venue: IEEE International Conference on Computer Vision    Citations: 1187
+    DOI     : 10.1109/ICCV48922.2021.00822
+    DOI link: https://doi.org/10.1109/ICCV48922.2021.00822
+    arXiv   : https://arxiv.org/abs/2108.07610
+    S2      : https://api.semanticscholar.org/graph/v1/paper/ARXIV:2108.07610
+    ROLE    : DRAEM ICCV21 — reconstructive+discriminative, basis of C3.5U
+
+[8] CutPaste: Self-Supervised Learning for Anomaly Detection and Localization
+    Authors : Chun-Liang Li, Kihyuk Sohn, Jinsung Yoon, Tomas Pfister
+    Year    : 2021    Venue: arXiv    Citations: 0
+    arXiv   : https://arxiv.org/abs/2104.04015
+    S2      : https://arxiv.org/abs/2104.04015
+    ROLE    : CutPaste CVPR21 — self-supervised synthetic anomalies (60-75 on RSNA)
+
+[9] Attention Guided Anomaly Localization in Images
+    Authors : Shashanka Venkataramanan, Kuan-Chuan Peng, Rajat Vikram Singh, Abhijit Mahalanobis
+    Year    : 2019    Venue: arXiv    Citations: 0
+    arXiv   : https://arxiv.org/abs/1911.08616
+    S2      : https://arxiv.org/abs/1911.08616
+    ROLE    : CAVGA ECCV20 — attention expansion loss, convolutional latent
+
+[10] IterMask2: Iterative Unsupervised Anomaly Segmentation via Spatial and Frequency Masking for Brain Lesions in MRI
+    Authors : Ziyun Liang, Xiaoqing Guo, J. Alison Noble, Konstantinos Kamnitsas
+    Year    : 2024    Venue: arXiv    Citations: 0
+    arXiv   : https://arxiv.org/abs/2406.02422
+    S2      : https://arxiv.org/abs/2406.02422
+    ROLE    : IterMask2 MICCAI24 — rule-based iterative refinement
+
+[11] AMAE: Adaptation of Pre-Trained Masked Autoencoder for Dual-Distribution Anomaly Detection in Chest X-Rays
+    Authors : Behzad Bozorgtabar, Dwarikanath Mahapatra, Jean-Philippe Thiran
+    Year    : 2023    Venue: arXiv    Citations: 0
+    arXiv   : https://arxiv.org/abs/2307.12721
+    S2      : https://arxiv.org/abs/2307.12721
+    ROLE    : AMAE — pretrained MAE adaptation, dual-distribution CXR
+
+[12] On the Pitfalls of Using the Residual Error as Anomaly Score
+    Authors : Felix Meissen, Benedikt Wiestler, Georgios Kaissis, Daniel Rueckert
+    Year    : 2022    Venue: arXiv    Citations: 0
+    arXiv   : https://arxiv.org/abs/2202.03826
+    S2      : https://arxiv.org/abs/2202.03826
+    ROLE    : Meissen MIDL22 — pitfalls of residual error as anomaly score
+
+[13] Unsupervised Pathology Detection: A Deep Dive Into the State of the Art
+    Authors : Ioannis Lagogiannis, Felix Meissen, Georgios Kaissis, Daniel Rueckert
+    Year    : 2023    Venue: arXiv    Citations: 0
+    DOI     : 10.1109/TMI.2023.3298093
+    DOI link: https://doi.org/10.1109/TMI.2023.3298093
+    arXiv   : https://arxiv.org/abs/2303.00609
+    S2      : https://arxiv.org/abs/2303.00609
+    ROLE    : Lagogiannis TMI24 — deep dive into UAD state of the art
+
+[14] Autoencoders for Unsupervised Anomaly Segmentation in Brain MR Images: A Comparative Study
+    Authors : Christoph Baur, Stefan Denner, Benedikt Wiestler, Shadi Albarqouni et al.
+    Year    : 2020    Venue: Medical Image Anal.    Citations: 387
+    DOI     : 10.1016/j.media.2020.101952
+    DOI link: https://doi.org/10.1016/j.media.2020.101952
+    arXiv   : https://arxiv.org/abs/2004.03271
+    S2      : https://api.semanticscholar.org/graph/v1/paper/DOI:10.1016/j.media.2020.101952
+    ROLE    : Baur MIA21 — AEs for unsupervised anomaly segmentation, comparative
+
+[15] The role of noise in denoising models for anomaly detection in medical images
+    Authors : Antanas Kascenas, Pedro Sanchez, Patrick Schrempf, Chaoyang Wang et al.
+    Year    : 2023    Venue: arXiv    Citations: 0
+    arXiv   : https://arxiv.org/abs/2301.08330
+    S2      : https://arxiv.org/abs/2301.08330
+    ROLE    : Kascenas MIA23 — role of noise in denoising models (journal ext.)
+
+[16] Focal Loss for Dense Object Detection
+    Authors : Tsung-Yi Lin, Priya Goyal, Ross Girshick, Kaiming He et al.
+    Year    : 2017    Venue: arXiv    Citations: 0
+    arXiv   : https://arxiv.org/abs/1708.02002
+    S2      : https://arxiv.org/abs/1708.02002
+    ROLE    : Focal loss ICCV17

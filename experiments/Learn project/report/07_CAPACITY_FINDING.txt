@@ -1,0 +1,51 @@
+================================================================================
+THE CENTRAL FINDING  (updated 2026-08-10, after C3.5Ub)
+================================================================================
+
+CAPACITY CONTROLS PROXY OVERFITTING — and it is the difference between a working
+localizer and a useless one.
+
+                        params   recept.  synthetic   REAL     REAL
+                        (head)   field    image AUC   img AUC  in-lung pixel
+  C3.4b (K=1) tiny head  2,641     5 px       -        0.8490   0.6748  <- REAL SIGNAL
+  C3.5U  U-Net v1 gen  1,928,129  68 px    1.0000      0.6110   0.4941  <- chance
+  C3.5Ub U-Net v2 gen  1,928,129  68 px    0.9971      0.6108   0.4885  <- chance
+  fixed lung prior         0        -         -          -      0.5000  (chance ref)
+
+INTERPRETATION
+  The 2,641-parameter head is TOO WEAK to memorise the generator's signature, so it
+  is forced to rely on the generic SSIM reconstruction-error signal — which carries
+  real information (0.6748 in-lung, +0.175 over chance).
+  The 1.9M U-Net has ample capacity to memorise the exact synthetic signature
+  ("uniform brightness offset + smoothed texture + soft blob edge inside the lung
+  ellipses"), achieves ~1.0 on synthetic, and transfers NOTHING.
+  => Limited capacity acts as implicit regularisation against proxy overfitting.
+
+SIZE WAS NOT THE LEVER  (important negative)
+  v1 generator: coverage 0.247 of frame -> synthetic 1.0000 / real 0.6110 / in-lung 0.4941
+  v2 generator: coverage 0.051 of frame -> synthetic 0.9971 / real 0.6108 / in-lung 0.4885
+  A ~5x change in lesion size changed real performance by 0.0002. Two very different
+  generators, same outcome. The network memorises whatever signature is present,
+  regardless of its scale. Do NOT spend another run on size tuning alone.
+  (NOTE: real RSNA boxes cover 0.124 of the frame, not 0.058 — the 0.058 figure came
+   from SAMPLE_MODE's fake boxes. v2 at 0.051 is if anything ~2.4x too SMALL. But
+   given size demonstrably does not matter, this is not worth another run.)
+
+VISUAL MISMATCH (observed directly, worth recording)
+  - synthetic blobs are oval/irregular; the pixel-level GROUND TRUTH is RECTANGULAR
+    (boxes_to_mask fills the bounding box). So the evaluation target is a box, not a
+    lesion outline. A model producing anatomically plausible oval masks is PENALISED
+    by pixel-AUROC. This is a limitation of box-based GT, not of the model.
+  - synthetic covers extra space beyond where a real opacity would sit
+  - synthetic brightness inside the lesion differs from real consolidation
+  => any future generator work should target SHAPE and TEXTURE realism, not size.
+
+WHAT THIS MEANS FOR THE WRITE-UP
+  The strongest defensible claims are now:
+   1. Synthetic-anomaly supervision on this task overfits the proxy: perfect synthetic,
+      chance-level real localisation — demonstrated across TWO generator configurations
+      differing 5x in lesion size.
+   2. Model capacity determines whether the proxy is memorised. The weak head keeps a
+      transferable signal; the strong one does not.
+   3. Pooled pixel-AUROC is confounded by anatomy (fixed prior 0.7540); evaluation must
+      be in-lung, where the same prior correctly scores 0.5000.
