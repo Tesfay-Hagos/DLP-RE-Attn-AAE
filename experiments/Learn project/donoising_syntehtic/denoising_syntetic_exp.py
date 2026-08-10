@@ -1119,6 +1119,17 @@ CAPACITY_LADDER = [(3, 3), (4, 3), (4, 4), (4, 5)] if not SAMPLE_MODE else [(3, 
 ARMS            = ['denoise', 'synthmask']
 SWEEP_SEEDS     = [42, 1337] if not SAMPLE_MODE else [42]
 
+# Chance levels for the in-lung pixel metrics, computed ONCE from the ground truth.
+# Without these, AP and Dice are uninterpretable: AP of a random scorer equals the
+# positive rate, and "predict everything positive" already achieves Dice 2p/(1+p).
+_gt_inlung, _ = _pixel_pairs(np.zeros((len(binary_test), IMAGE_SIZE, IMAGE_SIZE), np.float32),
+                              test_boxes, binary_test, LUNG_PRIOR)
+POS_RATE_INLUNG = float((_gt_inlung > 0.5).mean())
+CHANCE_AP_INLUNG   = POS_RATE_INLUNG
+TRIVIAL_DICE_INLUNG = 2 * POS_RATE_INLUNG / (1 + POS_RATE_INLUNG)
+print(f"In-lung chance levels -> AUROC 0.5000 | AP {CHANCE_AP_INLUNG:.4f} "
+      f"(positive rate) | Dice {TRIVIAL_DICE_INLUNG:.4f} (predict-all-positive)")
+
 factorial_results = []
 
 for arm in ARMS:
@@ -1210,9 +1221,13 @@ for arm in ARMS:
             else:
                 rec['synthetic_auc'] = float('nan')
 
-            print(f"  image AUC={rec['image_auc']:.4f}  in-lung AUROC={rec['pix_auroc_inlung']:.4f}  "
-                  f"AP={rec['pix_ap_inlung']:.4f}  Dice={rec['dice_inlung']:.4f}  "
-                  f"synthAUC={rec['synthetic_auc']:.4f}")
+            # every pixel metric shown as a DELTA over its chance/trivial level, so a
+            # number that merely matches the baseline cannot look like a result
+            print(f"  image AUC={rec['image_auc']:.4f} | in-lung "
+                  f"AUROC={rec['pix_auroc_inlung']:.4f} ({rec['pix_auroc_inlung']-0.5:+.4f}) "
+                  f"AP={rec['pix_ap_inlung']:.4f} ({rec['pix_ap_inlung']-CHANCE_AP_INLUNG:+.4f}) "
+                  f"Dice={rec['dice_inlung']:.4f} ({rec['dice_inlung']-TRIVIAL_DICE_INLUNG:+.4f}) "
+                  f"| synthAUC={rec['synthetic_auc']:.4f}")
             factorial_results.append(rec)
 
 # %% [CELL 4.2]  Factorial summary — the interaction figure
