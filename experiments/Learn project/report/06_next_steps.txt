@@ -1,0 +1,65 @@
+================================================================================
+NEXT STEPS — ordered by (evidence gained) / (GPU cost)
+================================================================================
+
+IMMEDIATE — C3.5Ub, the realistic generator      [~90 min, one training run]
+  KEEP C3.5U AS-IS. Define a NEW function make_synthetic_anomaly_anat_v2 and let
+  ONLY C3.5Ub call it. Do NOT overwrite make_synthetic_anomaly_anat: C3.4-a,
+  C3.4b and C3.5U all call it, and redefining it would silently change their
+  behaviour on any re-run and destroy comparability with everything logged.
+
+  Three defects to fix, all measured:
+    1. SIZE      mask = (blob > blob.mean()) keeps ~50% of pixels; x lung prior
+                 (~42%) -> 24.9% coverage vs ~7% for real boxes (3.5x too big).
+                 FIX: per-sample quantile threshold, q ~ U(0.80, 0.95).
+    2. INTENSITY constant +0.35 is a trivial giveaway.
+                 FIX: delta ~ U(0.08, 0.30) per sample.
+    3. TEXTURE   old version only shifts brightness and KEEPS texture. Real
+                 consolidation REDUCES local variance.
+                 FIX: blend toward a locally smoothed version inside the blob.
+
+  ORDER OF OPERATIONS (important):
+    a) define make_synthetic_anomaly_anat_v2
+    b) run the coverage check ON v2 -> target 0.05-0.10 (it calls whatever is in
+       the kernel, so it must be defined FIRST or you just re-measure the old one)
+    c) eyeball 10 synthetic samples next to 10 real opacity cases. If they do not
+       look like the same phenomenon, fix the generator before spending GPU time.
+    d) train C3.5Ub
+    e) re-run the synthetic-vs-real gap cell. SUCCESS = the gap NARROWS.
+       Synthetic staying at ~1.0 while real stays ~0.6 means the generator is
+       still being memorised.
+
+CHEAP AND LOAD-BEARING — 2 more seeds of C3.4-a   [~14 min]
+  Only ONE valid denoising-control run exists (0.8467). The two invalid runs
+  spanned 0.019, so no single-run comparison against it can support a claim.
+  Everything else in this study got multi-seed treatment before being believed.
+
+RESOLVE THE C3.4b CONTRADICTION                   [~40 min]
+  Saved arrays and fresh inference disagree (0.85 vs 0.95 image, 0.53 vs 0.65
+  in-lung). BUG 1 (BatchNorm eval mode) is the prime suspect and is now fixed.
+  ACTION: delete C3.4-a and C3.4b checkpoints, retrain both end-to-end in ONE
+  session so arrays and weights are written together, then re-run
+  check -> check2 -> check3 -> kcurve -> verify. The verify cell must print
+  IDENTICAL. Until it does, do not quote C3.4b numbers.
+
+IF THE GENERATOR FIX WORKS
+  - re-run the K sweep on C3.5Ub (learned iterative refinement is the clearest
+    remaining novelty gap vs DRAEM single-shot / IterMask^2 rule-based)
+  - C4b control: same architecture, mask from a generic source (e.g. hf(x) only,
+    no SSIM channel) -> proves the error-conditioning matters, not just "attention"
+  - 3 seeds on the final config
+
+IF THE GENERATOR FIX DOES NOT WORK
+  The finding is then: synthetic-anomaly supervision does not transfer to diffuse
+  CXR consolidation, quantified by the synthetic-vs-real table, with the specific
+  defects ruled out one at a time. That is a real, defensible claim about the
+  DOMAIN rather than about a coding choice. Must engage with Meissen/Lagogiannis
+  (see 04) and be tested on more than one generator to be convincing.
+
+STANDING RULES ADOPTED IN THIS PROJECT
+  - never change SPLIT_SEED (train/test split must stay frozen)
+  - select hyperparameters on MEAN over seeds, never on a single best run
+  - never select the reported number on the test set (note as a limitation where done)
+  - one variable per comparison; if two things changed, the number is uninterpretable
+  - after editing CELL 6 or CELL 1.4, RE-RUN THEM before any condition cell
+  - prefer freshly-trained numbers over reloaded ones until verify prints IDENTICAL

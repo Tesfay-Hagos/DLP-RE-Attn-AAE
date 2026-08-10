@@ -2243,3 +2243,209 @@ else:
 for _nm in ['enc1', 'enc2', 'dec', 're_attn']:
     _p = f'{CKPT_DIR}/C3.4b_{_nm}.pth'
     print(f"  weight file {_nm:<8} {'present' if os.path.exists(_p) else 'MISSING -> random init!'}")
+
+
+# %% [CELL 3.5Ub-gen]  Realistic synthetic generator v2 + coverage/visual check (NO training)
+# NEW NAME on purpose: make_synthetic_anomaly_anat is called by C3.4-a, C3.4b AND C3.5U.
+# Overwriting it would silently change all three on any re-run and destroy comparability
+# with everything already logged. Only C3.5Ub uses v2.
+
+def make_synthetic_anomaly_anat_v2(xb, lung_prior, q_range=(0.80, 0.95),
+                                    delta=(0.08, 0.30), smooth=True):
+    """Anatomy-restricted synthetic consolidation with realistic size/intensity/texture.
+    Fixes three MEASURED defects of v1:
+      1. SIZE      v1 thresholded at the MEAN of uniform noise -> ~50% of pixels, and
+                   after the lung prior ~24.9% of the frame. Real RSNA boxes are ~7%.
+                   v2 uses a per-sample quantile threshold, so lesion size varies.
+      2. INTENSITY v1 added a constant +0.35 — a trivial giveaway a big network can
+                   memorise. v2 samples delta ~ U(0.08, 0.30) per image.
+      3. TEXTURE   v1 only shifted brightness and KEPT the underlying texture. Real
+                   consolidation REDUCES local variance, so v2 blends toward a locally
+                   smoothed version inside the blob."""
+    n, c, h, w = xb.shape
+    noise = torch.rand(n, 1, 8, 8, device=xb.device)
+    blob  = F.interpolate(noise, size=(h, w), mode='bilinear', align_corners=False)
+
+    flat = blob.view(n, -1)
+    q    = torch.empty(n, device=xb.device).uniform_(*q_range)
+    k    = (q * (flat.shape[1] - 1)).long()
+    thr  = flat.sort(dim=1).values.gather(1, k.view(n, 1)).view(n, 1, 1, 1)
+
+    mask = (blob > thr).float()
+    mask = F.avg_pool2d(mask, 9, stride=1, padding=4) * lung_prior
+    d    = torch.empty(n, 1, 1, 1, device=xb.device).uniform_(*delta)
+    base = F.avg_pool2d(xb, 5, stride=1, padding=2) if smooth else xb
+    x_synth = xb * (1 - mask) + (base + d).clamp(0, 1) * mask
+    return x_synth, mask
+
+
+# ── coverage: v1 vs v2 vs the real target ──────────────────────────────────────
+_norm = np.where(binary_test == 0)[0][:64]
+_xb   = torch.tensor(x_test[_norm]).to(device)
+_, _m1 = make_synthetic_anomaly_anat(_xb, LUNG_PRIOR)
+_, _m2 = make_synthetic_anomaly_anat_v2(_xb, LUNG_PRIOR)
+_real = np.mean([boxes_to_mask(test_boxes[i]).mean()
+                 for i in list(test_boxes)[:200]])
+print(f"frame coverage   v1 (old) : {(_m1 > 0.5).float().mean():.3f}")
+print(f"frame coverage   v2 (new) : {(_m2 > 0.5).float().mean():.3f}")
+print(f"frame coverage   REAL boxes: {_real:.3f}   <- the target")
+
+# ── visual: do synthetic and real look like the same phenomenon? ───────────────
+_opa = [i for i in range(len(binary_test)) if binary_test[i] == 1 and i in test_boxes][:5]
+_xs, _ms = make_synthetic_anomaly_anat_v2(torch.tensor(x_test[_norm[:5]]).to(device), LUNG_PRIOR)
+fig, axes = plt.subplots(2, 5, figsize=(15, 6))
+for j in range(5):
+    axes[0, j].imshow(_xs[j, 0].cpu().numpy(), cmap='gray', vmin=0, vmax=1)
+    axes[0, j].contour(_ms[j, 0].cpu().numpy(), levels=[0.5], colors='cyan', linewidths=1)
+    axes[0, j].set_title('SYNTHETIC v2'); axes[0, j].axis('off')
+    idx = _opa[j]
+    axes[1, j].imshow(x_test[idx, 0], cmap='gray')
+    sc = IMAGE_SIZE / ORIG_SIZE
+    for (x, y, w_, h_) in test_boxes[idx]:
+        axes[1, j].add_patch(patches.Rectangle((x*sc, y*sc), w_*sc, h_*sc,
+                              linewidth=1.5, edgecolor='lime', facecolor='none'))
+    axes[1, j].set_title(f'REAL opacity (idx {idx})'); axes[1, j].axis('off')
+plt.tight_layout(); plt.savefig(f'{OUTPUT_DIR}/synth_v2_vs_real.png', dpi=150); plt.show()
+print(f"Saved {OUTPUT_DIR}/synth_v2_vs_real.png")
+print("\nJUDGE THIS BEFORE TRAINING: if the top row does not look like the same")
+print("phenomenon as the bottom row, tune q_range/delta and re-run — do NOT spend")
+print("90 min training on a generator whose samples you have not looked at.")
+
+
+# %% [markdown]
+# ---
+# ## **Cell 3.5Ub** — C3.5Ub: identical to C3.5U, ONLY the generator changes
+# C3.5U scored 1.0000 on synthetic and 0.6110 on real — it solved a proxy task that
+# does not resemble pneumonia. Measured defect: synthetic lesions covered 24.9% of the
+# frame vs ~7% for real boxes, at a constant +0.35 intensity with texture preserved.
+# C3.5Ub changes **only** `make_synthetic_anomaly_anat` -> `..._v2` (coverage 0.046,
+# random intensity, reduced local texture). Everything else — architecture, losses,
+# optimiser, epochs, scoring — is byte-identical to C3.5U, so any difference is
+# attributable to synthesis realism alone. C3.5U is the control; do not retrain it.
+# SUCCESS CRITERION: the synthetic-vs-real GAP narrows. Synthetic staying ~1.0 while
+# real stays ~0.6 means the generator is still being memorised.
+
+# %% [CELL 3.5Ub]  C3.5Ub — DRAEM-style U-Net with the REALISTIC generator
+
+print("\n" + "="*60)
+print("CONDITION 3.5Ub — U-Net + realistic synthetic generator (v2)")
+print("="*60)
+print("Only change vs C3.5U: make_synthetic_anomaly_anat_v2 (coverage ~0.046 vs 0.249).\n")
+
+recon_c35ub = UNetAD(1, 1, base=32).to(device)
+disc_c35ub  = UNetAD(2, 1, base=32, out_act=None).to(device)   # logits
+
+ensure_local('C3.5Ub')
+if is_done('C3.5Ub'):
+    scores_c35ub, _, segmaps_c35ub = load_ckpt('C3.5Ub')
+    load_weights('C3.5Ub', recon=recon_c35ub, disc=disc_c35ub)
+else:
+    opt_c35ub   = Adam(list(recon_c35ub.parameters()) + list(disc_c35ub.parameters()),
+                       lr=LR, betas=(BETA1, 0.999))
+    sched_c35ub = torch.optim.lr_scheduler.CosineAnnealingLR(opt_c35ub, T_max=EPOCHS, eta_min=1e-6)
+    loader_c35ub     = make_loader(x_train_norm, BATCH_SIZE)
+    c35ub_epoch_loss = []
+    c35ub_diag = {'rec': [], 'seg': [], 'seg_mean_anom': [], 'seg_mean_clean': []}
+
+    t0 = time.time()
+    for epoch in range(EPOCHS):
+        recon_c35ub.train(); disc_c35ub.train()
+        rec_l, seg_l, sma_l, smc_l = [], [], [], []
+        for (xb,) in loader_c35ub:
+            xb = xb.to(device); n = xb.size(0)
+            flip = torch.rand(n, device=device) > 0.5
+            xb[flip] = xb[flip].flip(dims=[3])
+
+            apply = (torch.rand(n, device=device) < 0.5).view(-1, 1, 1, 1).float()
+            x_synth, m_full = make_synthetic_anomaly_anat_v2(xb, LUNG_PRIOR)   # <-- ONLY CHANGE
+            x_in = xb * (1 - apply) + x_synth * apply
+            m    = (m_full * apply > 0.5).float()
+
+            opt_c35ub.zero_grad()
+            x_hat = recon_c35ub(x_in)
+            loss_rec = 0.7 * mse_fn(x_hat, xb) + 0.3 * ssim_loss_fn(x_hat, xb)
+            seg_logits = disc_c35ub(torch.cat([x_in, x_hat], dim=1))
+            seg = torch.sigmoid(seg_logits)
+            loss_seg = focal_bce_logits(seg_logits, m) + dice_loss(seg, m)
+            total = loss_rec + LAMBDA_SEG * loss_seg
+            if not torch.isfinite(total):
+                raise FloatingPointError(
+                    f"C3.5Ub non-finite loss at epoch {epoch+1}: rec={loss_rec.item()} "
+                    f"seg={loss_seg.item()} logit_absmax={float(seg_logits.abs().max())}")
+            total.backward()
+            torch.nn.utils.clip_grad_norm_(
+                list(recon_c35ub.parameters()) + list(disc_c35ub.parameters()), max_norm=1.0)
+            opt_c35ub.step()
+
+            rec_l.append(loss_rec.item()); seg_l.append(loss_seg.item())
+            with torch.no_grad():
+                anom = m > 0.5
+                sma_l.append(float(seg[anom].mean()) if anom.any() else float('nan'))
+                smc_l.append(float(seg[~anom].mean()))
+        sched_c35ub.step()
+        c35ub_epoch_loss.append(float(np.mean(rec_l)))
+        for k, v in [('rec', rec_l), ('seg', seg_l), ('seg_mean_anom', sma_l), ('seg_mean_clean', smc_l)]:
+            c35ub_diag[k].append(float(np.nanmean(v)))
+        if (epoch + 1) % 10 == 0 or epoch == 0:
+            print(f"  Epoch {epoch+1:02d}/{EPOCHS}  Rec={c35ub_diag['rec'][-1]:.5f}  "
+                  f"Seg={c35ub_diag['seg'][-1]:.4f}  "
+                  f"seg@anomaly={c35ub_diag['seg_mean_anom'][-1]:.3f}  "
+                  f"seg@clean={c35ub_diag['seg_mean_clean'][-1]:.3f}  "
+                  f"lr={sched_c35ub.get_last_lr()[0]:.2e}")
+    print(f"C3.5Ub training: {time.time()-t0:.1f}s")
+
+    recon_c35ub.eval(); disc_c35ub.eval()
+    scores_c35ub, segmaps_c35ub = [], []
+    with torch.no_grad():
+        for i in range(0, len(x_test), BATCH_SIZE):
+            xb = torch.tensor(x_test[i:i+BATCH_SIZE]).to(device); n = xb.size(0)
+            x_hat = recon_c35ub(xb)
+            seg   = torch.sigmoid(disc_c35ub(torch.cat([xb, x_hat], dim=1)))
+            scores_c35ub.append(torch.quantile(seg.view(n, -1), 0.99, dim=1).cpu().numpy())
+            segmaps_c35ub.append(seg.squeeze(1).cpu().numpy())
+    scores_c35ub  = np.concatenate(scores_c35ub)
+    segmaps_c35ub = np.concatenate(segmaps_c35ub)
+
+    m_c35ub = compute_metrics(scores_c35ub, binary_test)
+    pp_c35ub = pixel_auroc(segmaps_c35ub, test_boxes, binary_test)
+    pl_c35ub = pixel_auroc_inlung(segmaps_c35ub, test_boxes, binary_test, LUNG_PRIOR)
+    print(f"\n  REAL  image AUC-ROC={m_c35ub['auc_roc']:.4f}  AUC-PR={m_c35ub['auc_pr']:.4f}")
+    print(f"  REAL  pixel pooled ={pp_c35ub:.4f}  (fixed prior 0.7540)")
+    print(f"  REAL  pixel in-lung={pl_c35ub:.4f}  (chance 0.5000)")
+    all_results['C3.5Ub'] = {**m_c35ub, 'pixel_auroc_pooled': float(pp_c35ub),
+                             'pixel_auroc_inlung': float(pl_c35ub),
+                             'label': 'U-Net + realistic generator v2'}
+    save_ckpt('C3.5Ub', ['C3.5Ub'], scores_c35ub, None, c35ub_epoch_loss,
+              attn_maps=segmaps_c35ub, recon=recon_c35ub.state_dict(), disc=disc_c35ub.state_dict())
+    with open(f'{CKPT_DIR}/C3.5Ub_diagnostics.json', 'w') as f:
+        json.dump(c35ub_diag, f, indent=2)
+
+# ── built-in synthetic-vs-real gap (the success criterion) ─────────────────────
+from sklearn.metrics import roc_auc_score as _auc
+recon_c35ub.eval(); disc_c35ub.eval()
+torch.manual_seed(0)
+_pool = x_test[np.where(binary_test == 0)[0]]
+_flags = np.zeros(len(_pool), dtype=np.float32); _flags[: len(_pool)//2] = 1.0
+_ss, _sl, _pg, _pp_ = [], [], [], []
+with torch.no_grad():
+    for i in range(0, len(_pool), BATCH_SIZE):
+        xb = torch.tensor(_pool[i:i+BATCH_SIZE]).to(device); n = xb.size(0)
+        cf = torch.tensor(_flags[i:i+BATCH_SIZE], device=device).view(-1,1,1,1)
+        xs, mf = make_synthetic_anomaly_anat_v2(xb, LUNG_PRIOR)
+        xi = xb*(1-cf) + xs*cf; mm = (mf*cf > 0.5).float()
+        xh = recon_c35ub(xi); sg = torch.sigmoid(disc_c35ub(torch.cat([xi, xh], 1)))
+        _ss.append(torch.quantile(sg.view(n,-1), 0.99, dim=1).cpu().numpy())
+        _sl.append(cf.view(-1).cpu().numpy())
+        for b in range(n):
+            if len(_pg) < 300 and mm[b].max() > 0:
+                _pg.append(mm[b,0].cpu().numpy().ravel()); _pp_.append(sg[b,0].cpu().numpy().ravel())
+_lung = (LUNG_PRIOR.squeeze().cpu().numpy() > 0.5).ravel()
+_r = all_results['C3.5Ub']
+print(f"\n{'':22}{'SYNTHETIC':>12}{'REAL':>12}{'  (C3.5U real)':>16}")
+print(f"{'image AUC-ROC':22}{_auc(np.concatenate(_sl).astype(int), np.concatenate(_ss)):>12.4f}"
+      f"{_r['auc_roc']:>12.4f}{all_results.get('C3.5U',{}).get('auc_roc', float('nan')):>16.4f}")
+print(f"{'pixel in-lung':22}"
+      f"{_auc(np.concatenate([g[_lung] for g in _pg]), np.concatenate([p[_lung] for p in _pp_])):>12.4f}"
+      f"{_r['pixel_auroc_inlung']:>12.4f}"
+      f"{all_results.get('C3.5U',{}).get('pixel_auroc_inlung', float('nan')):>16.4f}")
+print("\nSUCCESS = the synthetic-real GAP narrows vs C3.5U (1.0000 / 0.6110).")

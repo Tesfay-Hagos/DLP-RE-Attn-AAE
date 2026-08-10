@@ -1,0 +1,43 @@
+================================================================================
+EVALUATION PROTOCOL — the confound and the fix  (methodological contribution)
+================================================================================
+
+THE PROBLEM
+  pixel_auroc() pools EVERY pixel of anomalous images as candidates, including
+  image borders, black corners and everything outside the body. RSNA boxes are
+  ALWAYS inside the lung field. Therefore ANY lung-shaped map separates positives
+  from negatives well, purely from anatomy, before the model does anything.
+
+THE MEASUREMENT THAT PROVES IT
+  A FIXED, non-learned, input-independent lung-shaped template scores:
+      pooled  pixel-AUROC = 0.7540
+      in-lung pixel-AUROC = 0.5000   (exactly chance, as it must be)
+  Every learned map in this project scores BELOW 0.7540 on the pooled metric.
+
+THE FIX
+  pixel_auroc_inlung(maps, boxes, labels, lung_mask) restricts BOTH ground truth
+  and prediction to lung-field pixels. It asks the question a radiologist cares
+  about: WITHIN THE LUNG, does the map find the lesion?
+
+WHY THIS MATTERS BOTH WAYS
+  - It removes free credit: 0.75 of "localisation performance" was the trivial
+    statement "pneumonia occurs in lungs, not in the image corners".
+  - It can also REVEAL signal the pooled metric HIDES: C3.4b (fresh) scores 0.7237
+    pooled (below the prior => looks like failure) but 0.6783 in-lung (well above
+    chance => real signal). The mask is LESS lung-shaped than the prior, so it
+    loses the anatomy-dominated pooled metric while being better at the actual task.
+
+REPORTING RULE ADOPTED
+  - Report IN-LUNG pixel-AUROC as the localisation headline.
+  - Always print the fixed-prior control (0.5000 in-lung) beside it.
+  - Report pooled ONLY next to the 0.7540 prior, to expose the confound.
+  - Never report the disc/fusion score (see 03 N2).
+
+RELATION TO PUBLISHED WORK (verified, see 04)
+  "Trivial baseline beats deep UAD method" is an ESTABLISHED genre (Meissen 2021,
+  Meissen MIDL 2022, Lagogiannis TMI 2024). Do NOT claim novelty for that pattern.
+  The narrower, plausibly-unclaimed point is:
+    "anatomy-restricted synthetic anomaly generators induce a geometric shortcut
+     that inflates pixel-level metrics; evaluation must be restricted in-lung."
+  READ those three papers before writing it up - if one already makes the point,
+  the contribution evaporates.

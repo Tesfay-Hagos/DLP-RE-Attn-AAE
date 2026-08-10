@@ -1,0 +1,45 @@
+================================================================================
+PROJECT STATE SUMMARY  —  RE-Attn anomaly detection on RSNA Pneumonia (128x128)
+================================================================================
+Last updated: 2026-08-09
+
+ONE-LINE STATE
+  Image-level detection works. Localization does NOT (chance-level once the
+  evaluation confound is removed). The cause is now MEASURED: synthetic-anomaly
+  supervision overfits a proxy task that does not resemble real pneumonia.
+
+THE HEADLINE EVIDENCE (C3.5U, DRAEM-style U-Net)
+                          SYNTHETIC     REAL
+    image AUC-ROC           1.0000      0.6110
+    pixel-AUROC pooled      0.9993      0.4883
+    pixel-AUROC in-lung     0.9985      0.4941
+  -> The network is not broken. It solves the synthetic task PERFECTLY and
+     transfers nothing. The GENERATOR is the bottleneck, not the architecture.
+
+THE MEASURED DEFECT
+  synthetic lesions cover 24.9% of the frame; real RSNA boxes cover ~7%.
+  ~3.5x too large. Traced to one line:
+      mask = (blob > blob.mean(...))     # keeps ~50% of pixels
+  intersected with the lung prior (~42% of frame) -> ~25%.
+  Task became "find the huge uniformly-brightened half-lung", solvable by a
+  local mean-shift test. Real consolidation never triggers that.
+
+WHAT IS SOLID (defensible today)
+  1. Adversarial latent regularisation HURTS, at every strength tested (20x range).
+  2. The latent discriminator score is CHANCE-LEVEL everywhere it was measured.
+  3. Pooled pixel-AUROC is CONFOUNDED by anatomy; a fixed non-learned lung
+     template scores 0.7540, beating every learned map produced in this project.
+  4. The synthetic->real gap is quantified (table above).
+
+WHAT IS NOT SETTLED
+  - C3.4b's true numbers (saved arrays vs fresh inference disagree; see 02).
+  - Whether a realistic generator fixes localization (that is the next experiment).
+
+FILE INDEX
+  00_SUMMARY.txt            this file
+  01_results_all_numbers.txt every number produced, with provenance
+  02_bugs_found_and_fixed.txt engineering bugs (several changed conclusions)
+  03_negative_results.txt   things that did NOT work, with evidence
+  04_literature.txt         verified papers and what they actually say
+  05_evaluation_protocol.txt the pixel-AUROC confound and the in-lung fix
+  06_next_steps.txt         concrete ordered plan

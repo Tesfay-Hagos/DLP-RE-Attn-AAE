@@ -1,0 +1,76 @@
+================================================================================
+ALL RESULTS, WITH PROVENANCE
+================================================================================
+Dataset: RSNA Pneumonia, 128x128, 2000 normal + 2000 opacity test, train = normal only.
+Split frozen by SPLIT_SEED=42 (never change). EPOCHS=80, WARMUP=20, LR=1e-4, BATCH=32.
+
+--------------------------------------------------------------------------------
+IMAGE-LEVEL AUC-ROC
+--------------------------------------------------------------------------------
+  C1   plain CNN-AE                      0.8166     <- anchor baseline
+  C3   CNN-AAE (adversarial)             0.8058-0.8125 (mean over lambda sweep)
+  C3.4 denoising-AE, UNRESTRICTED gen    0.8201 / 0.8392   (2 runs; DISCARD as control,
+                                                            different generator)
+  C3.4-a denoising-AE, RESTRICTED gen    0.8467     <- the VALID denoising control (n=1)
+  C3.4b RE-Attn iterative (saved arrays) 0.8504 (K=3) / 0.8638 (K=1)   [CONTESTED]
+  C3.4b RE-Attn iterative (fresh infer)  0.9309 (K1) 0.9464 (K2) 0.9500 (K3) 0.9502 (K4)
+                                                     [CONTESTED - see 02_bugs]
+  C3.5U DRAEM-style U-Net (K=1)          0.6110     <- WORSE than plain AE
+  C4   old discriminator-based           0.6460 primary / 0.8197 pass-1 sanity
+
+  NOTE ON C3.4-a: only ONE valid run exists. The two unrestricted runs spanned
+  0.019, so a single point cannot support a +0.017 claim over it. 2 more seeds
+  of C3.4-a is the cheapest load-bearing experiment outstanding.
+
+--------------------------------------------------------------------------------
+PIXEL-LEVEL (localization)
+--------------------------------------------------------------------------------
+  BASELINES (no model at all):
+    fixed lung prior, pooled            0.7540 / 0.7541
+    fixed lung prior, IN-LUNG           0.5000   <- correct chance level
+    population-average learned mask     0.7458 (pooled)
+
+  raw SSIM error map (old C4)           0.6949 pooled
+  att_img (old C4)                      0.7017 pooled
+  C3.4b (saved arrays)                  0.7227 / 0.6354 pooled ; 0.5341 in-lung
+  C3.4b (fresh, per-K)   K=1            0.7237 pooled ; 0.6783 in-lung
+                         K=2            0.7290 pooled ; 0.6558 in-lung
+                         K=3            0.7280 pooled ; 0.6539 in-lung
+                         K=4            0.7275 pooled ; 0.6525 in-lung
+  C3.5U U-Net                           0.4883 pooled ; 0.4941 in-lung  <- CHANCE
+
+  *** EVERY learned map ever produced loses to the fixed lung template on the
+      POOLED metric (all < 0.7540). That includes the "att_img beats raw SSIM"
+      result (0.7017 vs 0.6949) which was once treated as the strongest asset. ***
+
+--------------------------------------------------------------------------------
+C3.5U SYNTHETIC-vs-REAL (the key diagnostic)
+--------------------------------------------------------------------------------
+                          SYNTHETIC     REAL
+    image AUC-ROC           1.0000      0.6110
+    pixel-AUROC pooled      0.9993      0.4883
+    pixel-AUROC in-lung     0.9985      0.4941
+    synthetic coverage      0.249 of frame   (real lesions ~0.07)
+
+--------------------------------------------------------------------------------
+ENCODER DOWNSAMPLING SWEEP (3 variants x 3 seeds, image AUC-ROC)
+--------------------------------------------------------------------------------
+  max     0.8348 / 0.8340 / 0.8293   mean 0.8327   ~613 s/run   4,287,552 params
+  avg     0.8348 / 0.8417 / 0.8317   mean 0.8361   ~618 s/run   4,287,552 params
+  stride  0.8425 / 0.8395 / 0.8394   mean 0.8405   ~401 s/run   4,359,456 params
+  -> stride wins and is ~35% faster. Adopted as default (down='stride').
+  -> seed-to-seed spread within a variant: 0.002-0.005  (USE THIS AS THE NOISE FLOOR)
+
+--------------------------------------------------------------------------------
+LAMBDA_ADV SWEEP for C3 (5 values x 2 seeds), SSIM AUC-ROC mean
+--------------------------------------------------------------------------------
+  0.05 -> 0.8082 | 0.10 -> 0.8068 | 0.30 -> 0.8058 | 0.60 -> 0.8074 | 1.00 -> 0.8125
+  ALL below C1 = 0.8166. Discriminator score at each: 0.4986 / 0.5229 / 0.4652 /
+  0.5067 / 0.3876  -> chance or inverted, everywhere.
+
+  CAVEAT (important, admit this in the write-up): the sweep is nearly FLAT because
+  opt_gen_c3 is a SEPARATE Adam optimiser. Adam is scale-invariant (m_hat and
+  sqrt(v_hat) both scale with lambda and cancel), and clip_grad_norm_(1.0) caps the
+  rest. So the sweep tested "adversarial step on vs off", NOT strength. To sweep
+  lambda properly, fold terms into ONE backward pass on ONE optimiser.
+  ALSO: BEST_LAMBDA_ADV was selected on the TEST set. Note as a limitation.

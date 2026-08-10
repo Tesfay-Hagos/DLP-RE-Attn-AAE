@@ -1,0 +1,70 @@
+================================================================================
+NEGATIVE RESULTS — what did NOT work, and the evidence
+================================================================================
+These are findings, not failures. Each is backed by a controlled experiment.
+
+--------------------------------------------------------------------------------
+N1. Adversarial latent regularisation (AAE) DEGRADES detection
+--------------------------------------------------------------------------------
+  C3 < C1 at EVERY lambda over a 20x range (0.05 - 1.0), 2 seeds each.
+  Gap 0.004 - 0.011; seed variance far below it.
+  Consistent with Baur et al. (2021).
+  CAVEAT: the sweep was flat because of Adam scale-invariance (see 01), so it
+  established "adversarial on vs off", not a strength curve.
+
+--------------------------------------------------------------------------------
+N2. The latent discriminator score carries NO anomaly information
+--------------------------------------------------------------------------------
+  disc AUC-ROC across the lambda sweep: 0.4986, 0.5229, 0.4652, 0.5067, 0.3876.
+  Chance, or inverted with huge variance (std 0.086 at lambda=1.0).
+  Independently, old C4's disc score = exactly 0.5000.
+  CONSEQUENCES:
+    - fusion (0.5*SSIM + 0.5*disc) always LOSES to SSIM alone -> never report it
+    - the "latent quality" comparison column has no content
+    - CRITICAL: this dead signal was the ONLY thing training re_attn in old C4,
+      which is why its mask collapsed to a constant
+  INTERPRETATION: prior matching worked TOO well - anomalies are absorbed
+  indistinguishably into the Gaussian ball.
+
+--------------------------------------------------------------------------------
+N3. Attention mask collapse (old C4, closed-loop version)
+--------------------------------------------------------------------------------
+  att_mean 0.548 -> 0.994 (ep10) -> 1.000 (ep30+), att_std -> 0.0001.
+  Collapsed to a CONSTANT no-op mask.
+  Root cause: training data is 100% normal, so nothing ever rewards CLOSING the
+  mask; the expansion loss mean(1-att) rewards opening it, unopposed.
+  We had guarded the wrong corner (we feared att->0 blanking the input; it went
+  att->1 instead).
+
+--------------------------------------------------------------------------------
+N4. Iteration helps DETECTION but HURTS LOCALIZATION (C3.4b, fresh inference)
+--------------------------------------------------------------------------------
+  K:        1        2        3        4
+  image:  0.9309   0.9464   0.9500   0.9502    (monotonic up, saturating)
+  in-lung:0.6783   0.6558   0.6539   0.6525    (monotonic down)
+  Clean trade-off; each refinement step closes the mask harder overall (better
+  global score) but less precisely (worse overlap). [numbers CONTESTED, see 02]
+
+--------------------------------------------------------------------------------
+N5. A bigger, "correct" architecture made real performance WORSE
+--------------------------------------------------------------------------------
+  C3.5U (U-Net, no bottleneck, 68px receptive field) vs C3.4b (128:1 bottleneck,
+  5px receptive field head):
+    synthetic task:  C3.5U essentially perfect (1.0000)
+    real detection:  C3.5U 0.6110  vs  C1 0.8166  -> WORSE than a plain AE
+    real localization: 0.4941 in-lung -> CHANCE
+  INTERPRETATION (important): MORE CAPACITY -> BETTER PROXY FIT -> WORSE TRANSFER.
+  The 2,641-parameter head in C3.4b was too weak to memorise the generator's
+  signature, so it stayed generic and partly transferred. The 1.9M U-Net learned
+  the exact signature ("+0.35 uniform brightness, smooth blob, soft edges, inside
+  these two ellipses") which real consolidation does not have.
+  => The architectural diagnosis was correct, but fixing the architecture EXPOSED
+     a deeper problem it had been masking.
+
+--------------------------------------------------------------------------------
+N6. Denoising training alone is NEUTRAL here (unlike brain MRI)
+--------------------------------------------------------------------------------
+  C3.4-a 0.8467 vs C1 0.8166. Kascenas et al. found denoising AEs reach SOTA on
+  brain MRI; here the effect is small. Plausible domain reason: pneumonic
+  consolidation is diffuse and low-contrast, unlike focal bright MRI lesions.
+  (n=1 for the valid config - needs 2 more seeds before stating this firmly.)

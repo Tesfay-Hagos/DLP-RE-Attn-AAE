@@ -1,0 +1,68 @@
+================================================================================
+LITERATURE — verified by search, with what each ACTUALLY claims
+================================================================================
+All entries below were checked; none are from memory alone.
+
+DRAEM  (Zavrtanik, Kristan, Skocaj — ICCV 2021)
+  https://arxiv.org/abs/2108.07610
+  Two sub-networks: a RECONSTRUCTIVE net and a DISCRIMINATIVE net. The
+  discriminative net is a U-Net taking the channel-wise CONCATENATION of
+  (original, reconstruction) and outputting a segmentation map. The SEGMENTATION
+  is the anomaly score - it beat residual-based scoring by a large margin.
+  Synthetic anomalies: Perlin noise + textures from an external dataset (DTD).
+  USED FOR: C3.5U architecture, mask-based scoring, focal loss.
+  CAUTION: designed for MVTec (sharp, high-contrast, textured defects).
+
+Kascenas, Pugeault, O'Neil  (MIDL 2022) — Denoising AEs for brain MRI
+  https://proceedings.mlr.press/v172/kascenas22a.html
+  A coarse-noise denoising AE reaches SOTA unsupervised tumour detection, beating
+  VAEs and more complex methods. KEY ARCHITECTURAL CLAIM: denoising AEs "do not
+  require bottlenecks and can employ skip connections to give high resolution
+  fidelity"; bottleneck architectures "tend to give poor reconstructions of not
+  only the anomalous but also the normal parts".
+  RELEVANCE: our CNNEncoder compresses 16384 px -> 128 dims (128:1) — exactly the
+  architecture this paper argues against. That is why C3.4 (denoising objective on
+  a bottleneck architecture) did NOT reproduce their gain.
+
+IterMask^2  (Liang et al. — MICCAI 2024)
+  https://arxiv.org/pdf/2406.02422
+  Iterative mask refinement driven by reconstruction error + high-frequency
+  structural guidance, on brain MRI. The refinement is a RULE-BASED, hand-designed
+  thresholding procedure at test time.
+  RELEVANCE: our K-step shared-weight LEARNED refinement operator is the learned
+  counterpart. This is the clearest remaining novelty gap.
+
+CAVGA  (Venkataramanan, Peng, Singh, Mahalanobis — ECCV 2020)
+  https://arxiv.org/abs/1911.08616
+  Convolutional Adversarial Variational AE with Guided Attention. Introduces the
+  ATTENTION EXPANSION LOSS for the unsupervised setting (all training images are
+  normal => nothing should be suppressed => mask should be ~1 everywhere).
+  Uses a CONVOLUTIONAL latent variable to PRESERVE SPATIAL INFORMATION.
+  RELEVANCE: source of our mean(1-att) expansion loss. Also the reason a
+  transformer in OUR latent makes no sense (ours is a flat 128-d vector; CAVGA
+  keeps a spatial latent precisely so spatial reasoning is possible).
+
+AnatPaste  (Sato et al. — iScience 2023) — anatomy-aware CXR anomaly synthesis
+  https://arxiv.org/abs/2205.04282
+  Anatomy-restricted synthetic lesions on chest radiographs (threshold-based lung
+  mask), the highest-performing UAD model in their comparison.
+  RELEVANCE: source of our lung-prior restriction. IMPORTANT CAVEAT DISCOVERED
+  HERE: their benefit is reported at the IMAGE level. Anatomy restriction can
+  actively HARM pixel-level evaluation by inducing a geometric shortcut (see 05).
+
+CutPaste  (Li, Sohn, Yoon, Pfister — CVPR 2021)
+  Self-supervised: cut a patch, paste it elsewhere in the same image; classify.
+  Background for the synthetic-anomaly family.
+
+Focal loss  (Lin et al. — ICCV 2017, RetinaNet)
+  Down-weights the easy majority class. Needed because a synthetic blob is a small
+  fraction of pixels and plain BCE is cheaply satisfied by predicting "all clean".
+
+THE "TRIVIAL BASELINE" CRITIQUE GENRE  (verified — do NOT claim novelty here)
+  Meissen et al. 2021 — simple FLAIR intensity thresholding outperforms deep
+    unsupervised segmentation on brain MRI
+  Meissen et al. MIDL 2022 — "On the pitfalls of using the residual error as
+    anomaly score"; SOTA UAD methods effectively do "white-object detection"
+  Lagogiannis et al. IEEE TMI 2024 — benchmark in the same tradition
+  => Our fixed-lung-prior control belongs to this established genre. Engage with
+     and differentiate from these; do not present the pattern as new.

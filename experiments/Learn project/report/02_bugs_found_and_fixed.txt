@@ -1,0 +1,93 @@
+================================================================================
+ENGINEERING BUGS FOUND — several of these CHANGED CONCLUSIONS
+================================================================================
+Listed worst-first. Each one produced plausible-looking but wrong numbers.
+
+--------------------------------------------------------------------------------
+BUG 1  [CRITICAL]  load_weights() never called .eval()
+--------------------------------------------------------------------------------
+  nn.Module defaults to TRAIN mode. On the reload path the models were loaded and
+  used for inference while still in train mode, so BatchNorm used BATCH statistics
+  instead of running statistics AND mutated its running stats on every forward.
+  MEASURED:
+    save->load round trip, eval mode ........ 0.0        (exact)
+    loaded WITHOUT .eval() .................. 1.363      (output error)
+    running stats after one train-mode fwd .. 0.0297 permanent (eval does not recover)
+  IMPACT: every reloaded condition. Prime suspect for the C3.4b 0.85-vs-0.95
+          disagreement between saved arrays and fresh inference.
+  FIX: load_weights() now calls model.eval() after load_state_dict().
+  ACTION: treat ALL previously-reloaded numbers as suspect; prefer freshly trained.
+
+--------------------------------------------------------------------------------
+BUG 2  [CRITICAL, conceptual]  C4's headline score did not depend on its own mechanism
+--------------------------------------------------------------------------------
+  opt_rec_c4 owned only enc1+dec; opt_gen_c4 owned re_attn+enc2. At eval,
+  scores_c4 = anomaly_score(xb, x_hat1) where x_hat1 = dec(enc1(x)).
+  => re_attn and enc2 were NOT in the scored computation path AT ALL.
+  The reported "+0.0427 from RE-Attention" was measuring the REMOVAL of adversarial
+  pressure from the reconstruction branch, i.e. C4 == C1 for the primary score.
+  FIX: closed the loop (score x_hat2, which passes through the attention).
+
+--------------------------------------------------------------------------------
+BUG 3  [HIGH]  pooled pixel_auroc is confounded by anatomy   (see 05)
+--------------------------------------------------------------------------------
+  Pools ALL pixels incl. borders/background. RSNA boxes are always inside the lung,
+  so ANY lung-shaped map scores ~0.75 for free. Fixed lung prior = 0.7540.
+  FIX: pixel_auroc_inlung() restricts to lung pixels; the prior correctly collapses
+  to exactly 0.5000 there.
+
+--------------------------------------------------------------------------------
+BUG 4  [HIGH]  focal loss on POST-SIGMOID values -> dead gradients -> NaN
+--------------------------------------------------------------------------------
+  focal_bce clamped to [1e-8, 1-1e-8]; clamp has ZERO gradient outside its range.
+  MEASURED: max gradient drops to exactly 0.0 at logit +-20 (vs 6e-5 for the
+  logits form). C3.5U's Seg loss stalled and REVERSED (0.5125 -> 0.5145) around
+  epoch 30-40, then went NaN by epoch 50.
+  FIX: focal_bce_logits() on pre-sigmoid logits (BCEWithLogits, log-sum-exp stable);
+       UNetAD gained out_act=None; a per-batch non-finite guard now aborts with the
+       offending component instead of wasting 40 epochs.
+  RESULT AFTER FIX: Seg 0.7646 -> 0.0687, no NaN, training completed.
+
+--------------------------------------------------------------------------------
+BUG 5  [MEDIUM]  C3.4 used a DIFFERENT generator than C3.4b
+--------------------------------------------------------------------------------
+  C3.4 called make_synthetic_anomaly (unrestricted); C3.4b called
+  make_synthetic_anomaly_anat (lung-restricted). Not a valid control.
+  FIX: both use the anatomy-restricted generator.
+  EVIDENCE the fix took effect in C3.4-a: its loss curve sits ~0.009 BELOW both
+  unrestricted runs from epoch 10 onward, while those two track each other within
+  0.0008 — restricted corruption is a smaller area, hence an easier denoising task.
+
+--------------------------------------------------------------------------------
+BUG 6  [MEDIUM]  load_weights silently continued on a missing file
+--------------------------------------------------------------------------------
+  It only PRINTED, leaving that sub-module at RANDOM INIT while everything
+  downstream produced meaningless-but-plausible metrics.
+  FIX: raises FileNotFoundError.
+
+--------------------------------------------------------------------------------
+BUG 7  [MEDIUM]  restore_from_wandb downloaded on top of existing files
+--------------------------------------------------------------------------------
+  art.download() only overwrites files the artifact contains, so downloading over
+  a different run's leftovers can yield a checkpoint whose .npy arrays and .pth
+  weights come from DIFFERENT models.
+  FIX: clears {cond}_* before downloading. Also load_ckpt now warns if checkpoint
+  file mtimes span >5 minutes.
+
+--------------------------------------------------------------------------------
+BUG 8  [LOW, but it made MY OWN local tests lie]  SAMPLE_MODE data was unseeded
+--------------------------------------------------------------------------------
+  x_test was regenerated with fresh randomness every run, so a checkpoint saved in
+  one run and reloaded in the next was evaluated on DIFFERENT images — looking
+  exactly like a corrupted checkpoint.
+  FIX: np.random.seed(SPLIT_SEED) before the SAMPLE_MODE arrays.
+  AFTER FIX: fresh pass and reload pass verify IDENTICAL (max|diff| = 0.000000).
+
+--------------------------------------------------------------------------------
+BUG 9  [LOW]  cross-cell staleness (recurring, NOT a code bug)
+--------------------------------------------------------------------------------
+  Repeated NameError/TypeError on Kaggle (make_synthetic_anomaly, UNetAD out_act)
+  because a helper cell was not re-run after being edited. Helpers were consolidated
+  into CELL 6 and a preflight added to the export cell that names every missing
+  variable and which cell defines it.
+  RULE: after editing CELL 6 or CELL 1.4, re-run them before any condition cell.
