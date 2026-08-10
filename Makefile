@@ -13,11 +13,11 @@ IPYNB_Learn := experiments/Learn project/reattn-resnet.ipynb
 PY_DENOISE    := experiments/Learn project/donoising_syntehtic/denoising_syntetic_exp.py
 IPYNB_DENOISE := experiments/Learn project/donoising_syntehtic/denoising_syntetic_exp.ipynb
 
-PY_DL      := experiments/Learn project/DL/dl_project.py
-IPYNB_DL   := experiments/Learn project/DL/dl_project.ipynb
+PY_DL_PROJECT      := experiments/Learn project/DL/dl_project.py
+IPYNB_DL_PROJECT   := experiments/Learn project/DL/dl_project.ipynb
 
-PY_CV      := experiments/Learn project/CV/cv_project.py
-IPYNB_CV   := experiments/Learn project/CV/cv_project.ipynb
+PY_CV_PROJECT      := experiments/Learn project/CV/cv_project.py
+IPYNB_CV_PROJECT   := experiments/Learn project/CV/cv_project.ipynb
 
 # GNU Make splits prerequisite lists on whitespace, so a bare path containing a
 # space (like "Learn project/...") is silently parsed as two separate targets.
@@ -28,12 +28,12 @@ PY_Learn_ESC    := $(subst $(space),\ ,$(PY_Learn))
 IPYNB_Learn_ESC := $(subst $(space),\ ,$(IPYNB_Learn))
 PY_DENOISE_ESC    := $(subst $(space),\ ,$(PY_DENOISE))
 IPYNB_DENOISE_ESC := $(subst $(space),\ ,$(IPYNB_DENOISE))
-PY_DL_ESC         := $(subst $(space),\ ,$(PY_DL))
-IPYNB_DL_ESC      := $(subst $(space),\ ,$(IPYNB_DL))
-PY_CV_ESC         := $(subst $(space),\ ,$(PY_CV))
-IPYNB_CV_ESC      := $(subst $(space),\ ,$(IPYNB_CV))
+PY_DL_PROJECT_ESC         := $(subst $(space),\ ,$(PY_DL_PROJECT))
+IPYNB_DL_PROJECT_ESC      := $(subst $(space),\ ,$(IPYNB_DL_PROJECT))
+PY_CV_PROJECT_ESC         := $(subst $(space),\ ,$(PY_CV_PROJECT))
+IPYNB_CV_PROJECT_ESC      := $(subst $(space),\ ,$(IPYNB_CV_PROJECT))
 
-.PHONY: help notebook notebook-rsna notebook-resnet notebook-Learn notebook-denoise notebook-dl notebook-cv notebook-all clean push
+.PHONY: help notebook notebook-rsna notebook-resnet notebook-Learn notebook-denoise notebook-dl_project notebook-cv_project notebook-all clean push
 
 help: ## Show this help
 	@awk ' \
@@ -83,25 +83,25 @@ $(IPYNB_DENOISE_ESC): $(PY_DENOISE_ESC)
 	@echo "Generated: $(IPYNB_DENOISE)"
 
 ## Convert the Deep Learning project (image-level AnoCls) .py → .ipynb
-notebook-dl: $(IPYNB_DL_ESC)
+notebook-dl_project: $(IPYNB_DL_PROJECT_ESC)
 
-$(IPYNB_DL_ESC): $(PY_DL_ESC)
-	jupytext --to notebook --output "$(IPYNB_DL)" "$(PY_DL)"
-	@echo "Generated: $(IPYNB_DL)"
+$(IPYNB_DL_PROJECT_ESC): $(PY_DL_PROJECT_ESC)
+	jupytext --to notebook --output "$(IPYNB_DL_PROJECT)" "$(PY_DL_PROJECT)"
+	@echo "Generated: $(IPYNB_DL_PROJECT)"
 
 ## Convert the Computer Vision project (pixel-level AnoSeg) .py → .ipynb
-notebook-cv: $(IPYNB_CV_ESC)
+notebook-cv_project: $(IPYNB_CV_PROJECT_ESC)
 
-$(IPYNB_CV_ESC): $(PY_CV_ESC)
-	jupytext --to notebook --output "$(IPYNB_CV)" "$(PY_CV)"
-	@echo "Generated: $(IPYNB_CV)"
+$(IPYNB_CV_PROJECT_ESC): $(PY_CV_PROJECT_ESC)
+	jupytext --to notebook --output "$(IPYNB_CV_PROJECT)" "$(PY_CV_PROJECT)"
+	@echo "Generated: $(IPYNB_CV_PROJECT)"
 
 ## Convert all notebooks
-notebook-all: notebook notebook-rsna notebook-resnet notebook-Learn notebook-denoise notebook-dl notebook-cv
+notebook-all: notebook notebook-rsna notebook-resnet notebook-Learn notebook-denoise notebook-dl_project notebook-cv_project
 
 ## Remove generated notebooks
 clean:
-	rm -f $(IPYNB) $(IPYNB_RSNA) $(IPYNB_RESNET) $(IPYNB_Learn_ESC) $(IPYNB_DENOISE_ESC) $(IPYNB_DL_ESC) $(IPYNB_CV_ESC)
+	rm -f $(IPYNB) $(IPYNB_RSNA) $(IPYNB_RESNET) $(IPYNB_Learn_ESC) $(IPYNB_DENOISE_ESC) $(IPYNB_DL_PROJECT_ESC) $(IPYNB_CV_PROJECT_ESC)
 	@echo "Removed generated notebooks"
 
 ## Regenerate all notebooks and push
