@@ -2460,7 +2460,12 @@ def a4_posthoc_uncertainty(seed=TRAIN_SEED, width=1, epochs=None, verbose=True):
                     extra={'base_run': run_id('ae', seed)})
 
 
-A4_WIDTHS = [1, 8]      # 1 = capacity-matched to AEU; 8 = the capacity control
+# w=1 is capacity-matched to AEU (256 params, its exact increment); the rest map out how
+# much capacity post-hoc extraction actually needs. The first run showed w=1 FAILS (66.94,
+# below the plain AE) while w=8 reaches 81.81 -- so the interesting quantity is the
+# smallest head that works, which is a direct measure of how much joint training helps by
+# making the variance easy to read rather than by making it exist.
+A4_WIDTHS = [1, 2, 4, 8, 16]
 for _w in A4_WIDTHS:
     for _s in SEEDS:
         a4_posthoc_uncertainty(seed=_s, width=_w)
@@ -2493,6 +2498,89 @@ if not _a4.empty and 'ae-posthoc-u' in set(_a4.method):
               f'+{gap:.2f} advantage, with the reconstruction never retrained.')
     print('  (A1 cross-check: AE-U scored with plain L2 = 65.4, i.e. BELOW the plain AE —'
           '\n   uncertainty training does not improve the reconstruction itself.)')
+
+
+# %% [markdown]
+# ### Cell 5.2b — Making the ensemble result honest
+# The pre-registered ensembles **lost**: `all4` 84.88 and `noIN` 81.91, both below AE-PL's
+# 87.58. Equal-weight rank averaging has no defence against a weak member, and the L2
+# score is 19 points worse than the others — combos containing it average 80.08, those
+# without it 86.44.
+#
+# The scan's best cell, `perceptual+aeu` = **88.74**, beats AE-PL and MedIAnomaly's best
+# (87.5). It is probably real: the spread is 0.13 and the next two best combos contain the
+# same pair. But it was chosen by looking at 15 options **on the test set**, so as reported
+# it is a selection artefact and a reviewer would reject it.
+#
+# This cell measures what that selection is worth honestly. Repeatedly: split the test set
+# in half (stratified by label), pick the best combination on half A, and report its AUC on
+# half B — which it has never seen. The gap between "best on A" and "that same combo on B"
+# **is** the selection bias, quantified rather than assumed away.
+#
+# Compare three numbers:
+# * **selected-then-held-out** — what the procedure actually delivers on unseen data
+# * **AE-PL fixed** — the baseline, needing no selection at all
+# * **oracle** — the best combo scored on the same half it was chosen on, i.e. the
+#   optimistic number the exploratory scan reports
+#
+# If selected-then-held-out still beats AE-PL, the ensemble is a genuine finding and
+# survives review. If it collapses to AE-PL, the 88.74 was selection noise. Note this is
+# still a within-dataset check; the decisive test is whether the same combination wins on
+# a *different* dataset, which is what the multi-dataset sweep would settle.
+
+# %% [CELL 5.2b]  A3 — selection-aware validation
+
+def a3_split_half(seeds=None, n_splits=50, rng_seed=SPLIT_SEED if 'SPLIT_SEED' in dir() else 0):
+    seeds = seeds or SEEDS
+    labels = [l for l, _ in A3_MEMBERS]
+    all_combos = [c for r in range(1, len(labels) + 1) for c in combinations(labels, r)]
+    rng = np.random.default_rng(rng_seed)
+    rows = []
+    for s in seeds:
+        members = load_member_scores(s)
+        if not members:
+            continue
+        ranked = {k: _ranks(v) for k, v in members.items()}
+        idx0 = np.where(Y_TEST == 0)[0]
+        idx1 = np.where(Y_TEST == 1)[0]
+        for _ in range(n_splits):
+            # stratified halves: both sides keep the 50/50 class balance, so an AUC on
+            # either half is comparable to an AUC on the full test set
+            p0, p1 = rng.permutation(idx0), rng.permutation(idx1)
+            A = np.concatenate([p0[:len(p0)//2], p1[:len(p1)//2]])
+            B = np.concatenate([p0[len(p0)//2:], p1[len(p1)//2:]])
+            def auc(combo, ix):
+                sc = np.mean([ranked[c][ix] for c in combo], axis=0)
+                return roc_auc_score(Y_TEST[ix], sc)
+            scored = [(auc(c, A), c) for c in all_combos]
+            best_a, best_combo = max(scored)
+            rows.append({'seed': s,
+                         'selected': '+'.join(best_combo),
+                         'oracle_A': best_a,                      # optimistic
+                         'heldout_B': auc(best_combo, B),         # honest
+                         'ae_pl_B': auc(('perceptual',), B)})     # baseline, no selection
+    return pd.DataFrame(rows)
+
+
+A3V = a3_split_half()
+
+if not A3V.empty:
+    ho, orc, base = A3V.heldout_B.mean()*100, A3V.oracle_A.mean()*100, A3V.ae_pl_B.mean()*100
+    wins = (A3V.heldout_B > A3V.ae_pl_B).mean()*100
+    print('\nA3 — selection-aware validation ({} splits x {} seeds)\n'.format(
+        len(A3V)//len(SEEDS), len(SEEDS)))
+    print(f'  oracle (best combo, scored on the half it was picked on) {orc:6.2f}   <- optimistic')
+    print(f'  held-out (that same combo on the UNSEEN half)            {ho:6.2f}   <- honest')
+    print(f'  AE-PL alone on the same half (no selection)              {base:6.2f}   <- baseline')
+    print(f'\n  selection bias                : {orc-ho:+.2f} AUC pts')
+    print(f'  honest gain over AE-PL        : {ho-base:+.2f} AUC pts')
+    print(f'  held-out beats AE-PL in       : {wins:.0f}% of splits')
+    print(f'\n  most frequently selected combo: '
+          f'{A3V.selected.value_counts().index[0]} '
+          f'({A3V.selected.value_counts().iloc[0]/len(A3V)*100:.0f}% of splits)')
+    verdict = ('SURVIVES selection -- report it' if ho - base > 0.3 and wins > 60 else
+               'does NOT survive selection -- report the pre-registered negative result')
+    print(f'\n  VERDICT: {verdict}')
 
 
 # %% [markdown]
