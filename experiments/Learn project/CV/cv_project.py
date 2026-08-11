@@ -651,11 +651,37 @@ ZENODO = "https://zenodo.org/records/12677223/files/{}.tar.gz?download=1"
 
 # Searched in order. Kaggle Datasets land in /kaggle/input/<slug>/ and the slug is
 # user-chosen, so we glob for any directory that contains the expected dataset folders.
+def _discover_roots(base='/kaggle/input', max_depth=4):
+    """Bounded walk of the Kaggle mount, returning every directory that could be a root.
+
+    Fixed glob patterns are not enough: Kaggle mounts inputs at DIFFERENT DEPTHS
+    depending on how the notebook was created. The classic layout is
+    /kaggle/input/<slug>/, but the namespaced one is
+    /kaggle/input/datasets/<owner>/<slug>/ — two levels deeper, which a
+    '/kaggle/input/*' glob never reaches. Rather than enumerate a pattern per layout,
+    walk a few levels and let _looks_like decide which directory is real.
+
+    Image folders are pruned: the RSNA competition input alone holds ~27k DICOMs, and
+    descending into it would cost seconds for directories that can never be a root."""
+    out = []
+    if not os.path.isdir(base):
+        return out
+    base_depth = base.rstrip('/').count(os.sep)
+    for root, dirs, _ in os.walk(base):
+        out.append(root)
+        if root.count(os.sep) - base_depth >= max_depth:
+            dirs[:] = []
+            continue
+        dirs[:] = [d for d in dirs
+                   if d not in ('images', 'train', 'test', 'annotation', 'normal', 'tumor')]
+    return out
+
+
 DATA_ROOT_CANDIDATES = [
     os.environ.get('MEDIANOMALY_DATA', ''),
     os.path.expanduser('~/MedIAnomaly-Data'),
     '/kaggle/working/MedIAnomaly-Data',
-] + sorted(_glob.glob('/kaggle/input/*/MedIAnomaly-Data')) + sorted(_glob.glob('/kaggle/input/*'))
+] + _discover_roots()
 
 
 def _looks_like(root, name):
