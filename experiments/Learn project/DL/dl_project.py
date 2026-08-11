@@ -858,7 +858,14 @@ def fetch_run(rid, run_version=None, entity=None):
         print(f'  [{rid}] restored from wandb')
         return True
     except Exception as e:
-        print(f'  [{rid}] not on wandb ({type(e).__name__}) — will train fresh')
+        # Print the MESSAGE, not just the class. wandb raises CommError both for
+        # 'artifact does not exist yet' (benign, the normal first-run path) and for a
+        # genuine network/auth failure (not benign — it silently retrains everything on
+        # a fresh session). Those two are indistinguishable from the class name alone.
+        msg = str(e).replace('\n', ' ')[:200]
+        benign = 'not found' in msg.lower() or 'does not exist' in msg.lower()
+        tag = 'absent' if benign else 'FETCH FAILED'
+        print(f'  [{rid}] {tag} ({type(e).__name__}: {msg}) — will train fresh')
         return False
 
 
@@ -1911,8 +1918,16 @@ def smoke_test(epochs=2, methods=('ae', 'aeu', 'vae', 'dae')):
 BASELINE_METHODS = ['ae', 'ae-l1', 'ae-ssim', 'ae-pl', 'vae', 'aeu', 'dae']
 SEEDS = [42, 43, 44] if not SAMPLE_MODE else [42]
 
-for m in BASELINE_METHODS:
-    for s in SEEDS:
+# DAE costs 72x an AE run (2.15 GFLOP vs 29.9 MFLOP per step), so three seeds of it would
+# outweigh the entire rest of the notebook. One seed still reproduces its Table 6 row and
+# preserves the point that matters here -- AE-U and DAE are the only SOTA methods on this
+# benchmark that do NOT use ImageNet weights -- we simply cannot quote a spread for it.
+# Report it as n=1 and never compare it to another method on a sub-1-point difference.
+EXPENSIVE = {'dae'}
+SEEDS_FOR = {m: ([SEEDS[0]] if m in EXPENSIVE else SEEDS) for m in BASELINE_METHODS}
+
+for m in BASELINE_METHODS:              # cheap methods first: a broken data path shows
+    for s in SEEDS_FOR[m]:              # up in minutes, not after the expensive run
         train_and_eval(m, seed=s)
 
 print('\nbaseline ladder complete')
@@ -2010,6 +2025,25 @@ REPRO_SWAPS = reproduction_table(BASELINE_METHODS + [n for _, _, n in SCORE_SWAP
 # | **the score** (SSIM/PL are better residual metrics on any reconstruction) | rows differ little, **columns** separate strongly |
 # | **the objective** (training on SSIM/PL yields a genuinely different model) | **rows** separate strongly |
 #
+# ### The AE-U row is the most valuable one, and it is free
+# AE-U is the largest unexplained jump in the whole table: **86.5 vs AE's 67.5, +19.0**,
+# and unlike AE-PL it uses no ImageNet weights. It changes two things at once — it trains
+# with an uncertainty-weighted loss, *and* it scores by dividing the residual by a learned
+# per-pixel variance. Nobody has separated those.
+#
+# Adding `aeu` as a row costs **no extra training** (it is already in the ladder), and the
+# `aeu` row scored with plain `l2` answers it outright:
+#
+# * **drops toward ~67** → the entire +19 is the *score*. Uncertainty training did not
+#   build a better reconstructor; it built a better error metric. That is a strong,
+#   compact claim, and it puts AE-U in the same category as AE-Grad.
+# * **stays near ~86** → uncertainty training genuinely produced a different model, and
+#   the variance-weighted score is incidental.
+#
+# The reverse cell (a plain AE scored with the AE-U rule) cannot exist: that score needs
+# the `log_var` head only the AEU backbone has. So this is a 2-cell decomposition, not a
+# full grid — worth stating plainly rather than implying symmetry we do not have.
+#
 # A column-dominated result is the more useful outcome: it would mean the expensive
 # ImageNet-dependent part of AE-PL is only needed at *test* time, so a plain L2 AE scored
 # perceptually recovers most of the 87.5 — and cheaply.
@@ -2018,8 +2052,8 @@ REPRO_SWAPS = reproduction_table(BASELINE_METHODS + [n for _, _, n in SCORE_SWAP
 
 # %% [CELL 5.0]  A1 — train-loss × score-loss grid
 
-A1_TRAIN  = ['l2', 'ssim', 'perceptual']
-A1_SCORE  = ['l2', 'ssim', 'perceptual', 'l2grad']
+A1_TRAIN  = ['l2', 'ssim', 'perceptual', 'aeu']
+A1_SCORE  = ['l2', 'ssim', 'perceptual', 'l2grad', 'aeu']
 A1_SEEDS  = SEEDS
 
 
@@ -2033,11 +2067,16 @@ def a1_grid(seeds=None, train_losses=None, score_losses=None):
         print('VGG unavailable — running the grid without the perceptual axis')
 
     # the diagonal cells ARE the Table 6 baselines; reuse them rather than retrain
-    base_of = {'l2': 'ae', 'ssim': 'ae-ssim', 'perceptual': 'ae-pl'}
+    base_of = {'l2': 'ae', 'ssim': 'ae-ssim', 'perceptual': 'ae-pl', 'aeu': 'aeu'}
     recs = []
     for tr in train_losses:
         for s_ in seeds:
             for sc in score_losses:
+                # the AE-U score divides by a predicted per-pixel variance, so it needs
+                # the log_var head that only the AEU backbone has -- that column exists
+                # for the AE-U row alone, not for the whole grid
+                if sc == 'aeu' and METHODS[base_of[tr]]['net'] != 'aeu':
+                    continue
                 if sc == tr:
                     man = train_and_eval(base_of[tr], seed=s_)
                 else:
@@ -2098,8 +2137,14 @@ if not A1.empty:
 
 # %% [CELL 5.1]  A2 — denoising noise-scale sweep
 
+# OFF BY DEFAULT. 12 DAE trainings is ~45 h on a GPU and dominates everything else here.
+# The experiment is not cancelled, it is RELOCATED to the CV project, where DAE is the
+# benchmark's best pixel-level method and where "does the corruption scale have to match
+# the lesion scale?" actually pays off in localisation. On image-level RSNA it would be a
+# 45 h answer to a secondary question.
+RUN_A2  = False
 A2_RES  = [4, 8, 16, 32]        # 4 = very coarse blobs … 32 = near per-pixel
-A2_STD  = [0.1, 0.2, 0.4]
+A2_STD  = [0.2]                 # MedIAnomaly's default; widen only if res shows structure
 A2_SEEDS = [42]
 
 
@@ -2120,7 +2165,9 @@ def a2_sweep(res_list=None, std_list=None, seeds=None):
     return pd.DataFrame(recs)
 
 
-A2 = a2_sweep()
+A2 = a2_sweep() if RUN_A2 else pd.DataFrame()
+if not RUN_A2:
+    print('A2 skipped (RUN_A2=False) — see the note above; it lives in the CV project.')
 
 if not A2.empty:
     piv2 = A2.pivot_table(index='noise_res', columns='noise_std', values='AUC',

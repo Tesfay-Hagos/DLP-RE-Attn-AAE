@@ -553,7 +553,14 @@ def fetch_run(rid, run_version=None, entity=None):
         print(f'  [{rid}] restored from wandb')
         return True
     except Exception as e:
-        print(f'  [{rid}] not on wandb ({type(e).__name__}) — will train fresh')
+        # Print the MESSAGE, not just the class. wandb raises CommError both for
+        # 'artifact does not exist yet' (benign, the normal first-run path) and for a
+        # genuine network/auth failure (not benign — it silently retrains everything on
+        # a fresh session). Those two are indistinguishable from the class name alone.
+        msg = str(e).replace('\n', ' ')[:200]
+        benign = 'not found' in msg.lower() or 'does not exist' in msg.lower()
+        tag = 'absent' if benign else 'FETCH FAILED'
+        print(f'  [{rid}] {tag} ({type(e).__name__}: {msg}) — will train fresh')
         return False
 
 
