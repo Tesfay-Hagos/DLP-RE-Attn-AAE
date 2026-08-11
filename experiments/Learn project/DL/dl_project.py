@@ -2201,6 +2201,302 @@ if not A2.empty:
 
 # %% [markdown]
 # ---
+# # Experiment A3 (novel) — do the scores see different things?
+# ## **Cell 5.2** — score ensembling, no training at all
+# A1 showed the scoring function carries most of each method's gain (column spread 26.7
+# vs row spread 14.2). If SSIM, perceptual and AE-U's variance-weighted score each read a
+# *different* part of the residual — local structure, semantics, calibrated uncertainty —
+# then combining them should beat any one of them. If they are all reading the same
+# signal through different lenses, combining changes nothing. Either answer is a result.
+#
+# This costs **zero training**: every run already stored its per-image `scores` array, so
+# this cell only loads and combines them.
+#
+# **Rank averaging, not score averaging.** The four scores live on wildly different scales
+# (L2 ~1e-2, perceptual ~0.3, AE-U's is negative) so a plain mean would just return the
+# largest-scale member. Ranks are scale-free and monotone, and AUC/AP only depend on
+# ordering, so nothing is lost by discarding the magnitudes.
+#
+# ### Pre-registering the combinations (this matters for the paper)
+# With 4 members there are 15 subsets. Picking the best of 15 *on the test set* and
+# reporting it as "our method" is test-set fitting and will not survive review. So two
+# combinations are declared **a priori**, before looking:
+#
+# * `all4` — every diagonal score. The obvious, assumption-free choice.
+# * `noIN` — AE + AE-SSIM + AE-U only. Pre-registered because it answers a question that
+#   matters independently: MedIAnomaly notes that most of their SOTA relies on ImageNet
+#   weights, with AE-U and DAE the exceptions. If `noIN` reaches AE-PL's 87.5 without
+#   VGG19, that is a practically useful result for settings where ImageNet pre-training
+#   is unavailable or unwanted.
+#
+# The full 15-subset scan is printed too, but explicitly labelled exploratory. Report the
+# two pre-registered rows as findings; report anything else as a hypothesis for future work.
+
+# %% [CELL 5.2]  A3 — score ensembling
+
+from itertools import combinations
+
+# members: (label, method name whose stored run holds the score)
+A3_MEMBERS = [('l2', 'ae'), ('ssim', 'ae-ssim'), ('perceptual', 'ae-pl'), ('aeu', 'aeu')]
+A3_PREREGISTERED = {
+    'all4': ['l2', 'ssim', 'perceptual', 'aeu'],
+    'noIN': ['l2', 'ssim', 'aeu'],          # no ImageNet weights anywhere in this one
+}
+
+
+def _ranks(x):
+    """Ranks in [0,1]. argsort().argsort() is the rank; dividing makes members with
+    different test-set sizes comparable and keeps the mean interpretable."""
+    r = np.argsort(np.argsort(x)).astype(np.float64)
+    return r / max(len(r) - 1, 1)
+
+
+def load_member_scores(seed):
+    """Per-image scores for each ensemble member at one seed. Returns {} if any member
+    is missing, because a partial ensemble is not the ensemble we pre-registered."""
+    out = {}
+    for label, method in A3_MEMBERS:
+        rid = run_id(method, seed)
+        if not run_exists(rid) and not (USE_WANDB and fetch_run(rid)):
+            print(f'  seed {seed}: member {label!r} ({rid}) missing — skipping this seed')
+            return {}
+        _, arrays = load_run(rid)
+        out[label] = arrays['scores']
+    return out
+
+
+def a3_ensemble(seeds=None):
+    seeds = seeds or SEEDS
+    rows = []
+    for s in seeds:
+        members = load_member_scores(s)
+        if not members:
+            continue
+        ranked = {k: _ranks(v) for k, v in members.items()}
+        labels = [l for l, _ in A3_MEMBERS]
+        for r in range(1, len(labels) + 1):
+            for combo in combinations(labels, r):
+                m = evaluate_scores(np.mean([ranked[c] for c in combo], axis=0), Y_TEST)
+                rows.append({'combo': '+'.join(combo), 'k': r, 'seed': s,
+                             'AUC': m['AUC'], 'AP': m['AP'],
+                             'preregistered': next((n for n, v in A3_PREREGISTERED.items()
+                                                    if set(v) == set(combo)), '')})
+    df = pd.DataFrame(rows)
+    # persist only the pre-registered ones as runs; the scan is exploratory output
+    for name, combo in A3_PREREGISTERED.items():
+        for s in seeds:
+            sub = df[(df.combo == '+'.join(combo)) & (df.seed == s)]
+            if sub.empty:
+                continue
+            rid = run_id(f'ens-{name}', s)
+            if run_exists(rid):
+                continue
+            members = load_member_scores(s)
+            sc = np.mean([_ranks(members[c]) for c in combo], axis=0)
+            save_run(rid, method=f'ens-{name}', seed=s,
+                     params={'members': '+'.join(combo)},
+                     metrics=evaluate_scores(sc, Y_TEST), arrays={'scores': sc},
+                     extra={'note': 'rank-average of stored scores; no training'})
+    return df
+
+
+A3 = a3_ensemble()
+
+if not A3.empty:
+    best_single = A3[A3.k == 1].groupby('combo').AUC.mean().max() * 100
+    agg = (A3.groupby(['combo', 'k', 'preregistered']).AUC
+             .agg(['mean', 'std']).reset_index().sort_values('mean', ascending=False))
+    agg['mean'] *= 100; agg['std'] = agg['std'].fillna(0) * 100
+
+    print('\nA3 — PRE-REGISTERED (report these)\n')
+    pre = agg[agg.preregistered != '']
+    for _, r in pre.iterrows():
+        print(f"  {r['preregistered']:<6} {r['combo']:<32} "
+              f"AUC {r['mean']:.2f}+-{r['std']:.2f}   vs best single {best_single:.2f} "
+              f"({r['mean'] - best_single:+.2f})")
+    print(f"\n  reference: AE-PL alone = {A3[A3.combo=='perceptual'].AUC.mean()*100:.2f}, "
+          f"MedIAnomaly best img-rec = 87.5")
+
+    print('\nA3 — full subset scan (EXPLORATORY — do not report as a result)\n')
+    print(agg[['combo', 'k', 'mean', 'std']].to_string(index=False,
+          float_format=lambda v: f'{v:.2f}'))
+
+
+# %% [markdown]
+# ---
+# # Experiment A4 (novel) — is AE-U's advantage a training paradigm, or a wrapper?
+# ## **Cell 5.3** — a variance head fitted post hoc onto a frozen AE
+# A1's sharpest result: AE-U scored with plain L2 gives **65.4**, *below* the plain AE's
+# 68.3. Uncertainty training does not build a better reconstructor — it builds a worse
+# one — yet AE-U reaches 86.9. All of the gain is in dividing the residual by the learned
+# per-pixel variance.
+#
+# If that is true, the variance should not need to be learned *jointly* at all. So:
+#
+# 1. take the **already-trained plain AE** and freeze it completely (`eval()`, no grads),
+# 2. attach only a variance head — the same `BasicBlock` that AEU uses for its extra
+#    output channel, so capacity is matched rather than quietly increased,
+# 3. train **only that head**, with AE-U's own objective `exp(-log_var)*(x-x̂)² + log_var`,
+#    on a reconstruction `x̂` that never changes,
+# 4. score exactly as AE-U does, with `exp(-log_var)*(x-x̂)²`.
+#
+# | Outcome | Reading |
+# |---|---|
+# | reaches ~86 | uncertainty scoring is a **post-hoc wrapper**. Any trained AE can be upgraded without retraining it, and joint uncertainty training was never necessary. This is the version with a method contribution, not just an analysis. |
+# | lands between 68 and 86 | joint training matters *partly* — the reconstruction and the variance co-adapt, and the decomposition is not clean. |
+# | stays near 68 | the variance is only useful when the reconstruction was shaped alongside it; AE-U is genuinely a training paradigm. A negative result, and a clean one. |
+#
+# The AE stays in `eval()` throughout. That is not a detail: in train mode its BatchNorm
+# would consume the running statistics of the model we are meant to be holding fixed, and
+# the frozen baseline would silently drift while we measured it.
+
+# %% [CELL 5.3]  A4 — post-hoc uncertainty head
+
+class PostHocVarHead(nn.Module):
+    """Predicts per-pixel log-variance from a frozen AE's last decoder feature map.
+
+    Deliberately the SAME module AEU adds: AEU replaces `de_block4` with a BasicBlock
+    emitting 2*in_planes channels and splits them into (x_hat, log_var). Here x_hat comes
+    from the frozen AE and this block emits the log_var channel only, so A4 and AE-U differ
+    in HOW the variance is trained, not in how much capacity is available to it.
+
+    `width` is a CAPACITY CONTROL, and A4 is uninterpretable without it. At width=1 the
+    head has 256 parameters -- exactly AEU's parameter increment (2,351,440 - 2,351,184),
+    so the comparison is fair. But the post-hoc head reads decoder features that were
+    optimised for reconstruction alone, never for variance, so a failure at width=1 has
+    two possible causes: uncertainty genuinely needs joint training, or 256 parameters
+    cannot extract it from features that do not encode it. Running a wide head separates
+    them. If wide also fails, capacity is not the explanation."""
+    def __init__(self, width=1):
+        super().__init__()
+        if width == 1:
+            self.block = BasicBlock(1 * BASE_WIDTH, 1, DE_DEPTH, upsample=True, last_layer=True)
+        else:
+            w = BASE_WIDTH * width
+            self.block = nn.Sequential(
+                nn.Conv2d(1 * BASE_WIDTH, w, 3, padding=1), nn.BatchNorm2d(w), nn.ReLU(True),
+                nn.Conv2d(w, w, 3, padding=1), nn.BatchNorm2d(w), nn.ReLU(True),
+                BasicBlock(w, 1, DE_DEPTH, upsample=True, last_layer=True))
+
+    def forward(self, de1):
+        return self.block(de1)
+
+
+def a4_posthoc_uncertainty(seed=TRAIN_SEED, width=1, epochs=None, verbose=True):
+    rid = run_id('ae-posthoc-u', seed, w=width)
+    if run_exists(rid) or (USE_WANDB and fetch_run(rid)):
+        try:
+            man, _ = load_run(rid)
+            if verbose:
+                print(f"{rid}: reused  AUC={man['metrics']['AUC']:.4f}")
+            return man
+        except (RuntimeError, FileNotFoundError) as e:
+            print(f'{rid}: stored record unusable, recomputing\n    {e}')
+
+    base = train_and_eval('ae', seed=seed, verbose=verbose)      # trains only if needed
+    if base is None:
+        return None
+    ae = build_net('ae')
+    load_run(run_id('ae', seed), models={'net': ae})             # load_run calls .eval()
+    for p in ae.parameters():
+        p.requires_grad = False
+
+    random.seed(seed); np.random.seed(seed); torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+    head = PostHocVarHead(width=width).to(device)
+    opt = Adam(head.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
+    n_epochs = epochs if epochs is not None else EPOCHS
+    g = torch.Generator().manual_seed(seed)
+    loader = DataLoader(TensorDataset(X_TRAIN), batch_size=BATCH_SIZE, shuffle=True,
+                        generator=g)
+    if verbose:
+        print(f'{rid}: head {sum(p.numel() for p in head.parameters()):,} params on a '
+              f'FROZEN AE ({sum(p.numel() for p in ae.parameters()):,}) | {n_epochs} epochs')
+
+    epoch_loss, t0 = [], time.time()
+    for ep in range(1, n_epochs + 1):
+        head.train()
+        ae.eval()                    # every epoch: nothing may put the AE back in train mode
+        tot, n = 0.0, 0
+        for (xb,) in loader:
+            xb = xb.to(device, non_blocking=True)
+            with torch.no_grad():                       # frozen reconstruction
+                out = ae(xb)
+                x_hat, de1 = out['x_hat'], out['de_features'][0]
+            log_var = head(de1)
+            recon = (xb - x_hat) ** 2                   # constant w.r.t. the head
+            loss = (torch.exp(-log_var) * recon + log_var).mean()   # AEULoss, verbatim
+            if not torch.isfinite(loss):
+                print(f'    non-finite loss at epoch {ep} — aborting'); return None
+            opt.zero_grad(); loss.backward(); opt.step()
+            tot += loss.item() * xb.size(0); n += xb.size(0)
+        epoch_loss.append(tot / n)
+        if verbose and (ep == 1 or ep % max(1, n_epochs // 10) == 0 or ep == n_epochs):
+            print(f'    ep {ep:>4}/{n_epochs}  loss {epoch_loss[-1]:.5f}  '
+                  f'({time.time() - t0:.0f}s)')
+
+    head.eval()
+    scores = []
+    with torch.no_grad():
+        for i in range(0, len(X_TEST), 256):
+            xb = X_TEST[i:i + 256].to(device)
+            out = ae(xb)
+            lv = head(out['de_features'][0])
+            # AEULoss anomaly_score: the loss1 term only, exp(-log_var)*(x-x_hat)^2
+            s = torch.exp(-lv) * (xb - out['x_hat']) ** 2
+            scores.append(torch.mean(s, dim=[1, 2, 3]).cpu())
+    scores = torch.cat(scores).numpy()
+    metrics = evaluate_scores(scores, Y_TEST)
+    metrics['minutes'] = (time.time() - t0) / 60
+    if verbose:
+        print(f"    -> AUC {metrics['AUC']:.4f}  AP {metrics['AP']:.4f}")
+    return save_run(rid, method='ae-posthoc-u', seed=seed,
+                    params={'w': width, 'train_loss': 'l2-frozen+posthoc-var',
+                            'score_loss': 'aeu'},
+                    metrics=metrics, epoch_loss=epoch_loss,
+                    arrays={'scores': scores}, weights={'head': head.state_dict()},
+                    extra={'base_run': run_id('ae', seed)})
+
+
+A4_WIDTHS = [1, 8]      # 1 = capacity-matched to AEU; 8 = the capacity control
+for _w in A4_WIDTHS:
+    for _s in SEEDS:
+        a4_posthoc_uncertainty(seed=_s, width=_w)
+
+_a4 = completed_runs()
+if not _a4.empty and 'ae-posthoc-u' in set(_a4.method):
+    def _m(meth):
+        sub = _a4[_a4.method == meth]
+        return (sub.AUC.mean() * 100, sub.AUC.std(ddof=0) * 100, len(sub)) if not sub.empty \
+            else (float('nan'), float('nan'), 0)
+    ae_m, ae_s, _ = _m('ae')
+    au_m, au_s, _ = _m('aeu')
+    print('\nA4 — where does AE-U\'s advantage live?\n')
+    print(f'  plain AE, L2 score                   {ae_m:6.2f}+-{ae_s:.2f}')
+    for _w in A4_WIDTHS:
+        sub = _a4[(_a4.method == 'ae-posthoc-u') & (_a4.get('w', pd.Series(dtype=float)) == _w)] \
+              if 'w' in _a4 else _a4[_a4.method == 'ae-posthoc-u']
+        if sub.empty:
+            continue
+        m, sd = sub.AUC.mean() * 100, sub.AUC.std(ddof=0) * 100
+        tag = 'capacity-matched' if _w == 1 else 'capacity control '
+        print(f'  frozen AE + var head (w={_w}, {tag}) {m:6.2f}+-{sd:.2f}   '
+              f'({m - ae_m:+.2f} over the AE it was fitted onto)')
+    print(f'  AE-U, jointly trained                {au_m:6.2f}+-{au_s:.2f}')
+    gap = au_m - ae_m
+    ph = _a4[_a4.method == 'ae-posthoc-u']
+    if gap > 0 and not ph.empty:
+        best = ph.AUC.max() * 100
+        print(f'\n  best post-hoc head recovers {(best - ae_m) / gap * 100:.0f}% of AE-U\'s '
+              f'+{gap:.2f} advantage, with the reconstruction never retrained.')
+    print('  (A1 cross-check: AE-U scored with plain L2 = 65.4, i.e. BELOW the plain AE —'
+          '\n   uncertainty training does not improve the reconstruction itself.)')
+
+
+# %% [markdown]
+# ---
 # ## **Cell 6.0** — Everything stored so far
 # One table of every run under the current `RUN_VERSION`. Because `load_run` refuses a
 # record whose `config_fingerprint` differs from the current one, every row here was
