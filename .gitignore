@@ -9,6 +9,13 @@
 # Inside experiments — ignore large output dirs and binaries
 /experiments/results/
 /experiments/results_*/
+# No leading slash => matches at ANY depth. The anchored rules above miss the per-project
+# run stores (experiments/Learn project/DL/results_dl/), which is how a run manifest got
+# committed without its .npy/.pth payloads -- a record completed_runs() would report as a
+# real result on a fresh clone even though nothing backs it.
+results_dl/
+results_cv/
+results_*_sample/
 /experiments/dl_report_complete/
 /experiments/extra_figures/
 /experiments/__pycache__/
