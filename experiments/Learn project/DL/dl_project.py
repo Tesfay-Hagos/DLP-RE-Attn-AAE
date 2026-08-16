@@ -655,7 +655,25 @@ class AEU(AE):
 # verified baseline -- tuning before reproducing makes any gap uninterpretable.
 SAMPLE_MODE = bool(int(os.environ.get('SAMPLE_MODE', '0')))
 
-RUN_VERSION    = 'dl-v1'
+# Which dataset this run of the notebook is for. Everything below namespaces itself by
+# this, so two datasets can never share a run id, a checkpoint directory or a wandb
+# artifact name. This mirrors how the benchmark itself does it — MedIAnomaly puts the
+# dataset at the TOP of its output path (options.py:68,
+# result_dir = ~/Experiment/MedIAnomaly/{dataset}, then {model}/fold_{fold}) rather
+# than branching its code per dataset.
+DATASET = os.environ.get('DATASET', 'RSNA')
+
+# Epochs are a property of the DATASET in the reference implementation
+# (options.py:23 self.epochs), not a global. Brain Tumor is the odd one out at 600.
+DATASET_EPOCHS = {'RSNA': 250, 'VinCXR': 250, 'LAG': 250,
+                  'BrainTumor': 600, 'BraTS2021': 250}
+assert DATASET in DATASET_EPOCHS, f'unknown DATASET {DATASET!r}'
+
+# RSNA KEEPS ITS ORIGINAL RUN_VERSION VERBATIM. This is not cosmetic: RUN_VERSION names
+# the checkpoint directory AND the wandb artifact (save_run builds f'{WANDB_GROUP}-{rid}'
+# and WANDB_GROUP == RUN_VERSION). Changing it for RSNA would orphan every artifact
+# already uploaded and silently retrain the entire project.
+RUN_VERSION    = 'dl-v1' if DATASET == 'RSNA' else f'dl-v1-{DATASET.lower()}'
 SKIP_COMPLETED = True
 WANDB_PROJECT  = 'MedIAnomaly-DL'
 WANDB_GROUP    = f'{RUN_VERSION}'
@@ -678,7 +696,7 @@ DE_DEPTH      = 1           # options.py --de-depth
 # variant of the AE above. See the note in build_net about Table 6's params column.
 DAE_UNET_DEPTH = 5
 DAE_UNET_WF    = 6          # first layer has 2**wf channels
-EPOCHS        = 250 if not SAMPLE_MODE else 2      # options.py epochs['rsna'/'brats']
+EPOCHS        = DATASET_EPOCHS[DATASET] if not SAMPLE_MODE else 2   # options.py epochs[...]
 BATCH_SIZE    = 64  if not SAMPLE_MODE else 4      # options.py --train-batch-size
 LR            = 1e-3                                # options.py --train-lr
 WEIGHT_DECAY  = 0.0                                 # options.py --train-weight-decay
@@ -699,6 +717,7 @@ random.seed(SEED); np.random.seed(SEED); torch.manual_seed(SEED)
 if torch.cuda.is_available():
     torch.cuda.manual_seed_all(SEED)
 
+print(f"DATASET     : {DATASET}")
 print(f"SAMPLE_MODE : {SAMPLE_MODE}")
 print(f"RUN_VERSION : {RUN_VERSION}  (SKIP_COMPLETED={SKIP_COMPLETED})")
 print(f"image {IMAGE_SIZE}px | latent {LATENT_DIM} | epochs {EPOCHS} | bs {BATCH_SIZE} | lr {LR}")
@@ -741,7 +760,15 @@ def config_fingerprint():
         'epochs': EPOCHS, 'batch_size': BATCH_SIZE, 'lr': LR,
         'weight_decay': WEIGHT_DECAY, 'pixel_range': list(PIXEL_RANGE),
         'sample_mode': SAMPLE_MODE, 'run_version': RUN_VERSION,
+        'dataset': DATASET,
     }
+
+
+# Runs stored before DATASET existed have no 'dataset' key in their manifest, and every
+# one of them was RSNA. Defaulting the MISSING key at comparison time (never by rewriting
+# a stored manifest) keeps those runs valid while still making a genuine cross-dataset
+# mix-up raise.
+_LEGACY_FINGERPRINT_DEFAULTS = {'dataset': 'RSNA'}
 
 
 def _slug(v):
@@ -752,8 +779,16 @@ def _slug(v):
 
 
 def run_id(method, seed, **params):
-    """Deterministic id: method[_k-v...]_sN. Same inputs -> same id, always."""
-    parts = [method] + [f'{k}-{_slug(v)}' for k, v in sorted(params.items())] + [f's{seed}']
+    """Deterministic id: method[_ds-X][_k-v...]_sN. Same inputs -> same id, always.
+
+    The dataset tag is OMITTED for RSNA on purpose. Every RSNA run already stored locally
+    and on wandb was written under the un-tagged id, and adding a tag unconditionally
+    would orphan all of them. RSNA is the historical default; every other dataset is
+    tagged, so a collision across datasets is impossible in either direction."""
+    parts = [method]
+    if DATASET != 'RSNA':
+        parts.append(f'ds-{_slug(DATASET)}')
+    parts += [f'{k}-{_slug(v)}' for k, v in sorted(params.items())] + [f's{seed}']
     rid = '_'.join(parts)
     return rid if len(rid) <= 100 else f'{method}_{hashlib.md5(rid.encode()).hexdigest()[:12]}_s{seed}'
 
@@ -821,7 +856,9 @@ def load_run(rid, models=None, strict=True):
     with open(_manifest_path(rid)) as f:
         man = json.load(f)
     cur, old = config_fingerprint(), man.get('config', {})
-    diff = {k: (old.get(k), cur[k]) for k in cur if old.get(k) != cur[k]}
+    _d = _LEGACY_FINGERPRINT_DEFAULTS
+    diff = {k: (old.get(k, _d.get(k)), cur[k])
+            for k in cur if old.get(k, _d.get(k)) != cur[k]}
     if diff:
         msg = (f"[{rid}] CONFIG MISMATCH — stored run used different settings:\n" +
                '\n'.join(f'    {k}: stored={a!r} current={b!r}' for k, (a, b) in diff.items()))
@@ -935,7 +972,114 @@ except Exception as _e:
     print(f'WandB unavailable ({_e}) — continuing without.')
 
 # Datasets this project needs: image-level classification only -> RSNA is enough
-REQUIRED_DATASETS = ['RSNA']
+# ONE dataset per notebook run. find_data_root returns the first root containing EVERY
+# name in `required`, so asking for two at once fails outright when they live under
+# different roots (a Kaggle mount and a local download, say) with an error that points at
+# the wrong problem.
+REQUIRED_DATASETS = [DATASET]
+
+
+# %% [markdown]
+# ---
+# ## **Cell 1.7** — Dataset-isolation self-test (run this before anything else)
+# The run-storage layer was built to stop *hyperparameter* mixing. It did not stop
+# **dataset** mixing: `run_id` had no dataset field and `config_fingerprint` had no
+# dataset key, so a second dataset's `ae_s42` would have been the same id, the same
+# directory and the same wandb artifact as RSNA's. `run_exists` would return True,
+# the fingerprint would show no difference, and `load_run` would hand back RSNA's
+# scores to be evaluated against the new dataset's labels.
+#
+# That failure is **silent** for exactly the datasets we most want to run: VinCXR and LAG
+# both train for 250 epochs, so the fingerprint stays bit-identical to RSNA's, and
+# VinCXR's test set is also 2000 images, so `roc_auc_score` would not even raise on a
+# length mismatch. The result would be a complete, plausible, entirely fictitious table.
+#
+# So this cell does not merely *apply* the fix — it **asserts** it. Two properties matter
+# and they pull in opposite directions:
+#
+# 1. **RSNA ids must be byte-identical to what is already stored**, or every artifact
+#    already on wandb is orphaned and the whole project silently retrains.
+# 2. **Every other dataset must be unreachable from RSNA's namespace**, in both
+#    directions, and a cross-dataset load must RAISE rather than return.
+
+# %% [CELL 1.7]  Dataset-isolation self-test
+
+def dataset_isolation_selftest(verbose=True):
+    """Asserts the dataset namespacing is correct. Cheap, and the only thing standing
+    between a second dataset and a fictitious results table."""
+    ok = True
+
+    def check(label, cond):
+        nonlocal ok
+        ok &= bool(cond)
+        if verbose:
+            print(f"  {'PASS' if cond else 'FAIL'}  {label}")
+
+    # --- 1. RSNA's historical ids and namespaces are untouched ----------------------
+    if DATASET == 'RSNA':
+        check("RSNA run id unchanged            run_id('ae',42) == 'ae_s42'",
+              run_id('ae', 42) == 'ae_s42')
+        check("RSNA param id unchanged          ...w-2_s42",
+              run_id('ae-posthoc-u', 42, w='2') == 'ae-posthoc-u_w-2_s42')
+        check("RSNA RUN_VERSION unchanged       'dl-v1'", RUN_VERSION == 'dl-v1')
+        check("RSNA wandb artifact name unchanged",
+              f'{WANDB_GROUP}-{run_id("ae", 42)}'.lower() == 'dl-v1-ae_s42')
+        # a legacy manifest (no 'dataset' key) must still validate under the shim
+        cur = config_fingerprint()
+        legacy = {k: v for k, v in cur.items() if k != 'dataset'}
+        d = _LEGACY_FINGERPRINT_DEFAULTS
+        check("legacy manifest (no dataset key) still validates",
+              not {k for k in cur if legacy.get(k, d.get(k)) != cur[k]})
+    else:
+        check(f"{DATASET} id is tagged           {run_id('ae', 42)}",
+              run_id('ae', 42) == f'ae_ds-{_slug(DATASET)}_s42')
+        check(f"{DATASET} id differs from RSNA's", run_id('ae', 42) != 'ae_s42')
+        check(f"{DATASET} RUN_VERSION namespaced {RUN_VERSION}",
+              RUN_VERSION == f'dl-v1-{DATASET.lower()}')
+        check(f"{DATASET} CKPT_DIR namespaced", RUN_VERSION in CKPT_DIR)
+        # an RSNA manifest loaded under this dataset MUST raise, not return
+        rsna_rid = 'ae_s42'
+        legacy_path = os.path.join(OUTPUT_DIR, 'ckpt_dl-v1', rsna_rid, 'manifest.json')
+        if os.path.isfile(legacy_path):
+            with open(legacy_path) as f:
+                stored = json.load(f).get('config', {})
+            d = _LEGACY_FINGERPRINT_DEFAULTS
+            cur = config_fingerprint()
+            check("an RSNA-stored run is REJECTED under this dataset",
+                  bool({k for k in cur if stored.get(k, d.get(k)) != cur[k]}))
+        else:
+            print('  SKIP  no local RSNA manifest to cross-check against')
+
+    # --- 2. params always separate ids ---------------------------------------------
+    check("head widths do not collide",
+          run_id('ae-posthoc-u', 42, w='2') != run_id('ae-posthoc-u', 42, w='8'))
+    check("an epochs override separates ids",
+          run_id('ae', 42, ep=50) != run_id('ae', 42))
+
+    # --- 3. the ensemble member resolver carries params -----------------------------
+    # A3_MEMBERS is defined much later (Cell 5.2), so this part only runs when the
+    # self-test is re-invoked after the whole notebook has been executed. Skipping it on
+    # the first pass is correct, not a hole: nothing before Cell 5.2 can use it.
+    if 'A3_MEMBERS' in globals():
+        check("A3 members carry params (3-tuples)",
+              all(len(m) == 3 for m in A3_MEMBERS) and len(A3_MEMBERS) == 4)
+        check("the extended set adds the post-hoc head with w='2'",
+              ('ssim+head', 'ae-ssim-posthoc-u', {'w': '2'}) in A3_MEMBERS_EXT)
+    else:
+        print('  SKIP  A3 member checks (A3_MEMBERS not defined until Cell 5.2)')
+
+    print(f"\n  dataset-isolation self-test: {'PASS' if ok else 'FAIL'}   "
+          f"(DATASET={DATASET}, RUN_VERSION={RUN_VERSION})")
+    if not ok:
+        raise RuntimeError('dataset isolation is NOT safe — do not run experiments')
+    return ok
+
+
+dataset_isolation_selftest()
+
+# BEFORE the first run on a NEW dataset, back the checkpoint store up. Ten seconds, and
+# it is the only thing that makes any of the above reversible:
+#     cp -r results_dl/ckpt_dl-v1 results_dl/ckpt_dl-v1.bak
 
 
 # %% [markdown]
@@ -1152,7 +1296,7 @@ def load_split_brats(root, size=IMAGE_SIZE):
 
 # %% [CELL 2.2]  Load RSNA
 
-x_train_np, x_test_np, y_test_np = load_split_imagelevel(DATA_ROOT, 'RSNA')
+x_train_np, x_test_np, y_test_np = load_split_imagelevel(DATA_ROOT, DATASET)
 
 X_TRAIN = torch.from_numpy(x_train_np)                 # (N,1,64,64) float32 in [-1,1]
 X_TEST  = torch.from_numpy(x_test_np)
@@ -1949,6 +2093,12 @@ def reproduction_table(methods=None):
     df = completed_runs()
     if df.empty:
         print('no runs stored yet'); return df
+    if DATASET != 'RSNA':
+        # TABLE6_RSNA is the RSNA column of the benchmark's Table 6. Comparing another
+        # dataset's runs against it would print a table of meaningless deltas that could
+        # easily end up in the report.
+        print(f'reproduction table skipped: no reference column for {DATASET}')
+        return df
     methods = methods or BASELINE_METHODS
     rows = []
     for m in methods:
@@ -2248,7 +2398,18 @@ if not A2.empty:
 from itertools import combinations
 
 # members: (label, method name whose stored run holds the score)
-A3_MEMBERS = [('l2', 'ae'), ('ssim', 'ae-ssim'), ('perceptual', 'ae-pl'), ('aeu', 'aeu')]
+# (label, method, params) — params are REQUIRED because a member's run id may carry them.
+# The post-hoc head's id is run_id('ae-ssim-posthoc-u', seed, w='2'); resolving it with
+# run_id(method, seed) alone silently returns nothing and every ensemble result comes back
+# empty with no exception raised.
+#
+# A3_MEMBERS is the PRE-REGISTERED four. Do not add to it: the registered statistic
+# (15 subsets, 150 splits, selection bias -0.20) is defined over exactly this set, and
+# enlarging it would replace a pre-registered number with a post-hoc one. The extended
+# set below is reported SEPARATELY and labelled exploratory.
+A3_MEMBERS = [('l2', 'ae', {}), ('ssim', 'ae-ssim', {}),
+              ('perceptual', 'ae-pl', {}), ('aeu', 'aeu', {})]
+A3_MEMBERS_EXT = A3_MEMBERS + [('ssim+head', 'ae-ssim-posthoc-u', {'w': '2'})]
 A3_PREREGISTERED = {
     'all4': ['l2', 'ssim', 'perceptual', 'aeu'],
     'noIN': ['l2', 'ssim', 'aeu'],          # no ImageNet weights anywhere in this one
@@ -2262,12 +2423,12 @@ def _ranks(x):
     return r / max(len(r) - 1, 1)
 
 
-def load_member_scores(seed):
+def load_member_scores(seed, members=None):
     """Per-image scores for each ensemble member at one seed. Returns {} if any member
     is missing, because a partial ensemble is not the ensemble we pre-registered."""
     out = {}
-    for label, method in A3_MEMBERS:
-        rid = run_id(method, seed)
+    for label, method, params in (members or A3_MEMBERS):
+        rid = run_id(method, seed, **params)
         if not run_exists(rid) and not (USE_WANDB and fetch_run(rid)):
             print(f'  seed {seed}: member {label!r} ({rid}) missing — skipping this seed')
             return {}
@@ -2276,15 +2437,16 @@ def load_member_scores(seed):
     return out
 
 
-def a3_ensemble(seeds=None):
+def a3_ensemble(seeds=None, members=None):
     seeds = seeds or SEEDS
+    members_spec = members or A3_MEMBERS
     rows = []
     for s in seeds:
-        members = load_member_scores(s)
-        if not members:
+        member_scores = load_member_scores(s, members_spec)
+        if not member_scores:
             continue
-        ranked = {k: _ranks(v) for k, v in members.items()}
-        labels = [l for l, _ in A3_MEMBERS]
+        ranked = {k: _ranks(v) for k, v in member_scores.items()}
+        labels = [l for l, _, _ in members_spec]
         for r in range(1, len(labels) + 1):
             for combo in combinations(labels, r):
                 m = evaluate_scores(np.mean([ranked[c] for c in combo], axis=0), Y_TEST)
@@ -2302,8 +2464,8 @@ def a3_ensemble(seeds=None):
             rid = run_id(f'ens-{name}', s)
             if run_exists(rid):
                 continue
-            members = load_member_scores(s)
-            sc = np.mean([_ranks(members[c]) for c in combo], axis=0)
+            member_scores = load_member_scores(s, members_spec)
+            sc = np.mean([_ranks(member_scores[c]) for c in combo], axis=0)
             save_run(rid, method=f'ens-{name}', seed=s,
                      params={'members': '+'.join(combo)},
                      metrics=evaluate_scores(sc, Y_TEST), arrays={'scores': sc},
@@ -2422,7 +2584,13 @@ def a4_posthoc_uncertainty(seed=TRAIN_SEED, width=1, base_method='ae', epochs=No
     reproduces the original experiment; 'ae-pl' and 'ae-ssim' test whether post-hoc
     uncertainty is a general wrapper or a property of the L2-trained reconstruction.
     All three share the AE architecture, so de_features[0] is 16ch at 32x32 either way."""
-    rid = run_id(f'{base_method}-posthoc-u', seed, w=_wtag(width))
+    # Encode a shortened run in the id, exactly as train_and_eval does. Without this a
+    # 50-epoch debugging head and a 250-epoch real head share an id, and config_fingerprint
+    # cannot see the difference because it records the GLOBAL epoch count.
+    _p = {'w': _wtag(width)}
+    if epochs is not None and epochs != EPOCHS:
+        _p['ep'] = epochs
+    rid = run_id(f'{base_method}-posthoc-u', seed, **_p)
     if run_exists(rid) or (USE_WANDB and fetch_run(rid)):
         try:
             man, _ = load_run(rid)
@@ -2572,17 +2740,18 @@ if not _a4.empty and 'ae-posthoc-u' in set(_a4.method):
 
 # %% [CELL 5.2b]  A3 — selection-aware validation
 
-def a3_split_half(seeds=None, n_splits=50, rng_seed=SPLIT_SEED if 'SPLIT_SEED' in dir() else 0):
+def a3_split_half(seeds=None, n_splits=50, rng_seed=0, members=None):
     seeds = seeds or SEEDS
-    labels = [l for l, _ in A3_MEMBERS]
+    members_spec = members or A3_MEMBERS
+    labels = [l for l, _, _ in members_spec]
     all_combos = [c for r in range(1, len(labels) + 1) for c in combinations(labels, r)]
     rng = np.random.default_rng(rng_seed)
     rows = []
     for s in seeds:
-        members = load_member_scores(s)
-        if not members:
+        member_scores = load_member_scores(s, members_spec)
+        if not member_scores:
             continue
-        ranked = {k: _ranks(v) for k, v in members.items()}
+        ranked = {k: _ranks(v) for k, v in member_scores.items()}
         idx0 = np.where(Y_TEST == 0)[0]
         idx1 = np.where(Y_TEST == 1)[0]
         for _ in range(n_splits):
@@ -2713,9 +2882,22 @@ def m0_degeneracy(seeds=None, width=M0_WIDTH, base_method=M0_BASE):
         v_resid  = (lv_te - LV_bar).var(dim=0, unbiased=False).mean().item()
         frac_static = v_static / max(v_static + v_resid, 1e-12)
 
+        # Is the per-image scalar NEW information, or just a restatement of the image's
+        # own residual magnitude? If exp(-lv_bar) were a monotone function of mean(r^2),
+        # the score would collapse to a monotone transform of the plain L2 score and the
+        # AUC would fall back to the plain AE's -- so a HIGH correlation here would mean
+        # the scalar is redundant, and a low one that it carries independent signal.
+        lv_bar_img = lv_te.mean(dim=[1, 2, 3]).numpy()
+        r_bar_img  = res_te.mean(dim=[1, 2, 3]).numpy()
+        rho = float(np.corrcoef(np.argsort(np.argsort(-lv_bar_img)),
+                                np.argsort(np.argsort(r_bar_img)))[0, 1])
+        # and does the scalar detect anomalies ON ITS OWN, with no residual at all?
+        scalar_only = evaluate_scores(-lv_bar_img, Y_TEST)
+
         rows.append({'seed': s, 'full': full['AUC'], 'static': static['AUC'],
                      'scalar': scalar['AUC'], 'whiten': whiten['AUC'],
-                     'frac_static': frac_static})
+                     'frac_static': frac_static, 'rho_scalar_resid': rho,
+                     'scalar_alone': scalar_only['AUC']})
         del ae, head, lv_tr, res_tr, lv_te, res_te
     return pd.DataFrame(rows)
 
@@ -2736,6 +2918,11 @@ if not M0.empty:
     print(f'  plain {M0_BASE} with its own score       {ae_auc:6.2f}')
     print(f'\n  variance of log_var explained by the static map: '
           f'{M0.frac_static.mean()*100:.1f}%')
+    print(f'  mean predicted log_var, used ALONE as a score : '
+          f'{M0.scalar_alone.mean()*100:6.2f}+-{M0.scalar_alone.std(ddof=0)*100:.2f}')
+    print(f'  rank corr(per-image scalar, that image\'s mean residual) : '
+          f'{M0.rho_scalar_resid.mean():+.3f}')
+    print(f'    -> {"REDUNDANT: the scalar mostly restates the residual magnitude" if abs(M0.rho_scalar_resid.mean()) > 0.8 else "the scalar carries information the residual does not"}')
     d_static = (M0.full - M0.static).mean() * 100
     d_whiten = (M0.full - M0.whiten).mean() * 100
     print(f'\n  full - static : {d_static:+.2f} pts  '
@@ -2776,7 +2963,11 @@ if not _m2.empty:
     print(f"  {'backbone':<10}{'frozen model':>16}{'+ post-hoc head':>18}{'delta':>9}")
     for b in M2_BASES:
         base_rows = _m2[_m2.method == b]
-        ph_rows   = _m2[_m2.method == f'{b}-posthoc-u']
+        # MUST filter on width too: every head variant shares the method name
+        # f'{b}-posthoc-u', so matching on the name alone silently averages w=1, w=8,
+        # w=16 and the M4 variants into this row.
+        want = {run_id(f'{b}-posthoc-u', s_, w=_wtag(M2_WIDTH)) for s_ in SEEDS}
+        ph_rows = _m2[_m2.run_id.isin(want)]
         if base_rows.empty or ph_rows.empty:
             continue
         bm = base_rows.AUC.mean() * 100
@@ -2920,6 +3111,20 @@ def delong_test(score_a, score_b, labels, alpha=0.05):
             'p': float(2 * stats.norm.sf(abs(z)))}
 
 
+def ensemble_scores(seed, members=(('ae-pl', {}), ('aeu', {}))):
+    """Rank-average of the given members' stored score vectors, rebuilt on demand.
+    The winning perceptual+uncertainty combination is EXPLORATORY (Cell 5.2) and is
+    therefore not persisted as a run, unlike the two pre-registered ensembles. Comparing
+    against `ens-all4` instead would silently test the combination that LOST."""
+    vecs = []
+    for m, prm in members:
+        v = _scores_for(run_id(m, seed, **prm))
+        if v is None:
+            return None
+        vecs.append(_ranks(v))
+    return np.mean(vecs, axis=0)
+
+
 def _scores_for(rid):
     """Per-image score vector for a stored run, fetched from wandb if not local."""
     if not run_exists(rid) and not (USE_WANDB and fetch_run(rid)):
@@ -2935,7 +3140,9 @@ def _scores_for(rid):
 # Every one of these is currently reported as an arithmetic difference somewhere.
 M3_COMPARISONS = [
     ('ensemble(perc+unc) vs AE-PL',
-     lambda s: run_id('ens-all4', s), lambda s: run_id('ae-pl', s)),
+     lambda s: ensemble_scores(s), lambda s: run_id('ae-pl', s)),
+    ('ensemble(perc+unc) vs AE-U',
+     lambda s: ensemble_scores(s), lambda s: run_id('aeu', s)),
     ('post-hoc head (w=2) vs AE-SSIM',
      lambda s: run_id('ae-posthoc-u', s, w='2'), lambda s: run_id('ae-ssim', s)),
     ('post-hoc head (w=2) vs plain AE',
@@ -2953,7 +3160,9 @@ def m3_delong(comparisons=None, seeds=None):
     rows = []
     for label, ra, rb in comparisons:
         for s in seeds:
-            sa, sb = _scores_for(ra(s)), _scores_for(rb(s))
+            a, b = ra(s), rb(s)
+            sa = _scores_for(a) if isinstance(a, str) else a
+            sb = _scores_for(b) if isinstance(b, str) else b
             if sa is None or sb is None:
                 continue
             r = delong_test(sa, sb, Y_TEST)
@@ -2981,6 +3190,180 @@ if not M3.empty:
     print(f'  unpaired Hanley-McNeil bound: 1.48 pts (AUC 0.887, n=1000/1000)')
     print(f'  -> paired interval is {"TIGHTER" if hw < 1.48 else "WIDER"}; '
           f'apply the ~1.5-point rule only to UNPAIRED comparisons.')
+
+
+# %% [markdown]
+# ---
+# # Item 4 — is the ImageNet-free head a drop-in substitute for AE-U?
+# ## **Cell 5.8** — the C3 substitution control
+# C3 claims frozen-AE-SSIM + post-hoc head (86.99) is equivalent to jointly-trained AE-U
+# (86.86). An equivalence claim should survive **substitution**: if the two are truly
+# interchangeable, swapping one for the other inside a fixed ensemble should move nothing.
+#
+# **This does NOT test C1**, and it is worth being explicit about that because an earlier
+# draft claimed it did. Both scores here are applied to *compatible* backbones — the
+# perceptual score reads its own perceptually-trained model, the uncertainty score reads a
+# pixel-trained one. No score is ever applied across the space boundary, so no C1
+# prediction is at risk. It is a C3 control, nothing more.
+#
+# **Pre-registered:** |ens(perceptual, ssim+head) − ens(perceptual, aeu)| < 1.5 AUC points
+# → the head is a drop-in substitute for AE-U *as a component*, which upgrades C3 from
+# "matches AE-U standalone" to "matches AE-U in use". > 3.0 → C3 is limited to standalone
+# use and must say so.
+#
+# **The pre-registered 4-member ensemble result is NOT overwritten.** Enlarging
+# `A3_MEMBERS` from 4 to 5 takes the subset scan from 15 to 31 and would replace a
+# pre-registered statistic (150 splits, selection bias −0.20) with a post-hoc one. The
+# extended scan is computed separately and reported beside the original, labelled
+# exploratory.
+
+# %% [CELL 5.8]  Item 4 — C3 substitution control
+
+def c3_substitution_control(seeds=None):
+    seeds = seeds or SEEDS
+    rows = []
+    for s in seeds:
+        a = ensemble_scores(s, members=(('ae-pl', {}), ('aeu', {})))
+        b = ensemble_scores(s, members=(('ae-pl', {}),
+                                        ('ae-ssim-posthoc-u', {'w': '2'})))
+        if a is None or b is None:
+            print(f'  seed {s}: a member is missing — run Cell 5.5 first'); continue
+        rows.append({'seed': s,
+                     'perc+aeu': evaluate_scores(a, Y_TEST)['AUC'],
+                     'perc+ssimhead': evaluate_scores(b, Y_TEST)['AUC'],
+                     'delong_p': delong_test(b, a, Y_TEST)['p']})
+    return pd.DataFrame(rows)
+
+
+C3SUB = c3_substitution_control()
+
+if not C3SUB.empty:
+    m_a, m_b = C3SUB['perc+aeu'].mean() * 100, C3SUB['perc+ssimhead'].mean() * 100
+    d = m_b - m_a
+    print('\nItem 4 — is the post-hoc head a drop-in substitute for AE-U in the ensemble?\n')
+    print(f'  perceptual + AE-U (jointly trained)       {m_a:6.2f}')
+    print(f'  perceptual + frozen AE-SSIM + head        {m_b:6.2f}')
+    print(f'  difference                                {d:+6.2f}   '
+          f'(paired DeLong p = {C3SUB.delong_p.max():.3g}, least significant seed)')
+    verdict = ('SUBSTITUTABLE — C3 upgrades to "matches AE-U as a component"' if abs(d) < 1.5
+               else 'NOT substitutable — C3 is limited to standalone use'
+               if abs(d) > 3.0 else 'INCONCLUSIVE (between the 1.5 and 3.0 bands)')
+    print(f'\n  VERDICT: {verdict}')
+
+    # exploratory 31-subset scan, reported BESIDE the pre-registered 15-subset result
+    print('\n  --- exploratory: the 5-member subset scan (NOT the pre-registered result) ---')
+    A3X = a3_ensemble(members=A3_MEMBERS_EXT)
+    if not A3X.empty:
+        top = (A3X.groupby('combo').AUC.mean().sort_values(ascending=False) * 100).head(5)
+        print(top.to_string())
+        print(f'\n  pre-registered 4-member result stands unchanged; the above is'
+              f' {len(A3X.combo.unique())} subsets and is exploratory.')
+
+
+# %% [markdown]
+# ---
+# # Item 5 — what do these models actually reconstruct?
+# ## **Cell 5.9** — the qualitative figure
+# Two of the project's most striking numbers currently rest on an *unverified* narrative:
+#
+# * the A1 cell where a perceptually-trained model scored in pixel space gives **44.9** —
+#   below chance;
+# * the post-hoc head **destroying** that same model, −30.56 to 57.01.
+#
+# The proposed explanation for both is one mechanism: perceptual loss does not constrain
+# absolute pixel intensity, so the reconstruction is free to drift there, and any
+# pixel-space reading of it becomes meaningless. That is a hypothesis. This figure is what
+# turns it into evidence — or refutes it.
+#
+# **What to look for.** If the AE-PL reconstruction is a plausible radiograph at the wrong
+# brightness or contrast, the mechanism is confirmed and the finding becomes more
+# interesting, not less. If it is structurally wrong, the explanation is different and the
+# mechanism sentence must be rewritten.
+#
+# Zero GPU training — it reloads stored weights, so it can run on CPU in parallel with a
+# GPU job in another session.
+
+# %% [CELL 5.9]  Item 5 — input / reconstruction / error map
+
+FIG_METHODS = ['ae', 'ae-ssim', 'ae-pl', 'aeu']
+FIG_N       = 4        # test images shown
+
+
+def qualitative_panel(seed=None, methods=None, n=FIG_N, save=True):
+    seed    = seed if seed is not None else SEEDS[0]
+    methods = methods or FIG_METHODS
+    # a fixed, reproducible pick: the n most-abnormal and n most-normal by label order
+    rng = np.random.default_rng(0)
+    idx = np.concatenate([rng.choice(np.where(Y_TEST == 1)[0], n // 2, replace=False),
+                          rng.choice(np.where(Y_TEST == 0)[0], n - n // 2, replace=False)])
+    x = X_TEST[idx]
+
+    avail = []
+    for m in methods:
+        rid = run_id(m, seed)
+        if run_exists(rid) or (USE_WANDB and fetch_run(rid)):
+            avail.append(m)
+        else:
+            print(f'  {m}: not available, skipping')
+    if not avail:
+        print('  nothing to plot'); return None
+
+    rows = 1 + 2 * len(avail)          # input, then (recon, error) per method
+    fig, ax = plt.subplots(rows, len(idx), figsize=(2.0 * len(idx), 2.0 * rows))
+    ax = np.atleast_2d(ax)
+    for j in range(len(idx)):
+        ax[0, j].imshow(x[j, 0], cmap='gray', vmin=-1, vmax=1)
+        ax[0, j].set_title(f'{"ABNORMAL" if Y_TEST[idx[j]] else "normal"}', fontsize=8)
+    ax[0, 0].set_ylabel('input', fontsize=9)
+
+    for i, m in enumerate(avail):
+        net = build_net(METHODS[m]['net'])
+        load_run(run_id(m, seed), models={'net': net})
+        with torch.no_grad():
+            out = net(x.to(device))
+            xh  = out['x_hat'].cpu()
+        err = ((x - xh) ** 2)[:, 0]
+        for j in range(len(idx)):
+            ax[1 + 2 * i, j].imshow(xh[j, 0], cmap='gray', vmin=-1, vmax=1)
+            # a SHARED error scale across methods, so the panels are comparable; a
+            # per-panel scale would hide exactly the intensity drift we are looking for
+            ax[2 + 2 * i, j].imshow(err[j], cmap='inferno', vmin=0, vmax=float(err.max()))
+        ax[1 + 2 * i, 0].set_ylabel(f'{m}\nrecon', fontsize=8)
+        ax[2 + 2 * i, 0].set_ylabel(f'{m}\nsq. error', fontsize=8)
+        # the quantity the mechanism is about: does this model preserve absolute intensity?
+        print(f'  {m:<9} recon mean {xh.mean():+.3f} (input {x.mean():+.3f})   '
+              f'std {xh.std():.3f} (input {x.std():.3f})   '
+              f'mean sq err {err.mean():.4f}')
+        del net
+
+    for a_ in ax.ravel():
+        a_.set_xticks([]); a_.set_yticks([])
+    fig.suptitle(f'{DATASET} — reconstruction and pixel error by training objective '
+                 f'(seed {seed})', fontsize=11)
+    fig.tight_layout()
+    if save:
+        out_png = f'{OUTPUT_DIR}/qualitative_{DATASET}_s{seed}.png'
+        fig.savefig(out_png, dpi=140, bbox_inches='tight')
+        print(f'\n  saved -> {out_png}')
+        # The ONLY output of this notebook that is not already inside a per-run wandb
+        # artifact. Everything else -- weights, per-image scores, metrics -- is uploaded
+        # by save_run and versioned; every results table is DERIVED from those scores and
+        # recomputes in seconds. A figure is not derivable, so log it explicitly rather
+        # than letting it die with the Kaggle session's disk.
+        if USE_WANDB and wandb.run is not None:
+            try:
+                wandb.log({f'qualitative/{DATASET}_s{seed}': wandb.Image(out_png)})
+                print(f'  logged to wandb as qualitative/{DATASET}_s{seed}')
+            except Exception as e:
+                print(f'  wandb image log failed: {type(e).__name__}: {e}')
+    plt.show()
+    return fig
+
+
+_ = qualitative_panel()
+print('\n  READ THE INTENSITY STATISTICS ABOVE, not just the pictures:')
+print('  if ae-pl\'s reconstruction mean/std depart from the input while ae\'s do not,')
+print('  that IS the mechanism behind the 44.9 cell and the -30.56, made measurable.')
 
 
 # %% [markdown]

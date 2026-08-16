@@ -1,0 +1,352 @@
+[ae_s42] loaded (saved 2026-08-11T01:00:26)
+  [ae-posthoc-u_w-2_s42] loaded (saved 2026-08-11T18:12:50)
+  [ae_s43] loaded (saved 2026-08-11T01:18:57)
+  [ae-posthoc-u_w-2_s43] loaded (saved 2026-08-11T18:14:22)
+  [ae_s44] loaded (saved 2026-08-11T01:37:30)
+  [ae-posthoc-u_w-2_s44] loaded (saved 2026-08-11T18:15:54)
+
+M0 — what is the variance head actually doing?  (base=ae, w=2, 3 seeds)
+
+  full head, per-image log_var           82.00+-0.83
+  STATIC map (train-set pixelwise mean)   69.10+-1.03
+  per-image SCALAR only (flat map)        79.87+-1.06
+  NO HEAD: r^2 / mean-train-residual      69.59+-0.82
+  plain ae with its own score        68.35
+
+  variance of log_var explained by the static map: 39.7%
+
+  full - static : +12.89 pts  -> per-image component matters
+  full - whiten : +12.41 pts  -> the head does more than whitening
+
+
+
+
+
+[ae-posthoc-u_w-2_s42] loaded (saved 2026-08-11T18:12:50)
+ae-posthoc-u_w-2_s42: reused  AUC=0.8215
+  [ae-posthoc-u_w-2_s43] loaded (saved 2026-08-11T18:14:22)
+ae-posthoc-u_w-2_s43: reused  AUC=0.8293
+  [ae-posthoc-u_w-2_s44] loaded (saved 2026-08-11T18:15:54)
+ae-posthoc-u_w-2_s44: reused  AUC=0.8091
+  [ae-ssim-posthoc-u_w-2_s42] absent (CommError: artifact membership 'dl-v1-ae-ssim-posthoc-u_w-2_s42:latest' not found in 'https-www-univr-it-/MedIAnomaly-DL') — will train fresh
+  [ae-ssim_s42] loaded (saved 2026-08-11T10:48:50)
+ae-ssim_s42: reused  AUC=0.8086
+  [ae-ssim_s42] loaded (saved 2026-08-11T10:48:50)
+ae-ssim-posthoc-u_w-2_s42: head 14,528 params on a FROZEN ae-ssim (2,351,184) | 250 epochs
+    ep    1/250  loss -1.20221  (1s)
+    ep   25/250  loss -3.55310  (9s)
+    ep   50/250  loss -3.57328  (18s)
+    ep   75/250  loss -3.58375  (26s)
+    ep  100/250  loss -3.58976  (35s)
+    ep  125/250  loss -3.59454  (44s)
+    ep  150/250  loss -3.60062  (53s)
+    ep  175/250  loss -3.60637  (61s)
+    ep  200/250  loss -3.60773  (70s)
+    ep  225/250  loss -3.60608  (79s)
+wandb: Adding directory to artifact (/kaggle/working/results_dl/ckpt_dl-v1/ae-ssim-posthoc-u_w-2_s42)... Done. 0.0s
+    ep  250/250  loss -3.61569  (88s)
+    -> AUC 0.8777  AP 0.8755
+  [ae-ssim-posthoc-u_w-2_s42] artifact -> dl-v1-ae-ssim-posthoc-u_w-2_s42:v0
+  [ae-ssim-posthoc-u_w-2_s42] saved (2 files) -> /kaggle/working/results_dl/ckpt_dl-v1/ae-ssim-posthoc-u_w-2_s42
+  [ae-ssim-posthoc-u_w-2_s43] absent (CommError: artifact membership 'dl-v1-ae-ssim-posthoc-u_w-2_s43:latest' not found in 'https-www-univr-it-/MedIAnomaly-DL') — will train fresh
+  [ae-ssim_s43] loaded (saved 2026-08-11T10:50:58)
+ae-ssim_s43: reused  AUC=0.8035
+  [ae-ssim_s43] loaded (saved 2026-08-11T10:50:58)
+ae-ssim-posthoc-u_w-2_s43: head 14,528 params on a FROZEN ae-ssim (2,351,184) | 250 epochs
+    ep    1/250  loss 1.95573  (0s)
+    ep   25/250  loss -3.52833  (9s)
+    ep   50/250  loss -3.57247  (18s)
+    ep   75/250  loss -3.58826  (27s)
+    ep  100/250  loss -3.60176  (35s)
+    ep  125/250  loss -3.60587  (44s)
+    ep  150/250  loss -3.61756  (53s)
+    ep  175/250  loss -3.62274  (62s)
+    ep  200/250  loss -3.63461  (71s)
+    ep  225/250  loss -3.63806  (80s)
+wandb: Adding directory to artifact (/kaggle/working/results_dl/ckpt_dl-v1/ae-ssim-posthoc-u_w-2_s43)... Done. 0.0s
+    ep  250/250  loss -3.64589  (89s)
+    -> AUC 0.8675  AP 0.8574
+  [ae-ssim-posthoc-u_w-2_s43] artifact -> dl-v1-ae-ssim-posthoc-u_w-2_s43:v0
+  [ae-ssim-posthoc-u_w-2_s43] saved (2 files) -> /kaggle/working/results_dl/ckpt_dl-v1/ae-ssim-posthoc-u_w-2_s43
+  [ae-ssim-posthoc-u_w-2_s44] absent (CommError: artifact membership 'dl-v1-ae-ssim-posthoc-u_w-2_s44:latest' not found in 'https-www-univr-it-/MedIAnomaly-DL') — will train fresh
+  [ae-ssim_s44] loaded (saved 2026-08-11T10:53:09)
+ae-ssim_s44: reused  AUC=0.8121
+  [ae-ssim_s44] loaded (saved 2026-08-11T10:53:09)
+ae-ssim-posthoc-u_w-2_s44: head 14,528 params on a FROZEN ae-ssim (2,351,184) | 250 epochs
+    ep    1/250  loss 126.67090  (0s)
+    ep   25/250  loss -3.50074  (9s)
+    ep   50/250  loss -3.52808  (18s)
+    ep   75/250  loss -3.54524  (27s)
+    ep  100/250  loss -3.54960  (36s)
+    ep  125/250  loss -3.56012  (45s)
+    ep  150/250  loss -3.56370  (54s)
+    ep  175/250  loss -3.57196  (63s)
+    ep  200/250  loss -3.57609  (72s)
+    ep  225/250  loss -3.58633  (81s)
+wandb: Adding directory to artifact (/kaggle/working/results_dl/ckpt_dl-v1/ae-ssim-posthoc-u_w-2_s44)... Done. 0.0s
+    ep  250/250  loss -3.58940  (90s)
+    -> AUC 0.8645  AP 0.8621
+  [ae-ssim-posthoc-u_w-2_s44] artifact -> dl-v1-ae-ssim-posthoc-u_w-2_s44:v0
+  [ae-ssim-posthoc-u_w-2_s44] saved (2 files) -> /kaggle/working/results_dl/ckpt_dl-v1/ae-ssim-posthoc-u_w-2_s44
+  [ae-pl-posthoc-u_w-2_s42] absent (CommError: artifact membership 'dl-v1-ae-pl-posthoc-u_w-2_s42:latest' not found in 'https-www-univr-it-/MedIAnomaly-DL') — will train fresh
+  [ae-pl_s42] loaded (saved 2026-08-11T11:12:26)
+ae-pl_s42: reused  AUC=0.8774
+  [ae-pl_s42] loaded (saved 2026-08-11T11:12:26)
+ae-pl-posthoc-u_w-2_s42: head 14,528 params on a FROZEN ae-pl (2,351,184) | 250 epochs
+    ep    1/250  loss -0.81078  (0s)
+    ep   25/250  loss -1.65817  (9s)
+    ep   50/250  loss -1.67366  (18s)
+    ep   75/250  loss -1.68185  (27s)
+    ep  100/250  loss -1.68732  (36s)
+    ep  125/250  loss -1.69013  (45s)
+    ep  150/250  loss -1.69363  (54s)
+    ep  175/250  loss -1.69520  (63s)
+    ep  200/250  loss -1.69919  (72s)
+    ep  225/250  loss -1.69902  (81s)
+wandb: Adding directory to artifact (/kaggle/working/results_dl/ckpt_dl-v1/ae-pl-posthoc-u_w-2_s42)... Done. 0.0s
+    ep  250/250  loss -1.70003  (90s)
+    -> AUC 0.5745  AP 0.5888
+  [ae-pl-posthoc-u_w-2_s42] artifact -> dl-v1-ae-pl-posthoc-u_w-2_s42:v0
+  [ae-pl-posthoc-u_w-2_s42] saved (2 files) -> /kaggle/working/results_dl/ckpt_dl-v1/ae-pl-posthoc-u_w-2_s42
+  [ae-pl-posthoc-u_w-2_s43] absent (CommError: artifact membership 'dl-v1-ae-pl-posthoc-u_w-2_s43:latest' not found in 'https-www-univr-it-/MedIAnomaly-DL') — will train fresh
+  [ae-pl_s43] loaded (saved 2026-08-11T11:31:33)
+ae-pl_s43: reused  AUC=0.8779
+  [ae-pl_s43] loaded (saved 2026-08-11T11:31:33)
+ae-pl-posthoc-u_w-2_s43: head 14,528 params on a FROZEN ae-pl (2,351,184) | 250 epochs
+    ep    1/250  loss -0.79271  (0s)
+    ep   25/250  loss -1.59763  (9s)
+    ep   50/250  loss -1.61294  (18s)
+    ep   75/250  loss -1.62189  (27s)
+    ep  100/250  loss -1.62049  (36s)
+    ep  125/250  loss -1.63167  (45s)
+    ep  150/250  loss -1.63361  (54s)
+    ep  175/250  loss -1.63525  (63s)
+    ep  200/250  loss -1.63899  (72s)
+    ep  225/250  loss -1.64123  (81s)
+wandb: Adding directory to artifact (/kaggle/working/results_dl/ckpt_dl-v1/ae-pl-posthoc-u_w-2_s43)... Done. 0.0s
+    ep  250/250  loss -1.64148  (91s)
+    -> AUC 0.5420  AP 0.5831
+  [ae-pl-posthoc-u_w-2_s43] artifact -> dl-v1-ae-pl-posthoc-u_w-2_s43:v0
+  [ae-pl-posthoc-u_w-2_s43] saved (2 files) -> /kaggle/working/results_dl/ckpt_dl-v1/ae-pl-posthoc-u_w-2_s43
+  [ae-pl-posthoc-u_w-2_s44] absent (CommError: artifact membership 'dl-v1-ae-pl-posthoc-u_w-2_s44:latest' not found in 'https-www-univr-it-/MedIAnomaly-DL') — will train fresh
+  [ae-pl_s44] loaded (saved 2026-08-11T12:39:31)
+ae-pl_s44: reused  AUC=0.8720
+  [ae-pl_s44] loaded (saved 2026-08-11T12:39:31)
+ae-pl-posthoc-u_w-2_s44: head 14,528 params on a FROZEN ae-pl (2,351,184) | 250 epochs
+    ep    1/250  loss -0.91701  (0s)
+    ep   25/250  loss -1.70056  (9s)
+    ep   50/250  loss -1.71871  (18s)
+    ep   75/250  loss -1.72734  (27s)
+    ep  100/250  loss -1.73234  (36s)
+    ep  125/250  loss -1.73623  (45s)
+    ep  150/250  loss -1.74118  (54s)
+    ep  175/250  loss -1.74322  (63s)
+    ep  200/250  loss -1.74361  (73s)
+    ep  225/250  loss -1.74753  (82s)
+wandb: Adding directory to artifact (/kaggle/working/results_dl/ckpt_dl-v1/ae-pl-posthoc-u_w-2_s44)... Done. 0.0s
+    ep  250/250  loss -1.74922  (91s)
+    -> AUC 0.5938  AP 0.6038
+  [ae-pl-posthoc-u_w-2_s44] artifact -> dl-v1-ae-pl-posthoc-u_w-2_s44:v0
+  [ae-pl-posthoc-u_w-2_s44] saved (2 files) -> /kaggle/working/results_dl/ckpt_dl-v1/ae-pl-posthoc-u_w-2_s44
+
+M2 — post-hoc variance head on three frozen backbones
+
+  backbone      frozen model   + post-hoc head    delta
+  ae                   68.35        78.20+-6.24    +9.86
+  ae-ssim              80.81        86.99+-0.57    +6.19
+  ae-pl                87.58        57.01+-2.14   -30.56
+
+  references: AE-U (jointly trained) 86.86 | best measured configuration (perceptual+uncertainty ensemble) 88.74
+
+
+
+
+
+[ae-posthoc-u_w-1_s42] loaded (saved 2026-08-11T16:23:14)
+ae-posthoc-u_w-1_s42: reused  AUC=0.6563
+  [ae-posthoc-u_w-1_s43] loaded (saved 2026-08-11T16:24:04)
+ae-posthoc-u_w-1_s43: reused  AUC=0.6676
+  [ae-posthoc-u_w-1_s44] loaded (saved 2026-08-11T16:24:54)
+ae-posthoc-u_w-1_s44: reused  AUC=0.6843
+  [ae-posthoc-u_w-c4_s42] absent (CommError: artifact membership 'dl-v1-ae-posthoc-u_w-c4_s42:latest' not found in 'https-www-univr-it-/MedIAnomaly-DL') — will train fresh
+  [ae_s42] loaded (saved 2026-08-11T01:00:26)
+ae_s42: reused  AUC=0.6827
+  [ae_s42] loaded (saved 2026-08-11T01:00:26)
+ae-posthoc-u_w-c4_s42: head 808 params on a FROZEN ae (2,351,184) | 250 epochs
+    ep    1/250  loss -0.28674  (0s)
+    ep   25/250  loss -3.95761  (6s)
+    ep   50/250  loss -3.98629  (13s)
+    ep   75/250  loss -3.99395  (19s)
+    ep  100/250  loss -3.99598  (25s)
+    ep  125/250  loss -3.99796  (31s)
+    ep  150/250  loss -4.00031  (37s)
+    ep  175/250  loss -4.00163  (44s)
+    ep  200/250  loss -4.00188  (50s)
+    ep  225/250  loss -4.00319  (56s)
+wandb: Adding directory to artifact (/kaggle/working/results_dl/ckpt_dl-v1/ae-posthoc-u_w-c4_s42)... Done. 0.0s
+    ep  250/250  loss -4.00320  (62s)
+    -> AUC 0.7598  AP 0.7373
+  [ae-posthoc-u_w-c4_s42] artifact -> dl-v1-ae-posthoc-u_w-c4_s42:v0
+  [ae-posthoc-u_w-c4_s42] saved (2 files) -> /kaggle/working/results_dl/ckpt_dl-v1/ae-posthoc-u_w-c4_s42
+  [ae-posthoc-u_w-c4_s43] absent (CommError: artifact membership 'dl-v1-ae-posthoc-u_w-c4_s43:latest' not found in 'https-www-univr-it-/MedIAnomaly-DL') — will train fresh
+  [ae_s43] loaded (saved 2026-08-11T01:18:57)
+ae_s43: reused  AUC=0.6918
+  [ae_s43] loaded (saved 2026-08-11T01:18:57)
+ae-posthoc-u_w-c4_s43: head 808 params on a FROZEN ae (2,351,184) | 250 epochs
+    ep    1/250  loss -0.43565  (0s)
+    ep   25/250  loss -4.04903  (6s)
+    ep   50/250  loss -4.06126  (12s)
+    ep   75/250  loss -4.06964  (18s)
+    ep  100/250  loss -4.07346  (25s)
+    ep  125/250  loss -4.07536  (31s)
+    ep  150/250  loss -4.07574  (37s)
+    ep  175/250  loss -4.07666  (43s)
+    ep  200/250  loss -4.07961  (49s)
+    ep  225/250  loss -4.07975  (55s)
+wandb: Adding directory to artifact (/kaggle/working/results_dl/ckpt_dl-v1/ae-posthoc-u_w-c4_s43)... Done. 0.0s
+    ep  250/250  loss -4.07945  (62s)
+    -> AUC 0.8036  AP 0.7724
+  [ae-posthoc-u_w-c4_s43] artifact -> dl-v1-ae-posthoc-u_w-c4_s43:v0
+  [ae-posthoc-u_w-c4_s43] saved (2 files) -> /kaggle/working/results_dl/ckpt_dl-v1/ae-posthoc-u_w-c4_s43
+  [ae-posthoc-u_w-c4_s44] absent (CommError: artifact membership 'dl-v1-ae-posthoc-u_w-c4_s44:latest' not found in 'https-www-univr-it-/MedIAnomaly-DL') — will train fresh
+  [ae_s44] loaded (saved 2026-08-11T01:37:30)
+ae_s44: reused  AUC=0.6759
+  [ae_s44] loaded (saved 2026-08-11T01:37:30)
+ae-posthoc-u_w-c4_s44: head 808 params on a FROZEN ae (2,351,184) | 250 epochs
+    ep    1/250  loss -0.31059  (0s)
+    ep   25/250  loss -4.04537  (6s)
+    ep   50/250  loss -4.05766  (12s)
+    ep   75/250  loss -4.06350  (18s)
+    ep  100/250  loss -4.06658  (24s)
+    ep  125/250  loss -4.06833  (31s)
+    ep  150/250  loss -4.06906  (37s)
+    ep  175/250  loss -4.06991  (43s)
+    ep  200/250  loss -4.06864  (49s)
+    ep  225/250  loss -4.07136  (55s)
+wandb: Adding directory to artifact (/kaggle/working/results_dl/ckpt_dl-v1/ae-posthoc-u_w-c4_s44)... Done. 0.0s
+    ep  250/250  loss -4.07222  (61s)
+    -> AUC 0.7847  AP 0.7570
+  [ae-posthoc-u_w-c4_s44] artifact -> dl-v1-ae-posthoc-u_w-c4_s44:v0
+  [ae-posthoc-u_w-c4_s44] saved (2 files) -> /kaggle/working/results_dl/ckpt_dl-v1/ae-posthoc-u_w-c4_s44
+  [ae-posthoc-u_w-lin256_s42] absent (CommError: artifact membership 'dl-v1-ae-posthoc-u_w-lin256_s42:latest' not found in 'https-www-univr-it-/MedIAnomaly-DL') — will train fresh
+  [ae_s42] loaded (saved 2026-08-11T01:00:26)
+ae_s42: reused  AUC=0.6827
+  [ae_s42] loaded (saved 2026-08-11T01:00:26)
+ae-posthoc-u_w-lin256_s42: head 8,192 params on a FROZEN ae (2,351,184) | 250 epochs
+    ep    1/250  loss -2.85839  (1s)
+    ep   25/250  loss -3.78553  (8s)
+    ep   50/250  loss -3.78405  (17s)
+    ep   75/250  loss -3.78476  (25s)
+    ep  100/250  loss -3.78453  (33s)
+    ep  125/250  loss -3.78530  (41s)
+    ep  150/250  loss -3.78261  (50s)
+    ep  175/250  loss -3.78548  (58s)
+    ep  200/250  loss -3.78512  (66s)
+    ep  225/250  loss -3.78520  (74s)
+    ep  250/250  loss -3.78515  (82s)
+wandb: Adding directory to artifact (/kaggle/working/results_dl/ckpt_dl-v1/ae-posthoc-u_w-lin256_s42)... Done. 0.0s
+    -> AUC 0.6576  AP 0.6472
+  [ae-posthoc-u_w-lin256_s42] artifact -> dl-v1-ae-posthoc-u_w-lin256_s42:v0
+  [ae-posthoc-u_w-lin256_s42] saved (2 files) -> /kaggle/working/results_dl/ckpt_dl-v1/ae-posthoc-u_w-lin256_s42
+  [ae-posthoc-u_w-lin256_s43] absent (CommError: artifact membership 'dl-v1-ae-posthoc-u_w-lin256_s43:latest' not found in 'https-www-univr-it-/MedIAnomaly-DL') — will train fresh
+  [ae_s43] loaded (saved 2026-08-11T01:18:57)
+ae_s43: reused  AUC=0.6918
+  [ae_s43] loaded (saved 2026-08-11T01:18:57)
+ae-posthoc-u_w-lin256_s43: head 8,192 params on a FROZEN ae (2,351,184) | 250 epochs
+    ep    1/250  loss -2.80293  (0s)
+    ep   25/250  loss -3.85313  (8s)
+    ep   50/250  loss -3.85399  (16s)
+    ep   75/250  loss -3.85481  (24s)
+    ep  100/250  loss -3.85502  (33s)
+    ep  125/250  loss -3.85363  (41s)
+    ep  150/250  loss -3.85241  (49s)
+    ep  175/250  loss -3.85492  (57s)
+    ep  200/250  loss -3.85516  (65s)
+    ep  225/250  loss -3.85496  (74s)
+wandb: Adding directory to artifact (/kaggle/working/results_dl/ckpt_dl-v1/ae-posthoc-u_w-lin256_s43)... Done. 0.0s
+    ep  250/250  loss -3.85504  (82s)
+    -> AUC 0.6623  AP 0.6547
+  [ae-posthoc-u_w-lin256_s43] artifact -> dl-v1-ae-posthoc-u_w-lin256_s43:v0
+  [ae-posthoc-u_w-lin256_s43] saved (2 files) -> /kaggle/working/results_dl/ckpt_dl-v1/ae-posthoc-u_w-lin256_s43
+  [ae-posthoc-u_w-lin256_s44] absent (CommError: artifact membership 'dl-v1-ae-posthoc-u_w-lin256_s44:latest' not found in 'https-www-univr-it-/MedIAnomaly-DL') — will train fresh
+  [ae_s44] loaded (saved 2026-08-11T01:37:30)
+ae_s44: reused  AUC=0.6759
+  [ae_s44] loaded (saved 2026-08-11T01:37:30)
+ae-posthoc-u_w-lin256_s44: head 8,192 params on a FROZEN ae (2,351,184) | 250 epochs
+    ep    1/250  loss -2.77243  (0s)
+    ep   25/250  loss -3.83003  (8s)
+    ep   50/250  loss -3.83222  (16s)
+    ep   75/250  loss -3.83346  (25s)
+    ep  225/250  loss -3.83356  (74s)
+wandb: Adding directory to artifact (/kaggle/working/results_dl/ckpt_dl-v1/ae-posthoc-u_w-lin256_s44)... Done. 0.0s
+    ep  250/250  loss -3.83354  (82s)
+    -> AUC 0.6827  AP 0.6674
+  [ae-posthoc-u_w-lin256_s44] artifact -> dl-v1-ae-posthoc-u_w-lin256_s44:v0
+  [ae-posthoc-u_w-lin256_s44] saved (2 files) -> /kaggle/working/results_dl/ckpt_dl-v1/ae-posthoc-u_w-lin256_s44
+  [ae-posthoc-u_w-2_s42] loaded (saved 2026-08-11T18:12:50)
+ae-posthoc-u_w-2_s42: reused  AUC=0.8215
+  [ae-posthoc-u_w-2_s43] loaded (saved 2026-08-11T18:14:22)
+ae-posthoc-u_w-2_s43: reused  AUC=0.8293
+  [ae-posthoc-u_w-2_s44] loaded (saved 2026-08-11T18:15:54)
+ae-posthoc-u_w-2_s44: reused  AUC=0.8091
+
+M4 — capacity vs nonlinearity in the post-hoc head
+
+  variant                         params  nonlin             AUC
+  linear-256   (as A4 w=1)           256      no      66.94+-1.15
+  tiny-nonlinear                     808     yes      78.27+-1.79
+  wide-linear                      8,192      no      66.75+-1.09
+  nonlinear-32 (as A4 w=2)        14,528     yes      82.00+-0.83
+
+  If tiny-nonlinear works and wide-linear does not, the threshold is
+  NONLINEARITY, not capacity, and the A4 headline must be restated.
+
+
+
+
+
+
+[ens-all4_s42] loaded (saved 2026-08-16T16:40:23)
+  [ae-pl_s42] loaded (saved 2026-08-11T11:12:26)
+  [ens-all4_s43] loaded (saved 2026-08-16T16:40:24)
+  [ae-pl_s43] loaded (saved 2026-08-11T11:31:33)
+  [ens-all4_s44] loaded (saved 2026-08-16T16:40:25)
+  [ae-pl_s44] loaded (saved 2026-08-11T12:39:31)
+  [ae-posthoc-u_w-2_s42] loaded (saved 2026-08-11T18:12:50)
+  [ae-ssim_s42] loaded (saved 2026-08-11T10:48:50)
+  [ae-posthoc-u_w-2_s43] loaded (saved 2026-08-11T18:14:22)
+  [ae-ssim_s43] loaded (saved 2026-08-11T10:50:58)
+  [ae-posthoc-u_w-2_s44] loaded (saved 2026-08-11T18:15:54)
+  [ae-ssim_s44] loaded (saved 2026-08-11T10:53:09)
+  [ae-posthoc-u_w-2_s42] loaded (saved 2026-08-11T18:12:50)
+  [ae_s42] loaded (saved 2026-08-11T01:00:26)
+  [ae-posthoc-u_w-2_s43] loaded (saved 2026-08-11T18:14:22)
+  [ae_s43] loaded (saved 2026-08-11T01:18:57)
+  [ae-posthoc-u_w-2_s44] loaded (saved 2026-08-11T18:15:54)
+  [ae_s44] loaded (saved 2026-08-11T01:37:30)
+  [aeu_s42] loaded (saved 2026-08-11T12:46:24)
+  [ae-posthoc-u_w-2_s42] loaded (saved 2026-08-11T18:12:50)
+  [aeu_s43] loaded (saved 2026-08-11T12:48:04)
+  [ae-posthoc-u_w-2_s43] loaded (saved 2026-08-11T18:14:22)
+  [aeu_s44] loaded (saved 2026-08-11T12:57:50)
+  [ae-posthoc-u_w-2_s44] loaded (saved 2026-08-11T18:15:54)
+  [a1-l2-ssim_s42] loaded (saved 2026-08-16T16:39:13)
+  [ae_s42] loaded (saved 2026-08-11T01:00:26)
+  [a1-l2-ssim_s43] loaded (saved 2026-08-16T16:39:24)
+  [ae_s43] loaded (saved 2026-08-11T01:18:57)
+  [a1-l2-ssim_s44] loaded (saved 2026-08-16T16:39:29)
+  [ae_s44] loaded (saved 2026-08-11T01:37:30)
+
+M3 — DeLong PAIRED tests on the same 2000 test images
+
+  comparison                           diff (pts)              95% CI         p    
+  ensemble(perc+unc) vs AE-PL               -2.69[  -3.68,  -1.71]   8.6e-07  ***
+  post-hoc head (w=2) vs AE-SSIM            +1.19[  -0.15,  +2.53]      0.66  n.s.
+  post-hoc head (w=2) vs plain AE          +13.65[ +12.26, +15.04]     5e-75  ***
+  AE-U vs post-hoc head (w=2)               +4.86[  +3.54,  +6.19]   4.3e-09  ***
+  AE rescored with SSIM vs AE               +9.08[  +7.73, +10.42]   7.4e-37  ***
+
+  p is the LEAST significant across seeds (conservative).
+  mean paired 95% half-width : 1.28 pts
+  unpaired Hanley-McNeil bound: 1.48 pts (AUC 0.887, n=1000/1000)
+  -> paired interval is TIGHTER; apply the ~1.5-point rule only to UNPAIRED comparisons.

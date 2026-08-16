@@ -1,0 +1,292 @@
+================================================================================
+CONCLUSIONS
+Written after the M0 / M2 / M4 / M3 results (new_result.txt).
+These four experiments were designed to ATTACK the project's own claims. Three of
+them succeeded in narrowing a claim, and the narrowing produced a better paper than
+the claims they replaced.
+
+TWO REPORTING BUGS IN new_result.txt, fixed in code, corrected throughout this file:
+  * the M2 table's `ae` row printed 78.20+-6.24. It averaged every head width ever run
+    (w=1,2,4,8,16,c4,lin256), which share a method name. The correct w=2 value is
+    82.00+-0.83 (per-seed 82.15 / 82.93 / 80.91). The `ae-ssim` and `ae-pl` rows are
+    correct — those backbones have only w=2 runs.
+  * the M3 row "ensemble(perc+unc) vs AE-PL = -2.69" compared `ens-all4`, the
+    PRE-REGISTERED ensemble that FAILED (84.88), not the winning perceptual+uncertainty
+    pair (88.74). That DeLong comparison has NOT yet been run. All other M3 rows valid.
+================================================================================
+
+
+################################################################################
+# 1. THE NEW EVIDENCE
+################################################################################
+
+--------------------------------------------------------------------------------
+1.1  M0 — what is the post-hoc variance head actually doing?   (base ae, w=2, 3 seeds)
+--------------------------------------------------------------------------------
+    full head, per-image log_var            82.00 +- 0.83
+    per-image SCALAR only (flat map)        79.87 +- 1.06
+    NO HEAD: r^2 / mean-train-residual      69.59 +- 0.82
+    STATIC map (train-set pixelwise mean)   69.10 +- 1.03
+    plain AE, its own L2 score              68.35 +- 0.65
+
+    variance of log_var explained by the static map : 39.7%
+    full - static  = +12.89      full - whiten = +12.41
+
+--------------------------------------------------------------------------------
+1.2  M2 — does the head transfer across frozen backbones?          (w=2, 3 seeds)
+--------------------------------------------------------------------------------
+    backbone   frozen model   + post-hoc head        delta
+    ae             68.35      82.00 +- 0.83        +13.65
+    ae-ssim        80.81      86.99 +- 0.56         +6.19
+    ae-pl          87.58      57.01 +- 2.14        -30.56
+    reference: AE-U jointly trained 86.86 +- 0.44
+
+--------------------------------------------------------------------------------
+1.3  M4 — capacity or nonlinearity?                                    (3 seeds)
+--------------------------------------------------------------------------------
+    variant                     params   nonlinear      AUC
+    linear   (A4 w=1)              256      no      66.94 +- 1.15
+    NONLINEAR                      808      yes     78.27 +- 1.79
+    linear                       8,192      no      66.75 +- 1.09
+    NONLINEAR (A4 w=2)          14,528      yes     82.00 +- 0.83
+
+--------------------------------------------------------------------------------
+1.4  M3 — DeLong PAIRED tests, same 2000 images        (p = least significant seed)
+--------------------------------------------------------------------------------
+    post-hoc head (w=2) vs plain AE     +13.65  [+12.26, +15.04]   p=5e-75    ***
+    AE rescored with SSIM vs AE          +9.08  [ +7.73, +10.42]   p=7.4e-37  ***
+    AE-U vs post-hoc head (w=2)          +4.86  [ +3.54,  +6.19]   p=4.3e-09  ***
+    post-hoc head (w=2) vs AE-SSIM       +1.19  [ -0.15,  +2.53]   p=0.66     n.s.
+
+    mean paired 95% half-width 1.28 pts vs the unpaired Hanley-McNeil bound 1.48.
+    The paired interval is tighter, so the ~1.5-point interpretability rule applies
+    ONLY to unpaired comparisons — and even so, +1.19 does not clear it.
+
+
+################################################################################
+# 2. WHAT IS NOW ESTABLISHED
+################################################################################
+
+E1. THE VARIANCE HEAD IS NOT A STATIC ANATOMICAL MASK.            [hypothesis killed]
+    The most dangerous alternative explanation was that, with a 16-d latent on
+    globally-registered radiographs and a frozen residual as its only target, the head
+    would collapse to the pixelwise mean training error — a fixed lung mask. Replacing
+    log_var with exactly that map gives 69.10, against the full head's 82.00. The
+    per-image component is worth +12.89 and the static component almost nothing.
+
+E2. IT IS NOT REPRODUCIBLE WITH ZERO PARAMETERS.                  [hypothesis killed]
+    Dividing the residual by the training-set mean squared residual — no head, no
+    training — gives 69.59 against 82.00. Residual whitening does not explain it.
+
+E3. BUT IT IS MOSTLY A PER-IMAGE SCALAR, NOT PER-PIXEL UNCERTAINTY. [major reframing]
+    A completely FLAT log_var map, one learned value per image, reaches 79.87. Of the
+    head's +13.65 over the plain AE, roughly +11.52 is a per-image scale and only
+    ~+2.13 is spatial structure. Consistently, the static map explains just 39.7% of
+    log_var's variance; the majority is per-image variation.
+    => The mechanism is a LEARNED PER-IMAGE CALIBRATION of residual magnitude, not
+       spatial uncertainty. Images that are globally harder to reconstruct get their
+       residual discounted. Calling this "uncertainty" is generous and the paper must
+       not lean on the spatial reading.
+    => FOLLOW-UP NOW IN THE CODE (Cell 5.4): the rank correlation between that scalar
+       and the image's own mean residual, plus the scalar's AUC used alone. If the
+       correlation were near 1 the score would be a monotone transform of the plain L2
+       score and would return 68.35 — it returns 79.87, so the scalar demonstrably
+       carries independent information. The control measures how much instead of
+       inferring it.
+
+E4. THE "CAPACITY THRESHOLD" WAS NEVER A CAPACITY THRESHOLD.        [claim replaced]
+    808 NONLINEAR parameters reach 78.27; 8,192 LINEAR parameters reach 66.75 — 32x the
+    capacity, no better than the 256-parameter linear head (66.94). Verified from
+    source: BasicBlock(..., last_layer=True) executes `layers = layers[:-2]`, stripping
+    the BatchNorm and ReLU, so the original w=1 head was a single ConvTranspose2d with
+    no nonlinearity at all, and the w=1 -> w=2 jump confounded width with depth,
+    nonlinearity and normalisation.
+    => THE CORRECT CLAIM: the variance is NOT LINEARLY DECODABLE from a frozen decoder's
+       features. Joint training's function is to make it linearly readable — AE-U's own
+       variance branch is a single linear ConvTranspose (256 marginal parameters) and
+       reaches 86.86, which is exactly the point.
+
+E5. POST-HOC UNCERTAINTY DOES NOT TRANSFER UNIVERSALLY.               [scope narrowed]
+    It lifts the L2-trained backbone (+13.65) and the SSIM-trained one (+6.19), and
+    DESTROYS the perceptually-trained one (-30.56, to 57.01). "Retrofit uncertainty onto
+    any frozen reconstruction model" is dead. See §3 — the failure is predicted.
+
+E6. AN IMAGENET-FREE ROUTE TO AE-U's ACCURACY.                        [new, practical]
+    Frozen AE-SSIM + post-hoc head = 86.99 +- 0.56, against jointly-trained AE-U's
+    86.86 +- 0.44, using no pre-trained weights and touching no reconstruction weight.
+    It also beats AE-SSIM's own native score by +6.19 — a case where a NON-NATIVE score
+    beats the diagonal (see §3).
+
+E7. THE IRREDUCIBLE GAP IS REAL, AND THE FREE RESCORE GAIN IS REAL.  [now with statistics]
+    AE-U over the post-hoc head: +4.86, p=4.3e-09. Plain AE rescored with SSIM: +9.08,
+    p=7.4e-37. Post-hoc over plain AE: +13.65, p=5e-75. All by paired DeLong.
+
+E8. THE POST-HOC HEAD DOES NOT BEAT RETRAINED AE-SSIM.                [claim retracted]
+    +1.19, 95% CI [-0.15, +2.53], not significant. The earlier "beats retrained
+    AE-SSIM" phrasing is withdrawn; "reaches the level of" is the supported form.
+
+
+################################################################################
+# 3. THE UNIFYING MECHANISM — and the correction it needs
+################################################################################
+The working hypothesis was: "a score reads a residual only if it lives in the space the
+objective shaped it for." Tested against all the evidence, that is nearly right but
+SYMMETRIC, and the data are ASYMMETRIC. The corrected statement is stronger.
+
+THE EVIDENCE, row by row (AUC; `unc` = uncertainty score, from A4/M2):
+
+    trained        l2     grad   perc   ssim   unc      range   below chance
+    l2           68.3    73.9   75.9   77.4   82.0      13.7    none
+    ssim         61.9    75.2   68.2   80.8   87.0      25.1    none
+    perceptual   44.9    64.9   87.6   44.0   57.0      43.6    l2, ssim
+    aeu          65.4    71.7   73.6   75.1   86.9      21.5    none
+
+THE PATTERN
+    Only ONE row contains catastrophic cells, and they are exactly the PIXEL-SPACE
+    scores applied to the PERCEPTUALLY-trained model. Every other pairing is merely
+    better or worse, never broken.
+
+THE CORRECTED LAW
+    An objective CONSTRAINS a subspace; a score can only read what the objective
+    constrained. It is not symmetric:
+      * L2 and SSIM constrain pixel intensities — and a pixel-faithful reconstruction is
+        also approximately feature-faithful. So pixel-trained models are readable by
+        pixel-space AND feature-space scores (AE: 68.3 / 77.4 / 75.9 / 82.0, all usable).
+      * The perceptual objective constrains deep features and does NOT constrain
+        absolute pixel intensity. The reconstruction is therefore free to drift in pixel
+        space, and every pixel-space reading of it collapses (44.9, 44.0, 57.0).
+    => pixel-constrained model  -> readable by pixel AND feature scores
+       feature-constrained model -> readable by feature scores ONLY
+
+WHAT THIS EXPLAINS, IN ONE MECHANISM
+    (a) A1's grid, including why the perceptual row alone falls below chance;
+    (b) why AE-U's advantage is scoring rather than reconstruction — its objective
+        constrains pixels, so a better pixel-space reading is available to it;
+    (c) M2's whole pattern: the uncertainty score is a PIXEL-SPACE score
+        (exp(-log_var)*(x-x_hat)^2), so it lifts the two pixel-trained backbones and
+        destroys the perceptual one;
+    (d) quantitatively, the AE-PL post-hoc collapse (57.01) and A1's perceptual/L2 cell
+        (44.9) are the SAME phenomenon — and the uncertainty weighting even partially
+        rescues the pixel reading of that model, 44.9 -> 57.01, without coming close to
+        its own perceptual score's 87.6.
+
+WHERE THE SIMPLE VERSION OF THE LAW FAILS — state this, do not hide it
+    "The diagonal always wins" is FALSE, twice:
+      * the L2-trained model is better read by SSIM (77.4) than by L2 (68.3);
+      * the SSIM-trained model is better read by the uncertainty score (86.99) than by
+        SSIM (80.81).
+    Within a compatible space, scores transfer freely and a non-native score can beat
+    the native one. The constraint is the SPACE, not the identity of the metric.
+
+
+################################################################################
+# 4. STATUS OF THE PROJECT'S EARLIER CLAIMS
+################################################################################
+REFUTED
+  R1. "A sharp capacity threshold at 0.62% of parameters."  -> nonlinearity, not capacity (E4)
+  R2. "Post-hoc uncertainty is a general wrapper."          -> fails on AE-PL (E5)
+  R3. "82.00 beats fully retrained AE-SSIM."                -> +1.19, n.s. (E8)
+  R4. "The head learns per-pixel uncertainty."              -> mostly a per-image scalar (E3)
+
+NARROWED
+  N1. C2 applies to PIXEL-SPACE-trained backbones only.
+  N2. "Uncertainty" should be described as a learned per-image residual calibration.
+  N3. The recovery fraction must be quoted against both denominators: 74% from the plain
+      AE's own L2 score (68.35), 49% from the free SSIM rescore of the same weights (77.4).
+
+CONFIRMED / STRENGTHENED
+  S1. A1's specialisation finding — strengthened, and now asymmetric (§3).
+  S2. The 4.81-point irreducible gap — significant, p=4.3e-09 (E7).
+  S3. The free SSIM rescore gain — significant, p=7.4e-37 (E7).
+  S4. C2 survives its two strongest attacks (E1, E2).
+  S5. Paired testing is the correct instrument: half-width 1.28 vs unpaired 1.48.
+
+SURVIVED UNCHANGED
+  The ten-method reproduction (9/10 within 1 sd); the A1 grid; the A3 ensemble result
+  and its pre-registered negative control.
+
+
+################################################################################
+# 5. CONTRIBUTIONS AS THEY SHOULD NOW STAND
+################################################################################
+Versus 10_PAPER_FOUNDATION r2 the package is NARROWER IN SCOPE and SUBSTANTIALLY
+BETTER SUPPORTED. The scope reduction is itself content: C2's failure on AE-PL is the
+sharpest confirmation of C1 in the project, because the theory predicted the failure of
+a tool we had built for another purpose.
+
+C1  THE ASYMMETRIC SPECIALISATION LAW.                                   [primary]
+    Crossing four objectives with five scores, an objective does not improve the
+    reconstruction — it constrains a subspace, and a score reads only what was
+    constrained. Pixel-constrained models are readable by pixel and feature scores;
+    the feature-constrained model is readable by feature scores only, and falls below
+    chance under pixel scores (44.9, 44.0).
+    EVIDENCE: the grid; interaction terms +9.8 and +35.1 exceeding both main effects;
+    the free SSIM rescore +9.08 (p=7.4e-37); and M2's independent confirmation.
+    SCOPE: RSNA, image level, 64x64, image-reconstruction methods.
+
+C2  A PROBE THAT TESTS C1 AND OBTAINS A CELL THE GRID CANNOT COMPUTE.    [primary]
+    Fitting a variance head to a frozen autoencoder supplies the otherwise-undefined
+    plain-AE + uncertainty-score cell, and shows AE-U's advantage is a property of its
+    score, not of a better reconstruction (AE-U read with L2 = 65.4, below the plain
+    AE's 68.35). It is NOT a static mask (69.10), NOT zero-parameter whitening (69.59),
+    is dominated by a per-image scale rather than spatial structure (79.87 of 82.00),
+    and requires NONLINEARITY rather than capacity (808 nonlinear 78.27 vs 8,192 linear
+    66.75). It transfers to pixel-trained backbones and destroys the perceptual one,
+    exactly as C1 predicts.
+    SCOPE: a decomposition instrument, NOT a deployment recipe. It costs more wall-clock
+    than training AE-U from scratch and lands 4.86 below it (p=4.3e-09).
+
+C3  AN IMAGENET-FREE ROUTE TO THE UNCERTAINTY AUTOENCODER'S ACCURACY.  [supporting]
+    Frozen AE-SSIM + post-hoc head = 86.99 +- 0.56 vs jointly-trained AE-U 86.86 +- 0.44,
+    with no pre-trained weights and no reconstruction retraining, and +6.19 over
+    AE-SSIM's own score. Practically relevant because AE-PL, the strongest single
+    method, depends entirely on ImageNet features.
+
+C4  SCORE COMPLEMENTARITY.                                             [supporting]
+    perceptual + uncertainty = 88.74 +- 0.13, held-out 88.83, selected in 100% of 150
+    split-half selections, reported with its pre-registered negative control (both
+    pre-registered ensembles lost: 84.88, 81.91). Rank averaging is textbook
+    (Aggarwal & Sathe 2015; Zimek et al. 2014) — present as evidence for C1 and as a
+    demonstration of selection-aware validation, never as a method.
+    NOTE: the DeLong test for this comparison has not yet been run (see §1 bug note).
+
+The reproduction remains Experimental Setup, not a numbered contribution.
+
+
+################################################################################
+# 6. WHAT REMAINS
+################################################################################
+    #  item                                                     cost      why
+    1  Re-run cells 5.4, 5.5, 5.7 with the fixed code           minutes   two bug fixes
+                                                                          + the new
+                                                                          scalar control
+    2  DeLong on perceptual+uncertainty vs AE-PL and vs AE-U    seconds   C4's only
+                                                                          untested claim
+    3  MULTI-DATASET: VinCXR, BrainTumor, LAG                   ~35 min   the single
+       PRE-REGISTER: the post-hoc head should FAIL on           each      highest-value
+       BrainTumor, where tumours sit where the AE already                 item; now with
+       reconstructs badly. A correctly predicted failure is               a falsifiable
+       worth more than a third success.                                   prediction
+    4  Ensemble AE-PL with frozen-AE-SSIM+head                  seconds   two scores from
+       (a feature-space and a pixel-space reading, from                   opposite spaces;
+       DIFFERENT models) — does it beat 88.74?                            the natural test
+                                                                          of C1 + C3
+    5  Qualitative figure: input / reconstruction / error map   30 min    explains BOTH
+       for AE, AE-SSIM, AE-PL                                             the 44.9 cell
+                                                                          and M2's -30.56
+    6  Two more DAE seeds                                       2.7 h     closes the only
+                                                                          reproduction miss
+    7  Mixed-objective row in the grid                          ~5 min    closes out the
+                                                                          abandoned
+                                                                          extension
+    8  Two-way analysis with a seed random effect over the grid ~2 h      M3 covers the
+                                                                          pairwise gaps;
+                                                                          the grid itself
+                                                                          still needs it
+
+    Item 4 is new and is the most interesting cheap experiment the results create: C1
+    says the two readings live in incompatible spaces, and C4 says scores from different
+    models combine well. Combining a feature-space score with a pixel-space score taken
+    from a DIFFERENT model is the direct test of both at once, and it costs nothing.
+
+    Total for items 1-5, 7: under 3 hours.

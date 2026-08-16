@@ -1,116 +1,173 @@
 ================================================================================
-DL PROJECT — OVERVIEW
+DL PROJECT — OVERVIEW AND CURRENT STATE
 Unsupervised anomaly detection on chest radiographs:
 where do reconstruction methods actually get their accuracy from?
 
 Dataset : RSNA Pneumonia Detection Challenge (chest X-ray), image-level
 Task    : anomaly CLASSIFICATION (AnoCls) — one score per image, no labels in training
 Code    : experiments/Learn project/DL/dl_project.py  (single self-contained notebook)
+
+STATUS  : all planned experiments complete on RSNA. Four adversarial follow-ups
+          (M0/M2/M4/M3) have been run and retracted four earlier claims.
+          The one thing still missing is a SECOND DATASET.
+          Read 11_CONCLUSIONS.txt for the current, corrected position.
 ================================================================================
 
 --------------------------------------------------------------------------------
 1. THE QUESTION
 --------------------------------------------------------------------------------
-Reconstruction-based anomaly detection trains a model on NORMAL images only, then
-flags an image as abnormal when the model reconstructs it badly. Every such method
-is built from two separate decisions:
+Every reconstruction-based anomaly detector makes two separable decisions:
 
     (a) the TRAINING OBJECTIVE   — what the model is optimised to reconstruct
     (b) the ANOMALY SCORE        — how the residual is turned into one number
 
-In the literature these two are almost always changed TOGETHER and reported under a
-single name. AE-SSIM (Bergmann et al., 2019) trains on 1-SSIM and scores with 1-SSIM.
-AE-PL (Shvetsova et al., 2021) trains and scores with a VGG feature distance. AE-U
-(Mao et al., 2020) trains with an uncertainty-weighted loss and scores with the same
-uncertainty weighting. So when AE-SSIM beats a plain AE, the published number cannot
-say whether the gain came from (a), from (b), or from their interaction.
+In the literature these are almost always changed TOGETHER and reported under a single
+name: AE-SSIM (Bergmann et al., 2019) trains and scores with SSIM; AE-PL (Shvetsova et
+al., 2021) trains and scores with a VGG feature distance; AE-U (Mao et al., 2020) trains
+with an uncertainty-weighted loss and scores with the same weighting. When AE-SSIM beats
+a plain AE, the published number cannot say which decision earned it.
 
     THIS PROJECT SEPARATES (a) FROM (b) AND MEASURES EACH.
 
-The exception in the literature is the gradient-score family (Zimmerer et al., 2019),
-which does change only the score and keeps the objective fixed. That prior work is
-what shows the question is worth asking; nobody has asked it for the reconstruction
-metrics themselves.
+The gradient-score family (Zimmerer et al., 2019) does hold the objective fixed and vary
+the score — but only along the gradient axis, never across reconstruction metrics. That
+prior work shows the question is worth asking; nobody has asked it for the metrics.
 
 --------------------------------------------------------------------------------
-2. WHAT WAS DONE, IN ORDER
+2. WHAT WE DID, IN ORDER
 --------------------------------------------------------------------------------
-STEP 1 — Reproduce the baselines faithfully.
-    Ten published methods re-implemented from their original papers and trained under
-    one identical protocol (same split, same architecture, same optimiser, 3 seeds).
-    Purpose: nothing built on top means anything if the baselines are wrong.
-    -> see 03_RESULTS_BASELINES.txt
-
-STEP 2 — A1: cross the training objective with the anomaly score.
-    Train an autoencoder with each of {L2, SSIM, perceptual, uncertainty}; score every
-    trained model with each of {L2, SSIM, perceptual, gradient, uncertainty}. The
-    diagonal reproduces the published methods; the off-diagonal is new.
-    -> see 04_EXP_A1_SCORE_VS_OBJECTIVE.txt
-
-STEP 3 — A3: if different scores read different things, combine them.
-    Rank-average the score vectors already produced in Step 1. No training at all.
-    Two combinations pre-registered before looking at any result.
-    -> see 05_EXP_A3_ENSEMBLE.txt
-
-STEP 4 — A4: if a method's gain is really in its score, get that score without its training.
-    Freeze a trained plain autoencoder, fit ONLY a variance head on top of it, and
-    score as AE-U does. Sweep the head's capacity so a failure cannot be blamed on size.
-    -> see 06_EXP_A4_POSTHOC_UNCERTAINTY.txt
+STEP 1  REPRODUCE.  Ten published methods re-implemented from their original papers and
+        trained under one identical protocol, 3 seeds.  -> 03_RESULTS_BASELINES.txt
+STEP 2  A1: cross the objective with the score (4 x 5 grid).  -> 04_EXP_A1...
+STEP 3  A3: combine scores that read different structure.     -> 05_EXP_A3_ENSEMBLE.txt
+STEP 4  A4: retrofit uncertainty onto a frozen model.         -> 06_EXP_A4...
+STEP 5  ATTACK OUR OWN RESULTS. Four experiments designed to break Steps 3-4:
+          M0  is the variance head just a static anatomical mask, or zero-parameter
+              residual whitening?
+          M2  does the post-hoc head transfer to other frozen backbones?
+          M4  is the "capacity threshold" really about capacity?
+          M3  are the headline gaps statistically real (paired DeLong)?
+        -> 11_CONCLUSIONS.txt.  Three of the four narrowed a claim.
+STEP 6  A multi-loss extension was proposed, reviewed and ABANDONED before any compute
+        was spent. Reasons in 10_PAPER_FOUNDATION.txt §8B — it is prior art, two of its
+        components are contradicted by our own data, and it is untunable in this setting.
 
 --------------------------------------------------------------------------------
-3. HEADLINE RESULTS
+3. WHERE WE LANDED — the one mechanism
 --------------------------------------------------------------------------------
-R1. THE BASELINES REPRODUCE.
-    9 of 10 methods land within one standard deviation of their published values;
-    four within 0.2 AUC points. The one exception is DAE (n=1 seed only).
+An objective does not make the reconstruction better. It CONSTRAINS A SUBSPACE, and a
+score can only read what was constrained. The relation is ASYMMETRIC:
 
-R2. THE ANOMALY SCORE CARRIES MOST OF THE REPORTED GAIN.
-    Across the A1 grid, varying the SCORE moves accuracy by 26.7 AUC points; varying
-    the TRAINING OBJECTIVE moves it by 14.2. Concretely, a plain L2 autoencoder simply
-    RESCORED with SSIM reaches 77.4 vs its own 68.3 — 73% of AE-SSIM's entire published
-    advantage, with no retraining whatsoever.
+    pixel-constrained model  (L2, SSIM)  -> readable by pixel AND feature scores
+    feature-constrained model (perceptual) -> readable by feature scores ONLY
 
-R3. BUT THE OBJECTIVE AND THE SCORE MUST MATCH.
-    Training on a metric and scoring with a different one is actively harmful, not
-    merely suboptimal. Every "trained on X, scored with L2" cell falls BELOW the plain
-    autoencoder, and the perceptually-trained model scored in pixel space drops to 44.9
-    — below chance. The objective's role is not to build a better reconstruction; it is
-    to shape WHAT KIND OF RESIDUAL is left behind so the matching metric can read it.
+Evidence, and the single pattern it all reduces to (AUC):
 
-R4. AE-U's ADVANTAGE IS ALMOST ENTIRELY ITS SCORING RULE.
-    AE-U reaches 86.9 vs the plain AE's 68.3. But AE-U scored with plain L2 gives 65.4
-    — WORSE than the plain autoencoder. Uncertainty training does not produce a better
-    reconstructor. Confirmed constructively in A4: a variance head fitted post hoc onto
-    a FROZEN plain autoencoder recovers 74% of that advantage for 0.62% extra parameters.
-    The remaining 26% (4.81 points) is what joint training genuinely buys.
+    trained        l2     grad   perc   ssim   unc     below chance
+    l2           68.3    73.9   75.9   77.4   82.0     none
+    ssim         61.9    75.2   68.2   80.8   87.0     none
+    perceptual   44.9    64.9   87.6   44.0   57.0     l2, ssim   <-- the only row
+    aeu          65.4    71.7   73.6   75.1   86.9     none
 
-R5. COMBINING TWO COMPLEMENTARY SCORES BEATS THE BEST PUBLISHED METHOD.
-    A rank-average of the perceptual and uncertainty scores reaches 88.74 vs the best
-    single method's 87.58, with zero additional training. It survives a selection-aware
-    validation: chosen on one half of the test set, it wins on the unseen half in 100%
-    of 150 splits.
-    Reported alongside its own negative control: the two PRE-REGISTERED ensembles both
-    LOST, because equal-weight averaging is not robust to a weak member.
+Only the perceptually-trained row breaks, and only under pixel-space scores — because
+perceptual loss does not constrain absolute pixel intensity, so the reconstruction is
+free to drift there. This one mechanism explains the A1 grid, AE-U's advantage being in
+its score rather than its reconstruction, AND the post-hoc head's behaviour across
+backbones (it is a pixel-space score, so it lifts pixel-trained models and destroys the
+perceptual one).
+
+NOTE "the diagonal always wins" is FALSE: the L2 model is better read by SSIM
+(77.4 > 68.3), and the SSIM model better by the uncertainty score (86.99 > 80.81).
+Within a compatible space, scores transfer freely and can beat the native one.
 
 --------------------------------------------------------------------------------
-4. HOW TO READ THIS DOCUMENTATION
+4. HEADLINE RESULTS
 --------------------------------------------------------------------------------
-    00_OVERVIEW.txt ................ this file
-    01_METHODS.txt ................. every method, from its ORIGINAL authors:
-                                     motivation, equations, our implementation
-    02_PROTOCOL.txt ................ data, split, hyperparameters, metrics, seeds,
-                                     and the reproducibility machinery
-    03_RESULTS_BASELINES.txt ....... the reproduction table, all numbers
-    04_EXP_A1_SCORE_VS_OBJECTIVE.txt  novel experiment 1 + decomposition
-    05_EXP_A3_ENSEMBLE.txt ......... novel experiment 2 + pre-registration
-    06_EXP_A4_POSTHOC_UNCERTAINTY.txt novel experiment 3 + capacity control
+R1  THE BASELINES REPRODUCE. 9 of 10 methods within one standard deviation of their
+    published values, four within 0.2 AUC points. (DAE is the exception, n=1.)
+
+R2  THE SCORE CARRIES MOST OF THE REPORTED GAIN — but the two factors interact, and the
+    interaction is the largest term (+9.8 AE-SSIM, +35.1 AE-PL). A plain autoencoder
+    RESCORED with SSIM reaches 77.4 against its own 68.35, with no retraining
+    (+9.08, paired DeLong p=7.4e-37).
+
+R3  AE-U's ADVANTAGE IS ITS SCORE, NOT ITS RECONSTRUCTION. Read with plain L2 it gives
+    65.4 — below the plain autoencoder it beats by 18.5 points.
+
+R4  UNCERTAINTY IS LARGELY RETROFITTABLE, WITH LIMITS. A variance head on a FROZEN
+    autoencoder reaches 82.00 (+13.65, p=5e-75). It is not a static mask (69.10) and not
+    zero-parameter whitening (69.59) — but it is dominated by a per-image SCALE rather
+    than spatial structure (a flat map alone gives 79.87), it needs NONLINEARITY rather
+    than capacity (808 nonlinear params 78.27 vs 8,192 linear 66.75), and it does not
+    beat jointly-trained AE-U (4.86 short, p=4.3e-09).
+
+R5  AN IMAGENET-FREE ROUTE TO AE-U's ACCURACY. Frozen AE-SSIM + post-hoc head = 86.99,
+    against jointly-trained AE-U's 86.86, with no pre-trained weights.
+
+R6  TWO COMPLEMENTARY SCORES BEAT THE BEST SINGLE IMAGE-RECONSTRUCTION METHOD.
+    perceptual + uncertainty = 88.74 vs AE-PL's 87.58, surviving selection-aware
+    validation (100% of 150 split-half selections). Reported with its negative control:
+    both PRE-REGISTERED equal-weight ensembles LOST (84.88, 81.91).
+
+WE DO NOT BEAT THE STATE OF THE ART. On this split FAE-SSIM reaches 91.1 (MedIAnomaly
+Table 6), a feature-reconstruction method. Every claim here is scoped to
+IMAGE-reconstruction methods, whose best published result on this split is 87.5.
+
+--------------------------------------------------------------------------------
+5. WHAT IS NEXT
+--------------------------------------------------------------------------------
+THE GAP: every number above is RSNA. The findings are currently observations about one
+dataset, not claims about a method family. A second dataset is the single highest-value
+remaining item, and it is cheap.
+
+MEASURED COST per AE-cost run, scaled from RSNA's 1.6 min on a T4 (cost tracks
+train_size x epochs, NOT epochs alone):
+
+    dataset        train  epochs   img-epochs   rel   min/run
+    RSNA (done)    3,851     250      962,750  1.00      1.60
+    VinDr-CXR      4,000     250    1,000,000  1.04      1.66
+    Brain Tumor    1,000     600      600,000  0.62      1.00   <- CHEAPER than RSNA
+    LAG            1,500     250      375,000  0.39      0.62   <- cheapest
+    BraTS2021      4,211     250    1,052,750  1.09      1.75
+
+Brain Tumor's 600 epochs are offset by having only 1,000 training images, so it costs
+LESS per run than RSNA — an earlier estimate of "2.4x more expensive" was wrong.
+
+WHY THE DATASET CHOICE IS SCIENTIFIC, NOT JUST BUDGETARY: §3's mechanism makes a
+FALSIFIABLE PREDICTION. The post-hoc head is a pixel-space score that up-weights regions
+where the frozen model reconstructs WELL. On Brain Tumor, lesions frequently sit where
+the autoencoder already reconstructs badly, so the head should DOWN-weight the evidence
+and FAIL. A correctly predicted failure would convert §3 from a hypothesis into a tested
+theory — worth more than a third success on another chest X-ray dataset.
+
+REMAINING ITEMS, ranked (full list with costs in 11_CONCLUSIONS.txt §6):
+    1. Re-run cells 5.4 / 5.5 / 5.7 with the fixed code       minutes
+    2. DeLong on perceptual+uncertainty (C4's untested claim)  seconds
+    3. SECOND DATASET, with the pre-registered prediction      ~1 h
+    4. Ensemble AE-PL with frozen-AE-SSIM+head                 seconds
+    5. Qualitative figure (explains 44.9 AND the -30.56)       30 min
+    6. Two more DAE seeds                                      2.7 h
+    7. Mixed-objective row (closes the abandoned extension)    ~5 min
+    8. Two-way analysis with a seed random effect on the grid  ~2 h
+
+--------------------------------------------------------------------------------
+6. DOCUMENT MAP
+--------------------------------------------------------------------------------
+    00_OVERVIEW.txt ................ this file — state, results, what is next
+    01_METHODS.txt ................. every method, from its ORIGINAL authors
+    02_PROTOCOL.txt ................ data, split, hyperparameters, seeds, machinery
+    03_RESULTS_BASELINES.txt ....... the reproduction table
+    04_EXP_A1_SCORE_VS_OBJECTIVE.txt  the factorial grid
+    05_EXP_A3_ENSEMBLE.txt ......... ensembling + pre-registration
+    06_EXP_A4_POSTHOC_UNCERTAINTY.txt post-hoc uncertainty  (SUPERSEDED in part by 11)
     07_CLAIMS_AND_LIMITS.txt ....... what may and may not be claimed
     08_REFERENCES.txt .............. primary sources, DOIs verified programmatically
-    09_REPORT_AND_SLIDE_OUTLINE.txt  structure for the written report and the slides
+    09_REPORT_AND_SLIDE_OUTLINE.txt  report structure and slide deck
+    10_PAPER_FOUNDATION.txt ........ title, positioning, contributions (revision 2)
+    11_CONCLUSIONS.txt ............. CURRENT POSITION — read this before writing
+    new_result.txt ................. raw M0/M2/M4/M3 log (contains 2 known bugs,
+                                     corrected in 11_CONCLUSIONS.txt §1)
 
-A NOTE ON ATTRIBUTION
-    Methods are described from the papers that INTRODUCED them, not from the benchmark
-    that later compared them. Cai et al. (2025) is used for one purpose only: as the
-    reference column our reproduction is checked against. Where this project follows
-    their implementation (architecture, hyperparameters, data split) that is stated
-    explicitly, because it is what makes the comparison fair.
+ATTRIBUTION: methods are described from the papers that INTRODUCED them. Cai et al.
+(2025) is used for the split, the shared hyperparameters, and the reference column our
+reproduction is checked against — not as the source of method descriptions.
