@@ -1,5 +1,5 @@
 ================================================================================
-PAPER FOUNDATION  (revision 2)
+PAPER FOUNDATION  (revision 3)
 Title, positioning, contributions, and the novelty evidence behind each.
 
 REVISION HISTORY
@@ -7,6 +7,15 @@ REVISION HISTORY
   r2  rewritten after a four-way review (area chair / fact-check / method attack /
       prior-art). r1 contained four factual blockers and one falsified title; all are
       corrected here and listed in §10 so the errors are not reintroduced.
+  r3  rewritten after M0/M2/M4/M3, the Item 4 substitution control and the extended
+      validation. FOUR THINGS CHANGED THE PAPER:
+        (a) a MECHANISM was found, not just a measurement — what the uncertainty score
+            actually computes. It is promoted to a contribution in its own right.
+        (b) C4's ensemble gain is now statistically significant (p=0.004), and the
+            headline result is 89.46 rather than 88.74 (+0.72, p=0.0108).
+        (c) C3 upgraded to component-level substitutability.
+        (d) three earlier claims were retracted (capacity threshold, universal wrapper,
+            "beats retrained AE-SSIM"). See 11_CONCLUSIONS §4.
 
 Every identifier was resolved against api.crossref.org or export.arxiv.org and checked
 to return the intended paper. See §9.
@@ -21,6 +30,14 @@ PRIMARY
     "Objectives Specialise Residuals, Scores Read Them:
      A Factorial Decomposition of Image-Reconstruction Anomaly Detection
      on Chest Radiographs"
+
+ALTERNATIVE, now that the mechanism exists — use this if the mechanism leads
+    "Residual Relative to Expected Difficulty:
+     What Uncertainty Scoring Measures in Reconstruction-Based Anomaly Detection"
+    Stronger if the paper is pitched as EXPLANATION rather than ATTRIBUTION. The
+    mechanism (§6 C2) is the only finding here that explains rather than measures, and
+    it is the piece 07 O4 identified in advance as most likely to lift the work from
+    "measurement" to "understanding". Decide by which of C1/C2 leads.
 
 FALLBACK (if a reviewer objects that "specialise" is anthropomorphic)
     "Neither the Loss Nor the Score Alone: Attributing Accuracy in
@@ -220,72 +237,84 @@ DO NOT CLAIM (r1 error, now corrected)
     perceptual row only and must not be stated as a general property.
 
 --------------------------------------------------------------------------------
-C2 — OBTAINING THE UNDEFINED CELL: POST-HOC UNCERTAINTY     [primary, reframed]
+C2 — WHAT THE UNCERTAINTY SCORE ACTUALLY MEASURES              [primary, NEW in r3]
 --------------------------------------------------------------------------------
 STATEMENT
-    The grid has a structural hole: the plain-AE + uncertainty-score cell is undefined,
-    because only the AE-U backbone emits a log-variance. We obtain it constructively by
-    fitting a variance head to a FROZEN autoencoder, and thereby show that the
-    uncertainty autoencoder's advantage is largely a property of its SCORE, not of a
-    better reconstruction.
+    AE-U's score is not a measure of reconstruction error, and not a measure of
+    uncertainty in any loose sense. It is RESIDUAL RELATIVE TO EXPECTED DIFFICULTY. The
+    head learns how hard an image SHOULD be to reconstruct; the anomaly signal is the gap
+    between the actual residual and that expectation.
+
+EVIDENCE — the two directions disagree, and that is the finding
+    POOLED  corr(log_var, residual) = +0.506
+            Across the population, harder images get a LARGER predicted log_var and are
+            DISCOUNTED. The head has learned expected difficulty.
+    BETWEEN log_var(abnormal) - log_var(normal) = -0.0997
+            Abnormal images get a SMALLER log_var, i.e. weight 182.5 vs 165.2 (+10.5%),
+            so they are discounted LESS than their residual alone would predict.
+      => score = mean(exp(-log_var) * r^2) == residual relative to expected difficulty
+           normal-but-hard : high r^2, HIGH log_var -> ratio moderate
+           abnormal        : high r^2, LOW  log_var -> ratio large
+    It also explains the otherwise-awkward standalone number: -log_var alone reaches only
+    64.42 because the class alignment in the weight is small (+10.5%). The discriminative
+    quantity is the RATIO, not either factor.
+
+SUPPORTING — the alternatives are excluded, not assumed
+    NOT a static anatomical mask   : the train-mean map alone gives 69.10 vs 82.00
+    NOT zero-parameter whitening   : r^2 / mean-train-residual gives 69.59
+    NOT redundant with the residual: |rho| = 0.506, far from 1
+    NOT linearly decodable         : 808 NONLINEAR params reach 78.27 while 8,192 LINEAR
+                                     params reach 66.75 — the earlier "capacity
+                                     threshold" was confounded and is retracted
+
+WHY IT MATTERS
+    Every uncertainty-based detector in this family is described as "weighting the
+    residual by predicted uncertainty". This says what that weighting is doing, and it
+    predicts where it will fail — which M2 then confirms (C3).
+
+--------------------------------------------------------------------------------
+C3 — THE MECHANISM PREDICTS ITS OWN TOOL'S FAILURE                    [primary]
+--------------------------------------------------------------------------------
+STATEMENT
+    Fitting the variance head to a FROZEN backbone obtains the grid cell A1 cannot
+    compute, and its behaviour across backbones follows C1's law exactly: the uncertainty
+    score is a PIXEL-SPACE score, so it lifts pixel-trained backbones and destroys the
+    feature-trained one.
 
 EVIDENCE
-    plain AE, L2 score                     68.35 +- 0.65
-    plain AE, SSIM rescore (free)          77.4          <- the honest reference, see below
-    frozen AE + variance head (14,528 p)   82.00 +- 0.83
-    jointly trained AE-U                   86.86 +- 0.44
-    linear head (256 p)                    66.94 +- 1.15  <- negative control
-    * plateau 82.00 / 82.05 / 81.81 across 11.6x parameters (spread 0.24)
-    * cross-check from C1: AE-U scored with plain L2 = 65.4, BELOW the plain AE
+    frozen ae       68.35 -> 82.00 +- 0.83   +13.65   (p=5e-75)
+    frozen ae-ssim  80.81 -> 86.99 +- 0.57    +6.19   -> matches AE-U's 86.86, no ImageNet
+    frozen ae-pl    87.58 -> 57.01 +- 2.14   -30.56   -> the predicted collapse
+    AE-U jointly trained 86.86; the post-hoc route stays 4.86 short (p=4.3e-09)
 
-THREE CORRECTIONS TO r1, ALL MANDATORY
-  (a) IT IS NOT A CAPACITY THRESHOLD. Verified from source: BasicBlock(..., last_layer=
-      True) strips the BatchNorm and ReLU (`layers = layers[:-2]`), so the 256-parameter
-      head is a SINGLE ConvTranspose2d with NO nonlinearity and NO normalisation, while
-      w>=2 is Conv-BN-ReLU x2 + BasicBlock. The w=1 -> w=2 jump confounds width with
-      depth, nonlinearity and normalisation; and the flat plateau across 11.6x proves
-      width itself does nothing.
-      The honest — and sharper — claim: THE VARIANCE IS NOT LINEARLY DECODABLE FROM A
-      FROZEN DECODER'S FEATURES; a small nonlinear head recovers it. Joint training's
-      function is to make the variance linearly readable from the decoder representation.
-      (Note AE-U's own variance branch is also a single linear ConvTranspose, 256
-       marginal parameters, and reaches 86.86 — which is exactly the point.)
-  (b) REPORT BOTH DENOMINATORS. 74% is measured from 68.35, but C1 establishes that L2
-      is the wrong score for a plain AE. Against the strongest training-free rescore of
-      the SAME weights (SSIM, 77.4) the head recovers 48.6%, a marginal +4.6 AUC. Using
-      68.35 alone while arguing elsewhere that 68.35 is an artefact is internally
-      inconsistent and a reviewer will catch it.
-  (c) THERE IS NO COST ADVANTAGE — do not claim one. The head costs 1.5-10 min ON TOP OF
-      the AE's 1.6 min, lands 4.86 below AE-U, and still requires the full training set.
-      AE-U's own increment is 256 parameters and it needs no pre-training. Value
-      proposition is SCIENTIFIC (it obtains the undefined cell), not deployment.
+    A theory that predicts the failure of a tool built for another purpose is stronger
+    than one that only explains successes. This is the same phenomenon as A1's
+    perceptual/L2 cell (44.9).
 
-NOVELTY — post-hoc uncertainty on a frozen model is unclaimed in anomaly detection.
-  [P11] Bramlage, L., Curio, C. "Principled Input-Output-Conditioned Post-Hoc
-        Uncertainty Estimation for Regression Networks." arXiv:2506.00918, 2025.
-        -> the same construction, REGRESSION ONLY (UCI, depth). Not anomaly detection.
-  [P12] Mao, Y., et al. MICCAI 2020. DOI: 10.1007/978-3-030-59725-2_51  -> AE-U, joint.
-  [P13] Gu, Y., Lin, Y., Cheng, K.-T., Chen, H. MICCAI 2024. arXiv:2409.17485
-        -> D2UE, jointly trained, explicitly not post-hoc.
+SUBSTITUTABILITY (Item 4, pre-registered as |difference| < 1.5)
+    perceptual + jointly-trained AE-U       88.74
+    perceptual + frozen AE-SSIM + head      89.12    difference +0.38, p=0.788
+    => no detectable difference; the head substitutes for AE-U AS A COMPONENT.
+    SCOPE: this removes the need for uncertainty TRAINING, not for ImageNet — the
+    perceptual member still requires VGG-19. And 89.12 may not be reported as beating
+    88.74. This is failure-to-reject, not demonstrated equivalence.
 
 --------------------------------------------------------------------------------
-C3 — SCORE COMPLEMENTARITY                                  [supporting only]
+C4 — COMPLEMENTARY SCORES BEAT THE BEST IMAGE-RECONSTRUCTION METHOD   [supporting]
 --------------------------------------------------------------------------------
-    Rank-average of perceptual + uncertainty = 88.74 +- 0.13 vs AE-PL 87.58; held-out
-    88.83 under 150 split-half selections, selection bias -0.20, selected in 100% of
-    splits. Reported WITH its negative control: both pre-registered equal-weight
-    ensembles LOST (84.88, 81.91); subsets containing the weak L2 score average 80.08
-    vs 86.44 without it.
-    NOT A CONTRIBUTION — rank-averaging is textbook:
-  [P14] Aggarwal, C.C., Sathe, S. ACM SIGKDD Explorations 17(1), 2015.
-        DOI: 10.1145/2830544.2830549
-  [P15] Zimek, A., Campello, R.J.G.B., Sander, J. ACM SIGKDD Explorations 15(1), 2014.
-        DOI: 10.1145/2594473.2594476
-    Present as EVIDENCE FOR C1 (different scores read different structure) and as a
-    methodological demonstration of selection-aware validation. Sell the protocol, not
-    the +1.16 — which is below our own interpretability bar (S5).
-    NOTE the pre-registration was 2 of 15 ENUMERATED subsets, not 15 pre-declared ones.
-
+    HEADLINE (r3): perceptual + uncertainty + frozen-AE-SSIM-head = 89.46
+      vs AE-PL 87.58                          +1.88, held-out 89.54, bias -0.17
+      vs the pre-registered pair 88.74        +0.72, CI [+0.34, +1.10], p=0.0108
+      vs the pre-registered pair over AE-PL   +1.16, CI [+0.57, +1.76], p=0.004
+      survives selection over 31 subsets: winner in 85% of splits, beats AE-PL in 100%
+    REPORTED WITH ITS NEGATIVE CONTROL: both PRE-REGISTERED equal-weight ensembles LOST
+    (84.88, 81.91); subsets containing the weak L2 score average 80.08 vs 86.44 without.
+    NOT A METHOD CONTRIBUTION — rank averaging is textbook ([P14], [P15]). It is evidence
+    for C1 (different scores read different structure) and a demonstration of
+    selection-aware validation.
+    CAVEATS: ensembles sharing members are tightly paired by construction, so those
+    intervals are not extra evidence; and T5's seed caveat (n=3) is NOT addressed by any
+    paired test.
 
 ################################################################################
 # 7. WHAT MUST BE DONE BEFORE SUBMISSION

@@ -1,4 +1,27 @@
 # %% [markdown]
+# # C0.0 WHICH DATASET — set this first, before running anything else
+# `DATASET` is read by Cell 1.4 via `os.environ`, so it must be set BEFORE that cell
+# executes. On Kaggle the simplest place is right here, in the first cell.
+#
+# It is ordinary configuration, NOT a Kaggle Secret — secrets are for credentials only
+# (the wandb API key). Nothing here is sensitive.
+#
+# Changing it re-namespaces everything automatically: run ids, the checkpoint directory,
+# and the wandb artifact names. RSNA keeps its historical identifiers untouched, so
+# switching to another dataset and back cannot disturb results already stored.
+# Cell 1.7 asserts all of that; if it does not print PASS, stop.
+
+# %% [CELL 0.0]  Dataset selector
+
+import os
+os.environ['DATASET'] = 'RSNA'      # <-- RSNA | VinCXR | LAG | BrainTumor | BraTS2021
+
+# Epochs follow the dataset automatically (MedIAnomaly options.py): 250 for RSNA,
+# VinCXR and LAG; 600 for BrainTumor. You do not set them by hand.
+print(f"DATASET set to {os.environ['DATASET']}")
+
+
+# %% [markdown]
 # # C1.1 General used support functions
 # %% [CELL 1.1]  General used support functions
 import subprocess, sys
@@ -3325,6 +3348,63 @@ if not A3V_EXT.empty:
               f'(extended - preregistered = {ho - ho4:+.2f})')
     stable = top.iloc[0] / len(A3V_EXT) > 0.6
     print(f'\n  VERDICT: {"survives — a stable winner over 31 options" if stable and ho - base > 0.3 else "does NOT survive — the winner shuffles; report the 4-member result only"}')
+
+
+# %% [markdown]
+# ### Cell 5.8c — does ADDING the head member to the winning pair help?
+# The 31-subset scan's best combination (perceptual + uncertainty + ssim-head, 89.46,
+# held-out 89.54) sits above the pre-registered pair (perceptual + uncertainty, 88.74,
+# held-out 88.83). Whether that +0.71 is real has not been tested.
+#
+# **Do not test it as "winner of 31 subsets vs winner of 15 subsets".** Both sides of
+# that comparison were chosen by looking at data, and comparing two selected quantities
+# invites the selection bias straight back in.
+#
+# Test the single fixed question instead: *take the pre-registered winning pair and ADD
+# one member — does the score improve?* That is one pre-specifiable comparison with no
+# selection in it, and it happens to be the same two score vectors.
+#
+# Expect a TIGHT interval: the two ensembles share both of the pair's members, so they
+# are strongly paired — the same structural reason the ensemble-vs-AE-PL comparison had
+# a half-width of 0.595 while the post-hoc-vs-AE-SSIM one had 1.34.
+
+# %% [CELL 5.8c]  Is the 3-member ensemble better than the pre-registered pair?
+
+PAIR    = (('ae-pl', {}), ('aeu', {}))
+PLUS_HEAD = PAIR + (('ae-ssim-posthoc-u', {'w': '2'}),)
+
+
+def ensemble_add_member_test(seeds=None):
+    seeds = seeds or SEEDS
+    rows = []
+    for s in seeds:
+        a = ensemble_scores(s, members=PLUS_HEAD)
+        b = ensemble_scores(s, members=PAIR)
+        if a is None or b is None:
+            print(f'  seed {s}: a member is missing — run Cells 5.5 and 5.2 first'); continue
+        r = delong_test(a, b, Y_TEST)
+        rows.append({'seed': s, 'pair': r['auc_b'], 'pair_plus_head': r['auc_a'],
+                     'diff': r['diff'], 'ci_lo': r['ci_lo'], 'ci_hi': r['ci_hi'],
+                     'p': r['p']})
+    return pd.DataFrame(rows)
+
+
+ADDTEST = ensemble_add_member_test()
+
+if not ADDTEST.empty:
+    b, a = ADDTEST.pair.mean() * 100, ADDTEST.pair_plus_head.mean() * 100
+    d, lo, hi = (ADDTEST['diff'].mean() * 100,
+                 ADDTEST.ci_lo.mean() * 100, ADDTEST.ci_hi.mean() * 100)
+    pmax = ADDTEST['p'].max()
+    print('\nDoes adding the frozen-AE-SSIM+head member to the pre-registered pair help?\n')
+    print(f'  perceptual + uncertainty                  {b:6.2f}   (pre-registered winner)')
+    print(f'  perceptual + uncertainty + ssim-head      {a:6.2f}')
+    print(f'  difference   {d:+.2f}  95% CI [{lo:+.2f}, {hi:+.2f}]  '
+          f'p = {pmax:.3g} (least significant seed)')
+    sig = pmax < 0.05 and lo > 0
+    print(f'\n  VERDICT: {"the third member ADDS significantly — report the 3-member set" if sig else "no significant gain — report the pre-registered PAIR as the headline, and the 3-member set as a consistent but untested extension"}')
+    print('  NOTE both sides share two members, so this interval is tight by construction;')
+    print('  that is a property of the comparison, not extra evidence.')
 
 
 # %% [markdown]

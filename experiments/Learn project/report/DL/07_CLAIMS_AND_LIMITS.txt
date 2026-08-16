@@ -44,7 +44,9 @@ C7. "A rank-average of the perceptual and uncertainty scores reaches 88.74, beat
     DeLong — [+0.57, +1.76], p=0.004 — subject to T5's seed caveat, which is separate.
     EXTENDED (11: 1.5): adding the frozen-AE-SSIM+head member gives a 5-member set whose
     held-out value is 89.54 (bias -0.17, winner selected in 85% of 31-subset splits).
-    Whether 89.54 beats the 4-member's 88.83 significantly is NOT yet tested.
+    NOW TESTED: adding the head member to the pre-registered pair gives +0.72,
+    95% CI [+0.34, +1.10], p=0.0108 — significant. The headline result is therefore
+    perceptual + uncertainty + frozen-AE-SSIM-head = 89.46 (held-out 89.54).
 
 C8. "Naive equal-weight score ensembling fails."
     EVIDENCE: both pre-registered combinations lost; subsets containing the weak L2

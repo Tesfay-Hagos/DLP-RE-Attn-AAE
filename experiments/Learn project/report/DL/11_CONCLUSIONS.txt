@@ -33,26 +33,36 @@ carries the corrected values throughout:
     variance of log_var explained by the static map : 39.7%
     full - static  = +12.89      full - whiten = +12.41
 
-    SCALAR CONTROL (added after the first M0 run):
+    SCALAR CONTROL (Cell 5.4, re-run after the labelling fix):
     PRECISION WEIGHT (-log_var) used ALONE as a score   64.42 +- 1.91
-    rank corr(-log_var, that image's mean residual)          -0.506
-      => rank corr(log_var, mean residual)                   +0.506
+    rank corr(log_var, that image's mean residual)          +0.506
+    mean log_var    normal -5.1069 | abnormal -5.2066   (abnormal - normal = -0.0997)
 
-    LABELLING CORRECTION. The code negated log_var in BOTH quantities and printed them
-    as though they were log_var's. The 64.42 is the AUC of -log_var (the precision
-    weight, which is what actually enters the score); log_var alone would score 35.58.
-    The -0.506 is the correlation of -log_var with the residual; log_var's is +0.506.
-    Fixed in Cell 5.4; RE-RUN IT before quoting these numbers again.
+    LABELLING CORRECTION, now applied. An earlier version of the code negated log_var in
+    BOTH quantities and printed them as log_var's, which flipped the sign of the
+    mechanism story. The values above are the corrected ones.
 
-    AN UNRECONCILED TENSION — do not build a paragraph on this until it is resolved.
-    -log_var alone separates the classes upward (64.42) and the mean residual alone also
-    separates them upward (68.35), yet the two are NEGATIVELY rank-correlated (-0.506)
-    over the pooled test set. Two scores that both rank abnormal images higher should not
-    ordinarily be negatively correlated. This is possible if the between-class and
-    within-class structures differ, but it is not demonstrated. Cell 5.4 now also prints
-    the CLASS-CONDITIONAL mean log_var for normal and abnormal images, which is the
-    quantity that settles it. Until those numbers exist, the mechanism story below is a
-    HYPOTHESIS, not a finding.
+    THE APPARENT TENSION IS RESOLVED, AND THE RESOLUTION IS THE MECHANISM.
+    The pooled correlation and the class contrast point in OPPOSITE directions, and that
+    is not a contradiction — it is the finding:
+      * POOLED  : corr(log_var, residual) = +0.506. Across the population, harder-to-
+                  reconstruct images receive a LARGER predicted log_var and are therefore
+                  DISCOUNTED. The head has learned expected reconstruction difficulty.
+      * BETWEEN : abnormal images receive a SMALLER log_var than normal ones (-0.0997),
+                  i.e. exp(-log_var) is 165.2 vs 182.5 — abnormal images are weighted
+                  +10.5% HIGHER, receiving LESS discount than their residual alone would
+                  predict.
+    So the head is NOT tracking residual magnitude. It predicts how hard an image SHOULD
+    be, and the anomaly signal is the gap between actual and expected difficulty:
+
+        score = mean( exp(-log_var) * r^2 )  ==  residual RELATIVE TO EXPECTED difficulty
+          normal-but-hard : high r^2, HIGH log_var -> ratio stays moderate
+          abnormal        : high r^2, LOW  log_var -> ratio is large
+
+    This also explains why -log_var alone is only a weak detector (64.42): the class
+    alignment exists but is small (+10.5% in the weight). The discriminative quantity is
+    the RATIO, not either factor alone — which is exactly why the divisor is worth +11.52
+    while the divisor used as a score is worth only +... nothing over the plain residual.
 
 --------------------------------------------------------------------------------
 1.2  M2 — does the head transfer across frozen backbones?          (w=2, 3 seeds)
@@ -117,8 +127,16 @@ carries the corrected values throughout:
       => SURVIVES. Bias is effectively zero, as for the 4-member set (-0.20), and the
          winner dominates 31 options at 85%. Less unanimous than the 4-member's 100%,
          which is expected over a space twice the size.
-      => NOT YET TESTED: whether 89.54 beats 88.83 significantly (+0.71). Run DeLong
-         before claiming the 5-member set is BETTER rather than also-valid.
+      => NOW TESTED (Cell 5.8c). Framed as the single fixed question "does ADDING the
+         head member to the pre-registered pair help?", which contains no selection:
+             perceptual + uncertainty                88.74
+             perceptual + uncertainty + ssim-head    89.46
+             difference +0.72, 95% CI [+0.34, +1.10], p=0.0108   SIGNIFICANT
+         The third member genuinely adds. 89.46 is the headline; 88.74 is the
+         pre-registered pair it improves on.
+         CAVEAT to carry: both ensembles share two members, so the interval is tight BY
+         CONSTRUCTION — a property of the comparison, not extra evidence. And T5's
+         seed caveat (n=3) applies here as everywhere.
 
     Full-test-set values from the scan (the ranking that was validated above):
       perceptual+aeu+ssim+head       89.46
@@ -172,13 +190,18 @@ E3. BUT IT IS MOSTLY A PER-IMAGE SCALAR, NOT PER-PIXEL UNCERTAINTY. [major refra
        transform of the plain L2 score and return 68.35. At 0.506 log_var is related to
        residual magnitude but far from determined by it.
 
-       MECHANISM: HYPOTHESIS, NOT YET ESTABLISHED. The discount story — images that are
-       globally harder to reconstruct receive a larger predicted log_var and are divided
-       down — requires corr(log_var, residual) to be POSITIVE, and it is (+0.506). But
-       see the tension recorded in 1.1: -log_var and the residual both separate the
-       classes upward while being negatively correlated with each other, which the story
-       does not explain. The class-conditional means now printed by Cell 5.4 are what
-       decide it. Until then this paragraph must be written in the conditional.
+       MECHANISM: NOW ESTABLISHED, and sharper than the original account.
+       corr(log_var, residual) = +0.506, so globally harder images are discounted — the
+       head has learned EXPECTED reconstruction difficulty. But abnormal images receive a
+       SMALLER log_var than normal ones (-0.0997; weight 182.5 vs 165.2, i.e. +10.5%),
+       so they are discounted LESS than their residual alone would predict.
+       The score is therefore RESIDUAL RELATIVE TO EXPECTED DIFFICULTY. A normal image
+       that is merely hard gets a large residual AND a large log_var, and the ratio stays
+       moderate; an abnormal image gets a large residual with a SMALL log_var, and the
+       ratio is large. That gap is the anomaly signal.
+       It also explains the weak standalone AUC: at +10.5% the class alignment in the
+       weight is small, so -log_var alone gives only 64.42. The discriminative quantity
+       is the ratio, not either factor.
 
 E4. THE "CAPACITY THRESHOLD" WAS NEVER A CAPACITY THRESHOLD.        [claim replaced]
     808 NONLINEAR parameters reach 78.27; 8,192 LINEAR parameters reach 66.75 — 32x the
