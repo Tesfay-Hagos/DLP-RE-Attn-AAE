@@ -1,18 +1,19 @@
 ================================================================================
 CONCLUSIONS
-Written after the M0 / M2 / M4 / M3 results (new_result.txt).
-These four experiments were designed to ATTACK the project's own claims. Three of
-them succeeded in narrowing a claim, and the narrowing produced a better paper than
-the claims they replaced.
+Written after the M0 / M2 / M4 / M3 results, plus the Item 4 substitution control and
+the Cell 5.8b extended validation.
+These experiments were designed to ATTACK the project's own claims. ALL FOUR of
+M0/M2/M4/M3 narrowed or corrected one, and the narrowing produced a better paper than
+the claims they replaced. Item 4 then UPGRADED a claim (C3) rather than narrowing it.
 
-TWO REPORTING BUGS IN new_result.txt, fixed in code, corrected throughout this file:
-  * the M2 table's `ae` row printed 78.20+-6.24. It averaged every head width ever run
-    (w=1,2,4,8,16,c4,lin256), which share a method name. The correct w=2 value is
-    82.00+-0.83 (per-seed 82.15 / 82.93 / 80.91). The `ae-ssim` and `ae-pl` rows are
-    correct — those backbones have only w=2 runs.
-  * the M3 row "ensemble(perc+unc) vs AE-PL = -2.69" compared `ens-all4`, the
-    PRE-REGISTERED ensemble that FAILED (84.88), not the winning perceptual+uncertainty
-    pair (88.74). That DeLong comparison has NOT yet been run. All other M3 rows valid.
+BOTH REPORTING BUGS IN new_result.txt ARE NOW FIXED AND THE CELLS RE-RUN. This file
+carries the corrected values throughout:
+  * the M2 `ae` row printed 78.20+-6.24 because it averaged every head width sharing the
+    method name. Corrected value 82.00+-0.83 (per-seed 82.15 / 82.93 / 80.91), confirmed
+    on re-run.
+  * the M3 ensemble row compared `ens-all4`, the PRE-REGISTERED ensemble that FAILED
+    (84.88), not the winning perceptual+uncertainty pair. Re-run against the correct
+    members it is +1.16 [+0.57, +1.76], p=0.004 — see 1.4, which changes a claim.
 ================================================================================
 
 
@@ -32,12 +33,33 @@ TWO REPORTING BUGS IN new_result.txt, fixed in code, corrected throughout this f
     variance of log_var explained by the static map : 39.7%
     full - static  = +12.89      full - whiten = +12.41
 
+    SCALAR CONTROL (added after the first M0 run):
+    PRECISION WEIGHT (-log_var) used ALONE as a score   64.42 +- 1.91
+    rank corr(-log_var, that image's mean residual)          -0.506
+      => rank corr(log_var, mean residual)                   +0.506
+
+    LABELLING CORRECTION. The code negated log_var in BOTH quantities and printed them
+    as though they were log_var's. The 64.42 is the AUC of -log_var (the precision
+    weight, which is what actually enters the score); log_var alone would score 35.58.
+    The -0.506 is the correlation of -log_var with the residual; log_var's is +0.506.
+    Fixed in Cell 5.4; RE-RUN IT before quoting these numbers again.
+
+    AN UNRECONCILED TENSION — do not build a paragraph on this until it is resolved.
+    -log_var alone separates the classes upward (64.42) and the mean residual alone also
+    separates them upward (68.35), yet the two are NEGATIVELY rank-correlated (-0.506)
+    over the pooled test set. Two scores that both rank abnormal images higher should not
+    ordinarily be negatively correlated. This is possible if the between-class and
+    within-class structures differ, but it is not demonstrated. Cell 5.4 now also prints
+    the CLASS-CONDITIONAL mean log_var for normal and abnormal images, which is the
+    quantity that settles it. Until those numbers exist, the mechanism story below is a
+    HYPOTHESIS, not a finding.
+
 --------------------------------------------------------------------------------
 1.2  M2 — does the head transfer across frozen backbones?          (w=2, 3 seeds)
 --------------------------------------------------------------------------------
     backbone   frozen model   + post-hoc head        delta
     ae             68.35      82.00 +- 0.83        +13.65
-    ae-ssim        80.81      86.99 +- 0.56         +6.19
+    ae-ssim        80.81      86.99 +- 0.57         +6.19
     ae-pl          87.58      57.01 +- 2.14        -30.56
     reference: AE-U jointly trained 86.86 +- 0.44
 
@@ -56,11 +78,54 @@ TWO REPORTING BUGS IN new_result.txt, fixed in code, corrected throughout this f
     post-hoc head (w=2) vs plain AE     +13.65  [+12.26, +15.04]   p=5e-75    ***
     AE rescored with SSIM vs AE          +9.08  [ +7.73, +10.42]   p=7.4e-37  ***
     AE-U vs post-hoc head (w=2)          +4.86  [ +3.54,  +6.19]   p=4.3e-09  ***
+    ensemble(perc+unc) vs AE-U           +1.88  [ +1.26,  +2.49]   p=1.4e-05  ***
+    ensemble(perc+unc) vs AE-PL          +1.16  [ +0.57,  +1.76]   p=0.004    **
     post-hoc head (w=2) vs AE-SSIM       +1.19  [ -0.15,  +2.53]   p=0.66     n.s.
 
-    mean paired 95% half-width 1.28 pts vs the unpaired Hanley-McNeil bound 1.48.
-    The paired interval is tighter, so the ~1.5-point interpretability rule applies
-    ONLY to unpaired comparisons — and even so, +1.19 does not clear it.
+    mean paired 95% half-width 1.10 pts vs the unpaired Hanley-McNeil bound 1.48.
+
+    READ p AND CI AS DIFFERENT AGGREGATIONS — they are not two views of one number.
+    The p column is the LEAST SIGNIFICANT SEED (deliberately conservative); the CI is the
+    MEAN across seeds. They can disagree sharply. The clearest case is the AE-SSIM row:
+    a mean CI of [-0.15, +2.53] implies a pooled p near 0.08, yet the reported p is 0.66.
+    So that n.s. verdict is driven by ONE seed, not by the pooled interval. Report both
+    aggregations, or pick one and say which.
+
+    THE INSTRUMENT MATTERED. C4's +1.16 sits BELOW the project's own ~1.5-point
+    interpretability rule, yet its PAIRED confidence interval excludes zero at p=0.004.
+    That rule was derived from an UNPAIRED standard error and must never be applied to
+    a comparison of two scores on the same images. Under the correct test C4 is
+    significant; under the wrong one it was 'not interpretable'.
+    Note the contrast with the post-hoc/AE-SSIM row: a nearly identical point estimate
+    (+1.19) is NOT significant, because those two scores are far less correlated. Point
+    estimates alone cannot be read off against a fixed threshold.
+
+--------------------------------------------------------------------------------
+1.5  ITEM 4 — the C3 substitution control                          (w=2, 3 seeds)
+--------------------------------------------------------------------------------
+    perceptual + AE-U (jointly trained)          88.74
+    perceptual + frozen AE-SSIM + post-hoc head  89.12
+    difference                                   +0.38   paired DeLong p = 0.788  n.s.
+
+    Pre-registered rule was |difference| < 1.5 => SUBSTITUTABLE. Satisfied.
+
+    5-MEMBER SCAN — NOW VALIDATED by Cell 5.8b (50 splits x 3 seeds, 31 subsets):
+      oracle 89.37 | held-out 89.54 | AE-PL 87.66
+      selection bias -0.17 | honest gain +1.88 | beats AE-PL in 100% of splits
+      most selected: perceptual+aeu+ssim+head (85% of splits)
+      pre-registered 4-member held-out: 88.83  (extended - preregistered = +0.71)
+      => SURVIVES. Bias is effectively zero, as for the 4-member set (-0.20), and the
+         winner dominates 31 options at 85%. Less unanimous than the 4-member's 100%,
+         which is expected over a space twice the size.
+      => NOT YET TESTED: whether 89.54 beats 88.83 significantly (+0.71). Run DeLong
+         before claiming the 5-member set is BETTER rather than also-valid.
+
+    Full-test-set values from the scan (the ranking that was validated above):
+      perceptual+aeu+ssim+head       89.46
+      perceptual+ssim+head           89.12
+      perceptual+aeu                 88.74   <- the pre-registered 4-member winner
+      ssim+perceptual+aeu+ssim+head  88.70
+      aeu+ssim+head                  88.66
 
 
 ################################################################################
@@ -81,18 +146,39 @@ E2. IT IS NOT REPRODUCIBLE WITH ZERO PARAMETERS.                  [hypothesis ki
 E3. BUT IT IS MOSTLY A PER-IMAGE SCALAR, NOT PER-PIXEL UNCERTAINTY. [major reframing]
     A completely FLAT log_var map, one learned value per image, reaches 79.87. Of the
     head's +13.65 over the plain AE, roughly +11.52 is a per-image scale and only
-    ~+2.13 is spatial structure. Consistently, the static map explains just 39.7% of
-    log_var's variance; the majority is per-image variation.
+    ~+2.13 is spatial structure.
+    CAUTION on the 39.7%: it is the share of log_var's variance explained by the STATIC
+    train-mean map. The remaining 60.3% is everything that map does not explain, which
+    includes per-image SPATIAL structure as well as per-image scale — the code's
+    decomposition does not separate those two. The evidence for the per-image reading is
+    the `scalar` ablation (79.87 of 82.00), NOT the 39.7% figure.
     => The mechanism is a LEARNED PER-IMAGE CALIBRATION of residual magnitude, not
        spatial uncertainty. Images that are globally harder to reconstruct get their
        residual discounted. Calling this "uncertainty" is generous and the paper must
        not lean on the spatial reading.
-    => FOLLOW-UP NOW IN THE CODE (Cell 5.4): the rank correlation between that scalar
-       and the image's own mean residual, plus the scalar's AUC used alone. If the
-       correlation were near 1 the score would be a monotone transform of the plain L2
-       score and would return 68.35 — it returns 79.87, so the scalar demonstrably
-       carries independent information. The control measures how much instead of
-       inferring it.
+    => THE FOLLOW-UP CONTROL HAS NOW RUN, and it sharpens E3 into something more
+       specific than "a per-image scale":
+
+         log_var used ALONE as a score                     64.42 +- 1.91
+         rank corr(scalar, that image's own mean residual)      -0.506
+
+       THE SCALAR IS A WEAKER DETECTOR THAN THE RESIDUAL, BUT A USEFUL DIVISOR. The
+       precision weight -log_var alone scores 64.42 — above chance, but below the plain
+       autoencoder's own 68.35. Dividing the residual by it lifts 68.35 -> 79.87. Its
+       value is therefore as a NORMALISER rather than as a score in its own right.
+       (Do not write "not a detector": 64.42 is well above chance.)
+
+       REDUNDANCY: settled. Had |rho| been near 1 the score would collapse to a monotone
+       transform of the plain L2 score and return 68.35. At 0.506 log_var is related to
+       residual magnitude but far from determined by it.
+
+       MECHANISM: HYPOTHESIS, NOT YET ESTABLISHED. The discount story — images that are
+       globally harder to reconstruct receive a larger predicted log_var and are divided
+       down — requires corr(log_var, residual) to be POSITIVE, and it is (+0.506). But
+       see the tension recorded in 1.1: -log_var and the residual both separate the
+       classes upward while being negatively correlated with each other, which the story
+       does not explain. The class-conditional means now printed by Cell 5.4 are what
+       decide it. Until then this paragraph must be written in the conditional.
 
 E4. THE "CAPACITY THRESHOLD" WAS NEVER A CAPACITY THRESHOLD.        [claim replaced]
     808 NONLINEAR parameters reach 78.27; 8,192 LINEAR parameters reach 66.75 — 32x the
@@ -111,8 +197,8 @@ E5. POST-HOC UNCERTAINTY DOES NOT TRANSFER UNIVERSALLY.               [scope nar
     DESTROYS the perceptually-trained one (-30.56, to 57.01). "Retrofit uncertainty onto
     any frozen reconstruction model" is dead. See §3 — the failure is predicted.
 
-E6. AN IMAGENET-FREE ROUTE TO AE-U's ACCURACY.                        [new, practical]
-    Frozen AE-SSIM + post-hoc head = 86.99 +- 0.56, against jointly-trained AE-U's
+E6. AN IMAGENET-FREE ROUTE TO AE-U's ACCURACY.        [new, practical; +0.13 UNTESTED]
+    Frozen AE-SSIM + post-hoc head = 86.99 +- 0.57, against jointly-trained AE-U's
     86.86 +- 0.44, using no pre-trained weights and touching no reconstruction weight.
     It also beats AE-SSIM's own native score by +6.19 — a case where a NON-NATIVE score
     beats the diagonal (see §3).
@@ -122,8 +208,52 @@ E7. THE IRREDUCIBLE GAP IS REAL, AND THE FREE RESCORE GAIN IS REAL.  [now with s
     p=7.4e-37. Post-hoc over plain AE: +13.65, p=5e-75. All by paired DeLong.
 
 E8. THE POST-HOC HEAD DOES NOT BEAT RETRAINED AE-SSIM.                [claim retracted]
-    +1.19, 95% CI [-0.15, +2.53], not significant. The earlier "beats retrained
+    +1.19, 95% CI [-0.15, +2.53], p=0.66, not significant. The earlier "beats retrained
     AE-SSIM" phrasing is withdrawn; "reaches the level of" is the supported form.
+
+E9. C4's ENSEMBLE GAIN IS STATISTICALLY SIGNIFICANT.            [claim UPGRADED]
+    STALE FILES THIS SUPERSEDES, all of which need updating rather than silently
+    contradicting: 06 §4.1 "82.00 BEATS fully-retrained AE-SSIM" (retracted, E8/R3);
+    06 §4.2 "THE CAPACITY THRESHOLD IS SHARP" (replaced, E4/R1); 07 X3 "AE-U ... cannot
+    be replaced by the post-hoc head" (needs a standalone-vs-component qualifier, E10).
+    07 T5 is NOT superseded — see below.
+    perceptual+uncertainty over AE-PL: +1.16, paired 95% CI [+0.57, +1.76], p=0.004;
+    over AE-U: +1.88 [+1.26, +2.49], p=1.4e-05.
+    This CONFIRMS A PRE-REGISTERED EXPECTATION rather than reversing a position:
+    10_PAPER_FOUNDATION S5 already stated that the correct test is paired DeLong and
+    that the unpaired bound must not be applied to it. M3 is that test.
+
+    WHAT IT DOES *NOT* DISPOSE OF — and this correction matters. 07 T5 reads
+    "n=3 SEEDS ... inadequate for sub-1.5-point differences": it is a SEED-COUNT
+    argument. DeLong treats the 2000 test IMAGES as the sampling unit and contains no
+    seed-variance component at all (the "least significant seed" convention in M3 is an
+    acknowledgement of exactly that). So the paired test establishes the difference is
+    real GIVEN THESE THREE TRAINED MODELS on this test set; it does not establish that
+    it survives retraining. BOTH caveats stand, and T5 must NOT be deleted or restated
+    as "unpaired only". The unpaired 1.48 bound is a separate quantity introduced later.
+
+    THE CONTRAST WITH E8, stated with its mechanism. E8's +1.19 is LARGER than E9's
+    +1.16 yet is not significant. The structural reason is not merely "less correlated":
+    the E9 comparison pits an ensemble against a method that is ITS OWN MEMBER (the
+    perceptual score is inside perceptual+uncertainty), which is near-maximally paired —
+    half-width 0.595 against E8's 1.34.
+    An ALTERNATIVE explanation must be acknowledged: E8's p=0.66 is a least-significant-
+    SEED p, and the post-hoc head's seed sd is 0.83 against AE-SSIM's 0.35. Seed
+    instability is at least as plausible a driver of that verdict as score decorrelation.
+    Two explanations, one result — say so.
+
+E10. THE POST-HOC HEAD SUBSTITUTES FOR AE-U INSIDE THE ENSEMBLE.       [C3 upgraded]
+    perceptual + jointly-trained AE-U        88.74
+    perceptual + frozen AE-SSIM + head       89.12     difference +0.38, p=0.788 n.s.
+    Pre-registered as |difference| < 1.5 => substitutable. C3 therefore upgrades from
+    "matches AE-U standalone" to "matches AE-U as a component".
+    STATE THE SCOPE PRECISELY: this removes the need for uncertainty TRAINING, not for
+    ImageNet — the perceptual member still requires VGG-19. And 89.12 may NOT be
+    reported as beating 88.74; the difference is not significant. The claim is
+    NO DETECTABLE DIFFERENCE, which is weaker than demonstrated equivalence: p=0.788 is
+    a failure to reject, and no CI on the +0.38 was computed, so a true difference beyond
+    +/-1.5 is not excluded. The pre-registered point-estimate rule is satisfied; a TOST
+    against the +/-1.5 margin would be needed to claim equivalence proper.
 
 
 ################################################################################
@@ -196,10 +326,18 @@ NARROWED
 
 CONFIRMED / STRENGTHENED
   S1. A1's specialisation finding — strengthened, and now asymmetric (§3).
-  S2. The 4.81-point irreducible gap — significant, p=4.3e-09 (E7).
+  S2. The irreducible gap at w=2 — +4.86, p=4.3e-09 (E7). (4.81 is the w=4
+      figure from 06; DeLong tested w=2.)
   S3. The free SSIM rescore gain — significant, p=7.4e-37 (E7).
   S4. C2 survives its two strongest attacks (E1, E2).
-  S5. Paired testing is the correct instrument: half-width 1.28 vs unpaired 1.48.
+  S5. Paired testing is substantially tighter FOR COMPARISONS WITH SHARED/NESTED
+      members: the mean half-width is 1.10 vs the unpaired 1.48, but four of the six
+      rows sit at 1.32-1.39, barely inside it. The whole advantage lives in the two
+      ensemble rows, where one side contains the other.
+  S6. C4's ensemble gain is SIGNIFICANT (E9) — a reversal of the earlier position.
+  S7. C3 upgraded to component-level substitutability (E10).
+  S8. E3 sharpened: -log_var is a WEAKER detector than the residual (64.42 vs 68.35) but
+      a useful divisor (68.35 -> 79.87). Mechanism still conditional — see 1.1.
 
 SURVIVED UNCHANGED
   The ten-method reproduction (9/10 within 1 sd); the A1 grid; the A3 ensemble result
@@ -237,7 +375,7 @@ C2  A PROBE THAT TESTS C1 AND OBTAINS A CELL THE GRID CANNOT COMPUTE.    [primar
     than training AE-U from scratch and lands 4.86 below it (p=4.3e-09).
 
 C3  AN IMAGENET-FREE ROUTE TO THE UNCERTAINTY AUTOENCODER'S ACCURACY.  [supporting]
-    Frozen AE-SSIM + post-hoc head = 86.99 +- 0.56 vs jointly-trained AE-U 86.86 +- 0.44,
+    Frozen AE-SSIM + post-hoc head = 86.99 +- 0.57 vs jointly-trained AE-U 86.86 +- 0.44,
     with no pre-trained weights and no reconstruction retraining, and +6.19 over
     AE-SSIM's own score. Practically relevant because AE-PL, the strongest single
     method, depends entirely on ImageNet features.
@@ -248,7 +386,8 @@ C4  SCORE COMPLEMENTARITY.                                             [supporti
     pre-registered ensembles lost: 84.88, 81.91). Rank averaging is textbook
     (Aggarwal & Sathe 2015; Zimek et al. 2014) — present as evidence for C1 and as a
     demonstration of selection-aware validation, never as a method.
-    NOTE: the DeLong test for this comparison has not yet been run (see §1 bug note).
+    NOTE: the DeLong test HAS now been run — +1.16 [+0.57, +1.76], p=0.004 (see 1.4 and
+    E9), subject to the seed-variance caveat recorded there.
 
 The reproduction remains Experimental Setup, not a numbered contribution.
 
@@ -257,11 +396,13 @@ The reproduction remains Experimental Setup, not a numbered contribution.
 # 6. WHAT REMAINS
 ################################################################################
     #  item                                                     cost      why
-    1  Re-run cells 5.4, 5.5, 5.7 with the fixed code           minutes   two bug fixes
-                                                                          + the new
-                                                                          scalar control
-    2  DeLong on perceptual+uncertainty vs AE-PL and vs AE-U    seconds   C4's only
-                                                                          untested claim
+    1  DONE. Cells 5.4 / 5.5 / 5.7 re-run; both bugs corrected;   --       see 1.1-1.5
+       the scalar control and Item 4 have run.
+    1b VALIDATE the 5-member set: a3_split_half(members=          seconds  89.46 is the
+       A3_MEMBERS_EXT), Cell 5.8b. The 31-subset winner is                 top of 31
+       currently selected ON THE TEST SET and is NOT reportable            test-set
+       until it survives, exactly as 88.74 was not before 5.2b.            choices
+    2  DONE — see E9. C4 is significant.                          --
     3  MULTI-DATASET: VinCXR, BrainTumor, LAG                   ~35 min   the single
        PRE-REGISTER: the post-hoc head should FAIL on           each      highest-value
        BrainTumor, where tumours sit where the AE already                 item; now with

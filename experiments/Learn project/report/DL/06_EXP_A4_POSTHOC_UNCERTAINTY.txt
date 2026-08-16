@@ -1,3 +1,14 @@
+*** SUPERSEDED IN PART — read 11_CONCLUSIONS.txt first. ***
+Three statements below were overturned by the M0/M2/M4 follow-ups:
+  * "82.00 BEATS fully-retrained AE-SSIM (80.81)"  -> +1.19, p=0.66, NOT significant.
+    Use "reaches the level of".                                   (11: E8, R3)
+  * "sharp CAPACITY threshold"                     -> it is a NONLINEARITY threshold;
+    808 nonlinear params reach 78.27 while 8,192 LINEAR params reach 66.75. The w=1 head
+    was a single ConvTranspose2d with no nonlinearity at all.     (11: E4, R1)
+  * "recovers 74%"                                 -> report BOTH denominators: 74% from
+    the plain AE's own L2 score, 49% from the free SSIM rescore.  (11: N3)
+Also: the head is dominated by a per-image SCALE, not spatial uncertainty, and it does
+NOT transfer to a perceptually-trained backbone (-30.56).         (11: E3, E5)
 ================================================================================
 EXPERIMENT A4 (NOVEL)
 Is AE-U's advantage a training paradigm, or a post-hoc scoring wrapper?

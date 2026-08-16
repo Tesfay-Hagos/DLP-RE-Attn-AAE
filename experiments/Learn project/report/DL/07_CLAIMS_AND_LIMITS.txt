@@ -30,11 +30,21 @@ C5. "Uncertainty training does not produce a better reconstructor."
 
 C6. "74% of AE-U's advantage is recoverable post hoc from a frozen autoencoder for 0.62%
      additional parameters; the remaining 26% does not close with more capacity."
-    EVIDENCE: A4, plateau of 0.24 across a 12x capacity range.
+    EVIDENCE: A4, plateau of 0.24 across an 11.6x capacity range.
+    UPDATED (11: E4, N3, E5): report BOTH denominators — 74% measured from the plain AE's
+    own L2 score, 49% from the free SSIM rescore of the same weights (77.4). The w=1
+    failure is a NONLINEARITY threshold, not a capacity one. And the head does NOT
+    transfer to a perceptually-trained backbone (-30.56), so scope C6 to pixel-space
+    objectives.
 
 C7. "A rank-average of the perceptual and uncertainty scores reaches 88.74, beating the
      best single method by 1.16, and survives selection-aware validation."
     EVIDENCE: A3, 150 split-half selections, wins 100%, selection bias -0.20.
+    STRENGTHENED (11: E9): the +1.16 is now statistically significant under paired
+    DeLong — [+0.57, +1.76], p=0.004 — subject to T5's seed caveat, which is separate.
+    EXTENDED (11: 1.5): adding the frozen-AE-SSIM+head member gives a 5-member set whose
+    held-out value is 89.54 (bias -0.17, winner selected in 85% of 31-subset splits).
+    Whether 89.54 beats the 4-member's 88.83 significantly is NOT yet tested.
 
 C8. "Naive equal-weight score ensembling fails."
     EVIDENCE: both pre-registered combinations lost; subsets containing the weak L2
@@ -49,8 +59,11 @@ X1. "This generalises to medical anomaly detection." ONE DATASET. Every number h
 X2. "Ensembling improves anomaly detection." It improved for one specific pair, and
     demonstrably hurt for most subsets. State the pair, not the principle.
 
-X3. "AE-U is unnecessary / can be replaced by the post-hoc head." It cannot: 82.05 vs
-    86.86, and the gap is stable across capacity.
+X3. "AE-U is unnecessary / can be replaced by the post-hoc head." STANDALONE it cannot:
+    82.00 vs 86.86, +4.86 apart, p=4.3e-09, stable across capacity.
+    QUALIFIER ADDED (11: E10): AS AN ENSEMBLE COMPONENT it is substitutable —
+    perceptual+AE-U 88.74 vs perceptual+frozen-AE-SSIM+head 89.12, difference +0.38,
+    p=0.788. Standalone and component-level are different claims; keep them apart.
 
 X4. "Our DAE result contradicts the published one." n=1. A single seed cannot separate
     an implementation gap from seed variation.
@@ -74,7 +87,17 @@ O1. MULTI-DATASET VALIDATION.  [highest value, ~3 h]
     a general claim instead of an RSNA observation. If it does not, that is equally worth
     knowing and must be reported.
 
-O2. VISUAL CHECK OF THE BELOW-CHANCE CELL.  [30 min]
+O2. VISUAL CHECK OF THE BELOW-CHANCE CELL.  [DONE — Cell 5.9]
+    RESULT: supported, with one correction to the stated mechanism. AE-PL's reconstruction
+    mean is displaced +0.067 from the input against the plain AE's -0.015 (4.5x) and
+    AE-SSIM's +0.001, and it loses the most contrast (20.6% of the input's std, vs the
+    AE's 5.2%). BUT a uniform shift of 0.067 accounts for only 8.5% of AE-PL's MSE, so
+    CONTRAST COMPRESSION, not a global offset, is the dominant term. Say "perceptual
+    training constrains neither absolute intensity nor contrast".
+    CAVEAT: n=4 images at seed 42. Per-image statistics over the full 2000-image test set
+    would turn this from a figure caption into a measurement.
+    (original text below)
+O2b. VISUAL CHECK OF THE BELOW-CHANCE CELL.  [superseded by O2]
     AE-PL scored with L2 gives 44.9 — below chance, consistently across 3 seeds. The
     proposed explanation is that perceptual training leaves a global intensity offset
     that dominates any pixel metric. Plot input / reconstruction / error map for an
@@ -115,6 +138,11 @@ T4. IMAGE-LEVEL ONLY. Nothing here says where in the image the abnormality is. T
 T5. n=3 SEEDS. Adequate for the large effects reported (+9 to +19 points), inadequate for
     sub-1.5-point differences. Every comparison in this project either clears that bar or
     is explicitly reported as indistinguishable.
+    STILL LIVE — NOT superseded by the paired DeLong tests (11: E9). T5 is a SEED-COUNT
+    argument; DeLong treats the 2000 test IMAGES as the sampling unit and carries no
+    seed-variance component at all. A paired result therefore says a difference is real
+    GIVEN THESE TRAINED MODELS; it does not say it survives retraining. Both caveats
+    apply to C7's +1.16. Do not delete or weaken T5.
 
 T6. THE ARCHITECTURE AND HYPERPARAMETERS ARE INHERITED, NOT TUNED. This is deliberate
     (it is what makes the reproduction valid) but it means no claim is made about

@@ -2889,15 +2889,26 @@ def m0_degeneracy(seeds=None, width=M0_WIDTH, base_method=M0_BASE):
         # the scalar is redundant, and a low one that it carries independent signal.
         lv_bar_img = lv_te.mean(dim=[1, 2, 3]).numpy()
         r_bar_img  = res_te.mean(dim=[1, 2, 3]).numpy()
-        rho = float(np.corrcoef(np.argsort(np.argsort(-lv_bar_img)),
+        # Correlate log_var ITSELF with the residual — not its negation. An earlier
+        # version correlated -log_var and then reported the result as if it were
+        # log_var's, which flipped the sign of the mechanism story: the discount
+        # interpretation needs log_var to RISE with the residual, i.e. a POSITIVE
+        # correlation. Score the precision weight (-log_var) separately and label it
+        # as such, since that is the quantity that enters the score.
+        rho = float(np.corrcoef(np.argsort(np.argsort(lv_bar_img)),
                                 np.argsort(np.argsort(r_bar_img)))[0, 1])
-        # and does the scalar detect anomalies ON ITS OWN, with no residual at all?
-        scalar_only = evaluate_scores(-lv_bar_img, Y_TEST)
+        prec_only = evaluate_scores(-lv_bar_img, Y_TEST)      # precision weight as a score
+        # Class-conditional means. Without these the pooled correlation and the AUCs can
+        # appear to disagree (a variable can correlate one way overall and separate the
+        # classes the other way), and there is no way to tell which is happening.
+        lv_norm = float(lv_bar_img[Y_TEST == 0].mean())
+        lv_abn  = float(lv_bar_img[Y_TEST == 1].mean())
 
         rows.append({'seed': s, 'full': full['AUC'], 'static': static['AUC'],
                      'scalar': scalar['AUC'], 'whiten': whiten['AUC'],
-                     'frac_static': frac_static, 'rho_scalar_resid': rho,
-                     'scalar_alone': scalar_only['AUC']})
+                     'frac_static': frac_static, 'rho_logvar_resid': rho,
+                     'precision_alone': prec_only['AUC'],
+                     'logvar_normal': lv_norm, 'logvar_abnormal': lv_abn})
         del ae, head, lv_tr, res_tr, lv_te, res_te
     return pd.DataFrame(rows)
 
@@ -2918,11 +2929,26 @@ if not M0.empty:
     print(f'  plain {M0_BASE} with its own score       {ae_auc:6.2f}')
     print(f'\n  variance of log_var explained by the static map: '
           f'{M0.frac_static.mean()*100:.1f}%')
-    print(f'  mean predicted log_var, used ALONE as a score : '
-          f'{M0.scalar_alone.mean()*100:6.2f}+-{M0.scalar_alone.std(ddof=0)*100:.2f}')
-    print(f'  rank corr(per-image scalar, that image\'s mean residual) : '
-          f'{M0.rho_scalar_resid.mean():+.3f}')
-    print(f'    -> {"REDUNDANT: the scalar mostly restates the residual magnitude" if abs(M0.rho_scalar_resid.mean()) > 0.8 else "the scalar carries information the residual does not"}')
+    print(f'  precision weight (-log_var) used ALONE as a score : '
+          f'{M0.precision_alone.mean()*100:6.2f}+-{M0.precision_alone.std(ddof=0)*100:.2f}')
+    print(f'  rank corr(log_var, that image\'s mean residual)     : '
+          f'{M0.rho_logvar_resid.mean():+.3f}')
+    print(f'    -> {"REDUNDANT: log_var mostly restates residual magnitude" if abs(M0.rho_logvar_resid.mean()) > 0.8 else "log_var carries information the residual does not"}')
+    print(f'  mean log_var  normal {M0.logvar_normal.mean():+.4f} | '
+          f'abnormal {M0.logvar_abnormal.mean():+.4f}  '
+          f'(abnormal - normal = {M0.logvar_abnormal.mean()-M0.logvar_normal.mean():+.4f})')
+    _rho = M0.rho_logvar_resid.mean()
+    _dlv = M0.logvar_abnormal.mean() - M0.logvar_normal.mean()
+    print(f'    -> rho is {"POSITIVE" if _rho > 0 else "NEGATIVE"}: globally-harder images get a '
+          f'{"LARGER" if _rho > 0 else "SMALLER"} predicted log_var,')
+    print(f'       so their residual is {"DISCOUNTED" if _rho > 0 else "AMPLIFIED"}. '
+          f'The discount mechanism requires a POSITIVE rho.')
+    print(f'    -> class-conditional: abnormal images get a '
+          f'{"LARGER" if _dlv > 0 else "SMALLER"} log_var than normal ones '
+          f'({_dlv:+.4f}),')
+    print(f'       i.e. the weighting {"works AGAINST" if _dlv > 0 else "works FOR"} '
+          f'detection on its own. The pooled rho and this contrast can disagree;')
+    print('       when they do, THIS is the one that bears on anomaly separation.')
     d_static = (M0.full - M0.static).mean() * 100
     d_whiten = (M0.full - M0.whiten).mean() * 100
     print(f'\n  full - static : {d_static:+.2f} pts  '
@@ -3258,6 +3284,47 @@ if not C3SUB.empty:
         print(top.to_string())
         print(f'\n  pre-registered 4-member result stands unchanged; the above is'
               f' {len(A3X.combo.unique())} subsets and is exploratory.')
+
+
+# %% [markdown]
+# ### Cell 5.8b — selection-aware validation of the EXTENDED member set
+# The 5-member scan produced the best number in the project — but it is the top of **31
+# subsets chosen on the test set**, which is precisely the position the 4-member result
+# was in before Cell 5.2b validated it. It is not reportable until it survives the same
+# protocol.
+#
+# Same machinery, larger space: pick the best combination on half the test set, score it
+# on the unseen half, 50 splits x 3 seeds. Two things decide it — whether the held-out
+# gain over the best single score survives, and whether the SAME combination keeps
+# winning. A shuffling winner over 31 options is noise wearing a large number.
+#
+# The pre-registered 4-member result is untouched and reported beside this one.
+
+# %% [CELL 5.8b]  Extended (5-member) selection-aware validation
+
+A3V_EXT = a3_split_half(members=A3_MEMBERS_EXT)
+
+if not A3V_EXT.empty:
+    ho  = A3V_EXT.heldout_B.mean() * 100
+    orc = A3V_EXT.oracle_A.mean() * 100
+    base = A3V_EXT.ae_pl_B.mean() * 100
+    wins = (A3V_EXT.heldout_B > A3V_EXT.ae_pl_B).mean() * 100
+    top  = A3V_EXT.selected.value_counts()
+    print(f'\nA3 EXTENDED (5 members, 31 subsets) — selection-aware, '
+          f'{len(A3V_EXT)//len(SEEDS)} splits x {len(SEEDS)} seeds\n')
+    print(f'  oracle   (best combo on the half it was picked on)  {orc:6.2f}')
+    print(f'  held-out (that combo on the UNSEEN half)            {ho:6.2f}')
+    print(f'  AE-PL alone on the same half                        {base:6.2f}')
+    print(f'\n  selection bias          : {orc - ho:+.2f} pts')
+    print(f'  honest gain over AE-PL  : {ho - base:+.2f} pts')
+    print(f'  beats AE-PL in          : {wins:.0f}% of splits')
+    print(f'  most selected combo     : {top.index[0]}  ({top.iloc[0]/len(A3V_EXT)*100:.0f}%)')
+    if 'A3V' in globals() and not A3V.empty:
+        ho4 = A3V.heldout_B.mean() * 100
+        print(f'\n  PRE-REGISTERED 4-member held-out: {ho4:6.2f}   '
+              f'(extended - preregistered = {ho - ho4:+.2f})')
+    stable = top.iloc[0] / len(A3V_EXT) > 0.6
+    print(f'\n  VERDICT: {"survives — a stable winner over 31 options" if stable and ho - base > 0.3 else "does NOT survive — the winner shuffles; report the 4-member result only"}')
 
 
 # %% [markdown]
