@@ -1,0 +1,116 @@
+================================================================================
+DL PROJECT — OVERVIEW
+Unsupervised anomaly detection on chest radiographs:
+where do reconstruction methods actually get their accuracy from?
+
+Dataset : RSNA Pneumonia Detection Challenge (chest X-ray), image-level
+Task    : anomaly CLASSIFICATION (AnoCls) — one score per image, no labels in training
+Code    : experiments/Learn project/DL/dl_project.py  (single self-contained notebook)
+================================================================================
+
+--------------------------------------------------------------------------------
+1. THE QUESTION
+--------------------------------------------------------------------------------
+Reconstruction-based anomaly detection trains a model on NORMAL images only, then
+flags an image as abnormal when the model reconstructs it badly. Every such method
+is built from two separate decisions:
+
+    (a) the TRAINING OBJECTIVE   — what the model is optimised to reconstruct
+    (b) the ANOMALY SCORE        — how the residual is turned into one number
+
+In the literature these two are almost always changed TOGETHER and reported under a
+single name. AE-SSIM (Bergmann et al., 2019) trains on 1-SSIM and scores with 1-SSIM.
+AE-PL (Shvetsova et al., 2021) trains and scores with a VGG feature distance. AE-U
+(Mao et al., 2020) trains with an uncertainty-weighted loss and scores with the same
+uncertainty weighting. So when AE-SSIM beats a plain AE, the published number cannot
+say whether the gain came from (a), from (b), or from their interaction.
+
+    THIS PROJECT SEPARATES (a) FROM (b) AND MEASURES EACH.
+
+The exception in the literature is the gradient-score family (Zimmerer et al., 2019),
+which does change only the score and keeps the objective fixed. That prior work is
+what shows the question is worth asking; nobody has asked it for the reconstruction
+metrics themselves.
+
+--------------------------------------------------------------------------------
+2. WHAT WAS DONE, IN ORDER
+--------------------------------------------------------------------------------
+STEP 1 — Reproduce the baselines faithfully.
+    Ten published methods re-implemented from their original papers and trained under
+    one identical protocol (same split, same architecture, same optimiser, 3 seeds).
+    Purpose: nothing built on top means anything if the baselines are wrong.
+    -> see 03_RESULTS_BASELINES.txt
+
+STEP 2 — A1: cross the training objective with the anomaly score.
+    Train an autoencoder with each of {L2, SSIM, perceptual, uncertainty}; score every
+    trained model with each of {L2, SSIM, perceptual, gradient, uncertainty}. The
+    diagonal reproduces the published methods; the off-diagonal is new.
+    -> see 04_EXP_A1_SCORE_VS_OBJECTIVE.txt
+
+STEP 3 — A3: if different scores read different things, combine them.
+    Rank-average the score vectors already produced in Step 1. No training at all.
+    Two combinations pre-registered before looking at any result.
+    -> see 05_EXP_A3_ENSEMBLE.txt
+
+STEP 4 — A4: if a method's gain is really in its score, get that score without its training.
+    Freeze a trained plain autoencoder, fit ONLY a variance head on top of it, and
+    score as AE-U does. Sweep the head's capacity so a failure cannot be blamed on size.
+    -> see 06_EXP_A4_POSTHOC_UNCERTAINTY.txt
+
+--------------------------------------------------------------------------------
+3. HEADLINE RESULTS
+--------------------------------------------------------------------------------
+R1. THE BASELINES REPRODUCE.
+    9 of 10 methods land within one standard deviation of their published values;
+    four within 0.2 AUC points. The one exception is DAE (n=1 seed only).
+
+R2. THE ANOMALY SCORE CARRIES MOST OF THE REPORTED GAIN.
+    Across the A1 grid, varying the SCORE moves accuracy by 26.7 AUC points; varying
+    the TRAINING OBJECTIVE moves it by 14.2. Concretely, a plain L2 autoencoder simply
+    RESCORED with SSIM reaches 77.4 vs its own 68.3 — 73% of AE-SSIM's entire published
+    advantage, with no retraining whatsoever.
+
+R3. BUT THE OBJECTIVE AND THE SCORE MUST MATCH.
+    Training on a metric and scoring with a different one is actively harmful, not
+    merely suboptimal. Every "trained on X, scored with L2" cell falls BELOW the plain
+    autoencoder, and the perceptually-trained model scored in pixel space drops to 44.9
+    — below chance. The objective's role is not to build a better reconstruction; it is
+    to shape WHAT KIND OF RESIDUAL is left behind so the matching metric can read it.
+
+R4. AE-U's ADVANTAGE IS ALMOST ENTIRELY ITS SCORING RULE.
+    AE-U reaches 86.9 vs the plain AE's 68.3. But AE-U scored with plain L2 gives 65.4
+    — WORSE than the plain autoencoder. Uncertainty training does not produce a better
+    reconstructor. Confirmed constructively in A4: a variance head fitted post hoc onto
+    a FROZEN plain autoencoder recovers 74% of that advantage for 0.62% extra parameters.
+    The remaining 26% (4.81 points) is what joint training genuinely buys.
+
+R5. COMBINING TWO COMPLEMENTARY SCORES BEATS THE BEST PUBLISHED METHOD.
+    A rank-average of the perceptual and uncertainty scores reaches 88.74 vs the best
+    single method's 87.58, with zero additional training. It survives a selection-aware
+    validation: chosen on one half of the test set, it wins on the unseen half in 100%
+    of 150 splits.
+    Reported alongside its own negative control: the two PRE-REGISTERED ensembles both
+    LOST, because equal-weight averaging is not robust to a weak member.
+
+--------------------------------------------------------------------------------
+4. HOW TO READ THIS DOCUMENTATION
+--------------------------------------------------------------------------------
+    00_OVERVIEW.txt ................ this file
+    01_METHODS.txt ................. every method, from its ORIGINAL authors:
+                                     motivation, equations, our implementation
+    02_PROTOCOL.txt ................ data, split, hyperparameters, metrics, seeds,
+                                     and the reproducibility machinery
+    03_RESULTS_BASELINES.txt ....... the reproduction table, all numbers
+    04_EXP_A1_SCORE_VS_OBJECTIVE.txt  novel experiment 1 + decomposition
+    05_EXP_A3_ENSEMBLE.txt ......... novel experiment 2 + pre-registration
+    06_EXP_A4_POSTHOC_UNCERTAINTY.txt novel experiment 3 + capacity control
+    07_CLAIMS_AND_LIMITS.txt ....... what may and may not be claimed
+    08_REFERENCES.txt .............. primary sources, DOIs verified programmatically
+    09_REPORT_AND_SLIDE_OUTLINE.txt  structure for the written report and the slides
+
+A NOTE ON ATTRIBUTION
+    Methods are described from the papers that INTRODUCED them, not from the benchmark
+    that later compared them. Cai et al. (2025) is used for one purpose only: as the
+    reference column our reproduction is checked against. Where this project follows
+    their implementation (architecture, hyperparameters, data split) that is stated
+    explicitly, because it is what makes the comparison fair.

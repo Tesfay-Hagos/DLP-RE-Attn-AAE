@@ -1,0 +1,151 @@
+================================================================================
+EXPERIMENT A4 (NOVEL)
+Is AE-U's advantage a training paradigm, or a post-hoc scoring wrapper?
+================================================================================
+
+--------------------------------------------------------------------------------
+1. MOTIVATION
+--------------------------------------------------------------------------------
+AE-U (Mao et al., 2020) is the most interesting method in the study: 86.86 AUC, within
+0.7 of the ImageNet-dependent best, for 256 extra parameters and no pre-training.
+
+A1 produced a sharp clue about WHY. AE-U scored with plain L2 gives 65.4 — BELOW the
+plain autoencoder's 68.35. Uncertainty training does not build a better reconstructor;
+it builds a slightly worse one. So the entire +18.5 must live in the scoring rule:
+dividing the residual by the model's own predicted per-pixel variance.
+
+But A1 could not close the argument. The complementary cell — a plain autoencoder scored
+with the uncertainty rule — is undefined, because that score needs a log-variance output
+only the AE-U backbone has.
+
+    A4 obtains that cell by another route: build the missing log-variance head onto an
+    ALREADY-TRAINED, FROZEN plain autoencoder.
+
+If uncertainty is genuinely a scoring wrapper, it should be recoverable this way, and
+joint training was never necessary. If it is genuinely a training paradigm, the frozen
+reconstruction will not support it and the attempt will fail. Both outcomes are results.
+
+--------------------------------------------------------------------------------
+2. METHOD
+--------------------------------------------------------------------------------
+    1. Take the plain autoencoder already trained in Step 1 for that seed.
+    2. Freeze it completely: .eval() mode, requires_grad = False on every parameter.
+       The reconstruction x_hat is fixed and never changes again.
+    3. Attach a variance head that reads the autoencoder's last decoder feature map and
+       emits a per-pixel log-variance at full resolution.
+    4. Train ONLY that head, with AE-U's own objective, on the frozen reconstruction:
+
+           L = mean_i [ exp(-log_var_i) * (x_i - x_hat_i)^2 + log_var_i ]
+
+       The residual term is a constant with respect to the head's parameters; the head
+       can only learn where the FIXED errors are expected to be large.
+    5. Score exactly as AE-U does:
+
+           s(x) = mean_i [ exp(-log_var_i) * (x_i - x_hat_i)^2 ]
+
+    250 epochs, Adam lr 1e-3, 3 seeds — identical to every other run.
+
+CRITICAL IMPLEMENTATION DETAIL
+    The autoencoder is re-asserted into .eval() at the start of EVERY epoch. In train
+    mode its BatchNorm layers would use batch statistics and mutate their running
+    statistics, so the "frozen" model would silently drift while being measured, and the
+    experiment would be measuring nothing.
+
+THE CAPACITY CONTROL — without this the experiment is uninterpretable
+    The head at its smallest is 256 parameters: exactly AE-U's parameter increment
+    (2,351,440 - 2,351,184), so the comparison is fair on capacity.
+
+    But the head reads features that were optimised for reconstruction alone and never
+    for variance. A failure at 256 parameters would therefore have TWO explanations:
+    uncertainty genuinely needs joint training, OR 256 parameters cannot extract it from
+    features that do not encode it conveniently. These must be separated, so the head
+    width is swept over five settings.
+
+--------------------------------------------------------------------------------
+3. RESULTS
+--------------------------------------------------------------------------------
+    head width   params     % of AE   AUC (%)          recovers
+    ---------------------------------------------------------------
+    plain AE     --         --        68.35 +- 0.65      0%   (the model being wrapped)
+    w = 1        256        0.01%     66.94 +- 1.15     -8%   FAILS
+    w = 2        14,528     0.62%     82.00 +- 0.83     74%
+    w = 4        47,488     2.02%     82.05 +- 0.55     74%
+    w = 8        168,704    7.18%     81.81 +- 0.71     73%
+    w = 16       632,320    26.9%     78.22 +- 4.77     53%   (unstable, see 4.3)
+    ---------------------------------------------------------------
+    AE-U joint   256        0.01%     86.86 +- 0.44    100%
+
+    "recovers" = (method - 68.35) / (86.86 - 68.35), the fraction of AE-U's advantage.
+
+--------------------------------------------------------------------------------
+4. FINDINGS
+--------------------------------------------------------------------------------
+
+4.1 UNCERTAINTY SCORING IS LARGELY A POST-HOC WRAPPER.
+    A 14,528-parameter head — 0.62% of the autoencoder it sits on — fitted to a network
+    whose weights are never touched, recovers 74% of AE-U's advantage: 82.00 against the
+    plain autoencoder's 68.35, an increase of +13.65 for no reconstruction retraining.
+
+    Practical consequence: an existing trained autoencoder can be upgraded substantially
+    without retraining it. Note also that 82.00 BEATS fully-retrained AE-SSIM (80.81),
+    and needs no ImageNet weights.
+
+4.2 THE CAPACITY THRESHOLD IS SHARP, AND THEN IT PLATEAUS.
+    Between w=1 and w=2 the result jumps +15.06 points. After that it is flat: 82.00,
+    82.05, 81.81 across a 12x range of capacity, a spread of 0.24.
+
+    The plateau is the evidence that matters. Three widths spanning an order of
+    magnitude landing within a quarter of a point means the ceiling is NOT capacity
+    starvation. Post-hoc extraction saturates at ~82.
+
+4.3 4.81 POINTS (26%) ARE IRREDUCIBLE, AND THAT IS WHAT JOINT TRAINING BUYS.
+    AE-U reaches 86.86; the best post-hoc head reaches 82.05. The gap does not close
+    with more capacity. The natural reading: in joint training the reconstruction and
+    the variance CO-ADAPT — the encoder is free to arrange its features so the variance
+    is easy to predict, and the decoder is free to leave residuals the variance can
+    explain. A frozen reconstruction forecloses that, and no amount of head capacity
+    recovers it.
+
+    So the honest three-part statement is:
+        * uncertainty training does NOT improve the reconstruction (A1: 65.4 < 68.35)
+        * 74% of its benefit is a scoring wrapper obtainable post hoc for 0.62% params
+        * 26% requires the joint optimisation and cannot be retrofitted
+
+4.4 THE w=16 RESULT IS AN OPTIMISATION FAILURE, NOT A CAPACITY RESULT — DO NOT REPORT
+    IT AS EVIDENCE ABOUT CAPACITY.
+    Initial training losses were 619, 3,381 and 54,824 for the three seeds; convergence
+    took over 200 epochs; seed 44 finished at -4.01 where the others reached -4.06/-4.10,
+    and scored 71.5 against their ~81.6. The +-4.77 spread is the giveaway.
+    Cause: exp(-log_var) explodes when a large, poorly-conditioned head initialises
+    log_var badly. This is a known fragility of the heteroscedastic objective, not a
+    statement about how much capacity the task needs.
+    Report widths 1-8; mention w=16 as a stability footnote.
+
+--------------------------------------------------------------------------------
+5. WHAT TO CLAIM
+--------------------------------------------------------------------------------
+SUPPORTED:
+    "Most of AE-U's advantage over a plain autoencoder is a post-hoc scoring wrapper:
+     a variance head fitted to a frozen autoencoder, costing 0.62% additional parameters
+     and no reconstruction retraining, recovers 74% of it. The residual 26% does not
+     close with additional head capacity and is attributable to the co-adaptation of
+     reconstruction and variance during joint training."
+
+DO NOT CLAIM:
+    * that post-hoc equals AE-U — it does not, and the 4.81-point gap is stable
+    * that 256 parameters are insufficient in principle — they are sufficient when
+      trained jointly (that is precisely AE-U); they are insufficient only when reading
+      frozen features
+    * anything from w=16
+
+--------------------------------------------------------------------------------
+6. WHY THIS IS THE MOST PUBLISHABLE PIECE
+--------------------------------------------------------------------------------
+    A1 and A3 are analysis: they explain where existing methods' accuracy comes from.
+    A4 converts that analysis into a METHOD — a recipe someone can apply to an
+    autoencoder they already have — and it is the piece with a mechanism attached
+    (co-adaptation) rather than only an observation.
+
+    It also carries its own negative control (w=1 fails), its own capacity control
+    (the plateau), and a documented stability caveat (w=16). That structure is what
+    makes a small result defensible.

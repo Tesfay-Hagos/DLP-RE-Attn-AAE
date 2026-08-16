@@ -1,0 +1,125 @@
+================================================================================
+EXPERIMENT A1 (NOVEL)
+Separating the training objective from the anomaly score
+================================================================================
+
+--------------------------------------------------------------------------------
+1. MOTIVATION
+--------------------------------------------------------------------------------
+Every metric-based method in Step 1 changed two things at once:
+
+    AE-SSIM   trains on 1-SSIM        AND scores with 1-SSIM
+    AE-PL     trains on perceptual    AND scores with perceptual
+    AE-U      trains with uncertainty AND scores with uncertainty
+
+So "AE-SSIM 80.9 vs AE 67.5" is a single number covering two distinct mechanisms, and
+the published table cannot say which one earned the +13.4.
+
+BE ACCURATE ABOUT THE PRIOR WORK. The gradient-score family (Zimmerer et al., 2019)
+DOES decouple the two: AE-Grad has the same backbone, the same weights and the same
+training as a plain AE, and differs only in the score — reaching 73.86 against 68.35.
+So the idea that the score is a lever is established. What has never been done is
+crossing the RECONSTRUCTION-METRIC axis: nobody has trained with SSIM and scored with
+perceptual, or trained with L2 and scored with SSIM.
+
+    A1 does exactly that.
+
+--------------------------------------------------------------------------------
+2. DESIGN
+--------------------------------------------------------------------------------
+Train an autoencoder with each of 4 objectives; score every trained model with each of
+5 scoring functions. The diagonal reproduces the published methods; everything else
+is new.
+
+    training objectives : L2, SSIM, perceptual, uncertainty (AE-U)
+    scoring functions   : L2, SSIM, perceptual, input-gradient, uncertainty
+
+COST: 12 trainings (4 objectives x 3 seeds). The other 39 cells are RESCORES — the
+stored weights are reloaded and the test set is scored again. No extra training at all.
+
+TWO STRUCTURAL CONSTRAINTS, both honest limitations rather than oversights:
+  * The uncertainty SCORE requires a predicted log-variance, which only the AE-U
+    backbone has. That column exists for the AE-U row alone; the other three cells are
+    undefined, not missing. The grid is therefore not fully crossed.
+  * Consequently the "plain AE + uncertainty score" cell — the one that would isolate
+    AE-U's score cleanly — cannot be computed here at all. Experiment A4 was built
+    specifically to obtain it by another route.
+
+--------------------------------------------------------------------------------
+3. RESULTS
+--------------------------------------------------------------------------------
+Image AUC (%), mean over 3 seeds. Rows = what it was TRAINED with, columns = what it
+was SCORED with. Diagonal cells (published methods) marked *.
+
+                    |   L2     grad    percep   SSIM     uncert
+    ----------------+--------------------------------------------
+    trained L2      |  68.3*   73.9     75.9    77.4       --
+    trained SSIM    |  61.9    75.2     68.2    80.8*      --
+    trained percep  |  44.9    64.9     87.6*   44.0       --
+    trained uncert  |  65.4    71.7     73.6    75.1      86.9*
+
+    spread across TRAINING objectives (row means) : 14.2 AUC points
+    spread across SCORING functions   (col means) : 26.7 AUC points
+
+--------------------------------------------------------------------------------
+4. DECOMPOSITION
+--------------------------------------------------------------------------------
+For each published method, split its gain over the plain AE (68.3) into:
+    score-only  = plain L2 model, rescored with that method's score
+    train-only  = that method's model, rescored with plain L2
+    interaction = total - score-only - train-only
+
+  method     total   score-only   train-only   interaction   score share
+  ------------------------------------------------------------------------
+  AE-Grad    +5.6      +5.6          0.0          0.0          100%
+  AE-SSIM   +12.5      +9.1         -6.4         +9.8           73%
+  AE-U      +18.6       n/a          -2.9         n/a          >100%
+  AE-PL     +19.3      +7.6         -23.4        +35.1           39%
+
+--------------------------------------------------------------------------------
+5. FINDINGS
+--------------------------------------------------------------------------------
+
+F1. THE SCORE MATTERS ROUGHLY TWICE AS MUCH AS THE OBJECTIVE.
+    Column spread 26.7 vs row spread 14.2. Averaged over models, changing how you read
+    the residual moves accuracy about twice as far as changing what you optimised.
+
+F2. A FREE +9.1: RESCORING A PLAIN AUTOENCODER.
+    The plain L2 autoencoder, simply rescored with SSIM, reaches 77.4 against its own
+    68.3. That is 73% of AE-SSIM's entire published advantage, obtained with NO
+    retraining — the same weights, a different function applied at test time.
+    Note also that for the L2-trained model, SSIM scoring beats L2 scoring: the best
+    score for a plain autoencoder is not the loss it was trained with.
+
+F3. MISMATCHING THE PAIR IS ACTIVELY HARMFUL, NOT MERELY SUBOPTIMAL.
+    Every "trained on a metric, scored with L2" cell falls BELOW the plain AE:
+        SSIM-trained scored L2        61.9   (-6.4)
+        uncertainty-trained scored L2 65.4   (-2.9)
+        perceptual-trained scored L2  44.9  (-23.4)  <- BELOW CHANCE
+    The perceptually-trained model's pixel-space residual is ANTI-correlated with
+    abnormality. Perceptual loss does not constrain absolute pixel intensity, so the
+    reconstruction is free to carry a global intensity/contrast offset that dominates
+    any pixel metric. (Worth confirming visually before publishing this specific number
+    — see 07_CLAIMS_AND_LIMITS.txt.)
+
+F4. THE INTERACTION IS LARGER THAN EITHER MAIN EFFECT.
+    AE-PL's interaction term is +35.1, AE-SSIM's +9.8. The two decisions are not
+    additive and the diagonal is the maximum for all three metric-trained models. The
+    right interpretation of a training objective in this setting is therefore NOT "it
+    makes the reconstruction better" — the train-only columns show it makes it WORSE by
+    every pixel measure. It shapes WHAT KIND OF RESIDUAL is left behind, and only the
+    matching metric can read that residual.
+
+F5. AE-U's ADVANTAGE IS NOT A BETTER RECONSTRUCTION.
+    AE-U scored with plain L2 gives 65.4 — below the plain autoencoder's 68.3. Whatever
+    uncertainty training does, it does not produce a model that reconstructs normal
+    anatomy better. Its entire +18.6 must therefore live in the scoring rule. This is
+    the finding experiment A4 then tests constructively.
+
+--------------------------------------------------------------------------------
+6. ONE SENTENCE FOR THE REPORT
+--------------------------------------------------------------------------------
+    "In reconstruction-based anomaly detection on chest radiographs, most of the
+     accuracy attributed to a training objective is in fact delivered by the scoring
+     function paired with it — but only when the two match, because the objective's
+     real role is to shape the residual so that its own metric can read it."

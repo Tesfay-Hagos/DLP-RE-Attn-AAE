@@ -1,0 +1,164 @@
+================================================================================
+STRUCTURE FOR THE WRITTEN REPORT AND THE SLIDES
+================================================================================
+
+--------------------------------------------------------------------------------
+PART A — THE ONE-SENTENCE STORY
+--------------------------------------------------------------------------------
+    "Reconstruction-based anomaly detectors are always presented as a single method,
+     but each is really two decisions — what to optimise and how to read the residual.
+     We separate them, and find the second decision carries most of the accuracy."
+
+Everything below is in service of that sentence. If a figure or paragraph does not
+advance it, cut it.
+
+--------------------------------------------------------------------------------
+PART B — WRITTEN REPORT OUTLINE
+--------------------------------------------------------------------------------
+
+1. INTRODUCTION  (~1 page)
+   - Clinical framing: abnormal findings are rare, diverse, expensive to annotate;
+     normal studies are plentiful. Hence train on normal only.
+   - The reconstruction premise, in one paragraph.
+   - The gap: objective and score are always changed together and reported as one name.
+   - Contributions, as three bullets:
+       (i)   a faithful reproduction of 10 methods under one protocol,
+       (ii)  a factorial separation of objective from score,
+       (iii) two consequences of that separation — a free ensemble that beats the best
+             single method, and a post-hoc uncertainty wrapper.
+
+2. BACKGROUND AND RELATED WORK  (~1.5 pages)
+   Structure it by MECHANISM, not chronology. Use 01_METHODS.txt.
+   2.1 The reconstruction baseline and why pixel error is weak on radiographs [R2]
+   2.2 Changing the metric: SSIM [M1, F1], perceptual [M2, F2, F3, F4]
+   2.3 Changing the latent space: VAE [M5]
+   2.4 Changing the score alone: gradient methods [M4]  <- credit this explicitly, it is
+       the prior art closest to our contribution
+   2.5 Modelling uncertainty: AE-U [M3], and its roots [F5, F6]
+   2.6 Changing the input: denoising [M6], and the U-Net it uses [F7]
+   2.7 Comparative studies [R1, R3, B1] and where this work differs from them
+
+3. METHOD  (~2 pages)
+   3.1 Dataset and split [D1, D2] — stress that the split is fixed and inherited
+   3.2 Shared architecture and hyperparameters — stress that nothing was tuned
+   3.3 The four objectives and five scores, with equations (01_METHODS.txt)
+   3.4 The A1 factorial design, and the two cells that are structurally undefined
+   3.5 A3: rank averaging, and why pre-registration was necessary
+   3.6 A4: the frozen-model protocol and the capacity control
+
+4. EXPERIMENTAL SETUP  (~0.5 page)
+   Seeds, metrics, hardware, run bookkeeping (02_PROTOCOL.txt section 6).
+   Include the config-fingerprint guard — it is a genuine methodological strength and
+   distinguishes this from a notebook full of uncontrolled runs.
+
+5. RESULTS  (~3 pages)
+   5.1 Reproduction table + the three groupings (03)
+   5.2 A1 grid, decomposition table, the four findings (04)
+   5.3 A3: the failed pre-registered ensembles FIRST, then the surviving pair, then the
+       selection-aware validation (05)
+   5.4 A4: the capacity curve and the 26% that does not close (06)
+
+6. DISCUSSION  (~1 page)
+   - Why the score dominates: the objective shapes the residual rather than improving it
+   - Why co-adaptation explains A4's irreducible gap
+   - Practical implications: rescore before retraining; uncertainty is cheap to add
+   - Threats to validity, in full (07 section 4). Do not bury these.
+
+7. CONCLUSION AND FUTURE WORK  (~0.5 page)
+   Multi-dataset validation as the clear next step (07, O1).
+
+--------------------------------------------------------------------------------
+PART C — SLIDE DECK (12-14 slides, ~15 min)
+--------------------------------------------------------------------------------
+
+S1  TITLE
+    "Where does reconstruction-based anomaly detection actually get its accuracy?"
+    RSNA chest X-rays / unsupervised / 10 methods reproduced + 3 new experiments
+
+S2  THE PROBLEM
+    One chest X-ray, normal vs pneumonia, side by side.
+    "Train on normal only. Flag what reconstructs badly."
+
+S3  THE CATCH  — the key setup slide
+    A two-column diagram:
+        TRAINING OBJECTIVE  |  ANOMALY SCORE
+        what we optimise    |  how we read the residual
+    "AE-SSIM changes BOTH. So does AE-PL. So does AE-U.
+     Which one earns the +13?"
+
+S4  BASELINES REPRODUCE
+    The reproduction table, with the delta column highlighted.
+    One line: "9 of 10 within one standard deviation, four within 0.2."
+    Purpose of the slide: earn the right to be believed later.
+
+S5  THE FLAT CLUSTER
+    Bar chart, methods sorted. Colour the 67-69 cluster one colour, the 80+ group another.
+    "Changing the bottleneck does nothing. Changing the metric does everything."
+
+S6  EXPERIMENT A1 — THE GRID           <- the centrepiece slide
+    The 4x5 heatmap. Diagonal boxed.
+    Two numbers at the bottom: rows 14.2, columns 26.7.
+
+S7  A1 — THREE THINGS THE GRID SAYS
+    1. Rescoring a plain AE with SSIM: 68.3 -> 77.4, free
+    2. Mismatch is harmful: perceptual-trained, pixel-scored = 44.9, below chance
+    3. AE-U scored with L2 = 65.4, BELOW the plain AE
+
+S8  THE DECOMPOSITION
+    The four-row table (total / score-only / train-only / interaction).
+    "The objective doesn't make the reconstruction better. It makes the residual READABLE."
+
+S9  EXPERIMENT A4 — CAN WE GET AE-U's SCORE WITHOUT ITS TRAINING?
+    Diagram: frozen AE (padlock icon) + small trainable variance head.
+    Capacity curve: 66.9 at w=1, plateau ~82 at w=2-8, AE-U's 86.9 as a dashed line.
+    "74% recovered for 0.62% extra parameters. 26% needs joint training."
+
+S10 EXPERIMENT A3 — COMBINING SCORES
+    Show the FAILURE first: the two pre-registered combinations, both below the line.
+    Then the winner: perceptual+uncertainty at 88.74.
+    "We pre-registered. Both pre-registered choices lost. That's why you can believe
+     the one that won."
+
+S11 DID IT SURVIVE SELECTION?
+    Three bars: oracle 88.64 / held-out 88.83 / AE-PL 87.66.
+    "Selection bias: -0.20. Same pair wins in 100% of 150 splits."
+
+S12 WHAT THIS MEANS
+    - Rescore before you retrain
+    - Uncertainty scoring is mostly a wrapper, and it is cheap
+    - Naive ensembling is not safe; the right pair is
+
+S13 LIMITS  — do not skip this slide
+    One dataset. Image-level only. n=3 seeds. DAE at n=1. Balanced test set.
+
+S14 NEXT
+    Multi-dataset validation (~3 h): does perceptual+uncertainty still win on VinCXR,
+    BrainTumor, LAG?
+
+--------------------------------------------------------------------------------
+PART D — FIGURES TO PRODUCE
+--------------------------------------------------------------------------------
+F1  Reproduction: ours vs reference, with error bars.        [data: 03]
+F2  Method ranking bar chart, cluster-coloured.              [data: 03]
+F3  A1 heatmap, 4x5, diagonal boxed.                          [data: 04]  <- the key figure
+F4  Decomposition stacked bars (score / train / interaction). [data: 04]
+F5  A4 capacity curve, log-x, AE-U as a dashed reference.     [data: 06]
+F6  A3: all 15 subsets sorted, pre-registered ones marked,
+    AE-PL as a horizontal line.                               [data: 05]
+F7  Selection-aware validation: oracle / held-out / baseline. [data: 05]
+F8  Qualitative panel: input, reconstruction, error map for
+    AE / AE-SSIM / AE-PL / AE-U.                              [NOT YET PRODUCED — see 07, O2]
+
+    F8 is the one missing figure, and it is also what would explain the below-chance
+    cell. Worth producing before submission.
+
+--------------------------------------------------------------------------------
+PART E — WRITING RULES FOR THIS PROJECT
+--------------------------------------------------------------------------------
+    * Attribute every method to the paper that introduced it (08_REFERENCES.txt).
+      Use the comparative study for the reference column only.
+    * Never state a difference below ~1.5 AUC points as a difference.
+    * Always give n. DAE is n=1 and must be labelled every time it appears.
+    * Report the failures: the pre-registered ensembles, the w=1 head, the DAE gap.
+      They are what make the successes credible.
+    * Say "on RSNA" in every general-sounding sentence until the multi-dataset run exists.

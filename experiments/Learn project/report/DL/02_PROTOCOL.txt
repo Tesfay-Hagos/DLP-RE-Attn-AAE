@@ -1,0 +1,171 @@
+================================================================================
+EXPERIMENTAL PROTOCOL
+Data, preprocessing, split, hyperparameters, metrics, seeds, and the machinery
+that keeps 100+ runs comparable.
+================================================================================
+
+--------------------------------------------------------------------------------
+1. DATASET
+--------------------------------------------------------------------------------
+RSNA Pneumonia Detection Challenge — frontal chest radiographs.
+The images are drawn from the NIH ChestX-ray database (Wang et al., CVPR 2017); the
+pneumonia annotations were added by expert thoracic radiologists for the challenge
+(Shih et al., Radiology: Artificial Intelligence, 2019).
+
+Labels used here (image level only):
+    normal    = radiograph with no acute finding
+    abnormal  = "Lung Opacity" (radiographic pneumonia)
+
+SPLIT (fixed, not resampled by us)
+    train        3851 images   ALL NORMAL — this is what makes the setting unsupervised
+    test normal  1000 images
+    test abnormal 1000 images  (50.0% prevalence by construction)
+
+    The split is taken verbatim from the reference study's released `data.json`, which
+    lists the exact filenames per fold. This is the single most important choice for
+    comparability: a re-derived split of the same dataset would give "similar setup,
+    different numbers" and the reproduction check would be meaningless. Our loader
+    verifies the 3851/1000/1000 counts and refuses to proceed otherwise.
+
+    NOTE the 50% prevalence is an artefact of the benchmark's balanced test set, not a
+    clinical base rate. AP values must be read against a 0.50 chance level, not against
+    the true prevalence of pneumonia in a screening population.
+
+--------------------------------------------------------------------------------
+2. PREPROCESSING
+--------------------------------------------------------------------------------
+    PNG -> greyscale ("L") -> bilinear resize to 64 x 64 -> /255 -> normalise (0.5, 0.5)
+
+    Final pixel range: [-1, 1].
+
+    This range is not cosmetic. The SSIM implementation maps back to [0,1] internally,
+    and the perceptual loss de-normalises with mean = std = 0.5 before applying ImageNet
+    statistics. Feeding [0,1] data would silently corrupt both. The notebook asserts the
+    range after loading.
+
+    NO augmentation of any kind: no flips, no crops, no intensity jitter. Augmentation
+    would change what "normal" means to the model and break comparability with the
+    published numbers.
+
+WHY 64x64
+    The reference study reports that 64x64 performs comparably to 128x128 for this task
+    while costing far less. We adopt 64 for the same reason. A consequence worth stating
+    in the report: at 64x64 a subtle opacity occupies very few pixels, which is part of
+    why absolute accuracies here are in the 60-90 range rather than higher.
+
+    Practical note: because the pipeline resizes to 64 anyway, we pre-resized the dataset
+    once and verified the resulting tensors are BIT-IDENTICAL to resizing on the fly.
+    Dataset size drops 554 MB -> 15 MB and load time 77 s -> 9 s, with no numerical change.
+
+--------------------------------------------------------------------------------
+3. HYPERPARAMETERS  (adopted, not tuned)
+--------------------------------------------------------------------------------
+    input size            64 x 64 x 1
+    latent size           16
+    bottleneck width      1024
+    base channel width    16
+    encoder/decoder depth 1 block per stage
+    epochs                250
+    batch size            64
+    optimiser             Adam, lr 1e-3, weight decay 0
+    LR schedule           none
+    pixel range           [-1, 1]
+
+    Every value is taken from the reference implementation's defaults. None was tuned by
+    us. Tuning before reproducing would make any gap uninterpretable — you could never
+    tell a real difference from a lucky hyperparameter. Tuning (e.g. via Optuna) is
+    listed as future work, on top of a verified baseline.
+
+    Per-method additions:
+      DAE          noise_res 16, noise_std 0.2, U-Net depth 5 / width 2^6
+      VAE          KL weight 0.005
+      AE-PL        VGG-19 relu4_2, per-channel ImageNet normalisation, relative L1
+      A4 head      see 06_EXP_A4_POSTHOC_UNCERTAINTY.txt
+
+--------------------------------------------------------------------------------
+4. METRICS
+--------------------------------------------------------------------------------
+    AUC   area under the ROC curve over the 2000 test images. Threshold-free, and the
+          primary number throughout. Chance = 50.
+    AP    average precision. Chance = 50 here because the test set is balanced.
+
+    Both are RANK statistics. Three consequences we rely on:
+      * any monotone transform of the scores leaves them unchanged — which is why rank
+        averaging is a legitimate way to combine scores of incompatible scale (A3),
+      * the constant 1/B factor introduced by batched gradient scoring is invisible,
+      * scores from different methods can be compared only through their ranking, never
+        through their raw magnitude.
+
+    Also recorded per run: mean score on normal images, mean score on abnormal images,
+    final training loss, parameter count, wall-clock minutes.
+
+--------------------------------------------------------------------------------
+5. SEEDS AND VARIANCE
+--------------------------------------------------------------------------------
+    Every method is trained with 3 seeds: 42, 43, 44 (DAE: seed 42 only — see below).
+    The seed controls weight initialisation, batch ordering, and DAE's noise sampling.
+    It does NOT control the data split, which is fixed by the released file.
+
+    All tables report mean +- population standard deviation over seeds. Our observed
+    spread (0.35 to 1.41 AUC points) is comparable to the published spreads (0.2 to 1.1),
+    which is itself a sanity check: a much tighter spread would suggest we were not
+    really re-initialising, a much wider one that something was unstable.
+
+    RULE FOR THE WRITE-UP: with n=3, differences below roughly 1.5 AUC points are not
+    interpretable. Several comparisons in this study are deliberately reported as "no
+    difference" for that reason (AE vs AE-l1 vs VAE).
+
+    DAE EXCEPTION: DAE costs ~72x an autoencoder run (82 min vs 1.6 min on a T4). Three
+    seeds of it would have exceeded the entire compute budget for the project. It is
+    reported at n=1 and must not be compared to another method on a sub-1-point gap.
+
+--------------------------------------------------------------------------------
+6. REPRODUCIBILITY MACHINERY
+--------------------------------------------------------------------------------
+This project ran 100+ runs across two machines (a laptop CPU and Kaggle GPU sessions)
+over several days, with sessions being interrupted. Three mechanisms keep the results
+trustworthy; each exists because its absence caused a real bug earlier in the work.
+
+(a) DETERMINISTIC RUN IDENTITY
+    Every run has an id derived from (method, parameters, seed) — e.g. `a1-l2-ssim_s43`.
+    Results, per-image scores, weights and a manifest are stored under that id. Nothing
+    is ever named by hand, so a save and a later restore cannot disagree about a name.
+
+(b) CONFIG FINGERPRINT — the parameter-mixing guard
+    Each stored run records the global settings it was produced under (image size, latent
+    size, depths, epochs, batch size, learning rate, weight decay, pixel range). Loading
+    a run verifies that fingerprint against the CURRENT settings and REFUSES on mismatch.
+    A result trained at 64px/lr1e-3 can therefore never be silently reused after those
+    settings change. A shortened run additionally encodes its epoch count in the id, so a
+    2-epoch smoke test can never be mistaken for a 250-epoch result.
+
+(c) EVAL-MODE DISCIPLINE
+    Every reload path calls .eval() before scoring, and the frozen model in experiment A4
+    is re-asserted into eval() at every epoch. This is not defensive tidiness: scoring in
+    train mode makes BatchNorm use batch statistics AND mutate its running statistics, so
+    the "frozen" baseline drifts while it is being measured. Earlier in the project this
+    produced a 0.85-vs-0.95 discrepancy that took a long time to find.
+
+VERIFICATION HARNESS
+    A smoke test trains each backbone for 2 epochs, reloads it, and re-scores. For
+    deterministic models it asserts the reloaded scores match to 1e-5; for the VAE, whose
+    latent is sampled at test time, it asserts AUC agreement instead. This runs in about
+    a minute and catches save/load regressions before a 250-epoch run is wasted.
+
+--------------------------------------------------------------------------------
+7. COMPUTE
+--------------------------------------------------------------------------------
+    Hardware: NVIDIA Tesla T4 (Kaggle), 15.6 GB. Some early runs on laptop CPU.
+
+    Measured wall clock, 250 epochs:
+        AE / AE-l1 / AE-SSIM / AE-PL / VAE / AE-U    ~1.6 min each on T4
+        DAE                                          ~82 min
+        post-hoc variance head (A4)                  1.5 - 10 min by width
+        every rescore (A1 off-diagonal, A3, swaps)   seconds — no training
+
+    A caution worth recording: an early batch of runs took 18-19 min each because the
+    accelerator change had not taken effect until the session was restarted. The tell was
+    that AE-PL cost the same as AE despite ~50x the FLOPs — when compute is not the
+    bottleneck, all models cost the same. After restarting, AE dropped to 1.6 min and the
+    DAE/AE ratio matched the FLOP ratio (50x measured vs 72x predicted), confirming the
+    workload had become compute-bound as expected.

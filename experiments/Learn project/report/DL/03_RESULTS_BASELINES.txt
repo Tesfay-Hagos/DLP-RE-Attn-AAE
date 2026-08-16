@@ -1,0 +1,108 @@
+================================================================================
+STEP 1 — BASELINE REPRODUCTION
+Ten published methods, one identical protocol, 3 seeds each.
+================================================================================
+
+PURPOSE
+    Not a contribution in itself. This step exists so that every later experiment can be
+    trusted: if our AE-U did not match the published AE-U, then "AE-U's gain is all in
+    the score" would be a statement about our bug, not about the method.
+
+--------------------------------------------------------------------------------
+1. THE TABLE  (RSNA, image-level AUC %, mean +- sd over seeds)
+--------------------------------------------------------------------------------
+
+  method            n   ours            reference       delta    within 1 sd
+  --------------------------------------------------------------------------
+  AE                3   68.35 +- 0.65   67.5 +- 0.9     +0.85    YES
+  AE-l1             3   68.53 +- 0.86   68.1 +- 0.4     +0.43    YES
+  AE-SSIM           3   80.81 +- 0.35   80.9 +- 0.3     -0.09    YES
+  AE-PL             3   87.58 +- 0.27   87.5 +- 0.2     +0.08    YES
+  VAE               3   67.33 +- 1.41   67.9 +- 0.8     -0.57    YES
+  AE-U              3   86.86 +- 0.44   86.5 +- 0.9     +0.36    YES
+  DAE               1   83.87           86.1 +- 0.7     -2.23    NO  (n=1)
+  AE-Grad           3   73.86 +- 0.87   73.7 +- 1.0     +0.16    YES
+  VAE-Grad_rec      3   71.68 +- 1.11   71.6 +- 0.8     +0.08    YES
+  VAE-Grad_combi    3   67.84 +- 1.35   67.4 +- 0.3     +0.44    YES
+
+  Reference column = Cai et al. (2025), Table 6, RSNA. Used ONLY as a target to check
+  our implementations against.
+
+  Average precision (ours): AE 67.48 +- 0.53, AE-PL 85.11, AE-U 85.69, AE-SSIM 79.10.
+  AP tracks AUC closely throughout because the test set is balanced.
+
+--------------------------------------------------------------------------------
+2. READING THE TABLE
+--------------------------------------------------------------------------------
+2.1 THE REPRODUCTION SUCCEEDS.
+    9 of 10 methods land within one standard deviation. Four are within 0.2 points
+    (AE-SSIM -0.09, AE-PL +0.08, VAE-Grad_rec +0.08, AE-Grad +0.16). Our seed spreads
+    (0.35-1.41) are comparable to the published ones (0.2-1.1).
+
+    What this validates, all at once: the dataset is the right one, the split matches,
+    the [-1,1] normalisation is correct, the architectures are faithful (parameter counts
+    agree: AE 2,351,184 vs the published 2.35M), and the training loop is sound.
+
+2.2 THE ONE MISS IS DAE, AND IT IS NOT RESOLVABLE AT n=1.
+    83.87 vs 86.1 +- 0.7. Being a single seed, a real implementation gap cannot be
+    separated from seed variation. Two more seeds would cost ~2.7 h. Until then this
+    row must be reported as n=1 with the gap stated openly, not quietly rounded away.
+
+2.3 THE ORDERING IS THE INTERESTING PART.
+
+      87.58  AE-PL          <- best, but requires ImageNet weights
+      86.86  AE-U           <- within 0.7 of it, and needs NO pre-training
+      83.87  DAE (n=1)      <- also no pre-training, 13x the parameters
+      80.81  AE-SSIM
+      73.86  AE-Grad
+      68.53  AE-l1          }
+      68.35  AE             }  statistically indistinguishable from one another
+      67.84  VAE-Grad_combi }
+      67.33  VAE            }
+
+    Three groupings worth naming in the report:
+
+    (a) THE FLAT CLUSTER (67-69). AE, AE-l1, VAE and VAE-Grad_combi differ by less than
+        our seed noise. Changing the pixel norm from L2 to L1 does nothing. Making the
+        latent space probabilistic does nothing. On this dataset, the standard levers on
+        the RECONSTRUCTION side simply do not move the result.
+
+    (b) THE METRIC JUMP (+12 to +19). Everything that beats the cluster changed HOW THE
+        RESIDUAL IS MEASURED — a structural metric, a deep feature distance, an input
+        gradient, or an uncertainty weighting. None of them changed the bottleneck.
+
+    (c) THE PRE-TRAINING QUESTION. The best method uses ImageNet features. The second
+        best (AE-U) does not, and costs 256 extra parameters. That is the observation
+        that motivates experiments A3 and A4.
+
+2.4 WHY THE PLAIN AE IS SO WEAK — the mechanism the rest of the project builds on.
+    Squared pixel error on a chest radiograph is dominated by high-contrast ANATOMY:
+    rib edges, diaphragm, mediastinal borders. Those structures produce large residuals
+    in every image, normal or not. Pneumonia is a diffuse, low-contrast opacity that
+    barely registers on that scale. The score is therefore mostly measuring "how hard was
+    this image to reconstruct", which is nearly independent of whether it is abnormal.
+    68.35 is what that looks like.
+
+--------------------------------------------------------------------------------
+3. WHAT THIS STEP DOES *NOT* SHOW
+--------------------------------------------------------------------------------
+    It does not explain WHY AE-SSIM beats AE, or WHY AE-U beats both. Each of those
+    methods changed the objective and the score together, so the table alone cannot
+    attribute the gain to either. That is precisely the gap experiment A1 addresses.
+
+--------------------------------------------------------------------------------
+4. RAW PER-SEED VALUES (AUC)
+--------------------------------------------------------------------------------
+    AE               s42 0.6827   s43 0.6918   s44 0.6759
+    AE-l1            s42 0.6746   s43 0.6958   s44 0.6855
+    AE-SSIM          s42 0.8086   s43 0.8035   s44 0.8121
+    AE-PL            s42 0.8774   s43 0.8779   s44 0.8720
+    VAE              s42 0.6562   s43 0.6907   s44 0.6729
+    AE-U             s42 0.8630   s43 0.8691   s44 0.8737
+    DAE              s42 0.8387
+    AE-Grad          s42 0.7488   s43 0.7393   s44 0.7275
+    VAE-Grad_rec     s42 0.7015   s43 0.7276   s44 0.7215
+    VAE-Grad_combi   s42 0.6599   s43 0.6919   s44 0.6833
+
+    Full machine-readable record: results_dl/all_runs_dl-v1.csv, one row per run, plus
+    a per-run manifest and the per-image score vector for every entry.

@@ -1,0 +1,134 @@
+================================================================================
+CLAIMS AND LIMITS
+What the evidence supports, what it does not, and what is still open.
+Read this before writing a single sentence of the report.
+================================================================================
+
+--------------------------------------------------------------------------------
+1. CLAIMS THAT ARE SUPPORTED
+--------------------------------------------------------------------------------
+C1. "We reproduce ten published anomaly detection methods on RSNA under one protocol;
+     nine of ten fall within one standard deviation of their published values."
+    EVIDENCE: 03_RESULTS_BASELINES.txt. Four within 0.2 points. Parameter counts match.
+
+C2. "The anomaly score, not the training objective, carries most of the reported gain."
+    EVIDENCE: A1 column spread 26.7 vs row spread 14.2; AE-Grad's +5.6 at 100% score;
+    AE-SSIM's 73% score share.
+    QUALIFY IT: this is an average over the grid, and it is NOT a claim that objectives
+    are irrelevant — see C3.
+
+C3. "Objective and score must match; mismatching them is actively harmful."
+    EVIDENCE: every 'trained on a metric, scored with L2' cell falls below the plain AE;
+    interaction terms (+9.8 for AE-SSIM, +35.1 for AE-PL) exceed both main effects.
+
+C4. "A plain autoencoder rescored with SSIM captures 73% of AE-SSIM's advantage with no
+     retraining." (68.3 -> 77.4)
+    EVIDENCE: A1, 3 seeds.
+
+C5. "Uncertainty training does not produce a better reconstructor."
+    EVIDENCE: AE-U scored with plain L2 = 65.4, below the plain AE's 68.35, 3 seeds.
+
+C6. "74% of AE-U's advantage is recoverable post hoc from a frozen autoencoder for 0.62%
+     additional parameters; the remaining 26% does not close with more capacity."
+    EVIDENCE: A4, plateau of 0.24 across a 12x capacity range.
+
+C7. "A rank-average of the perceptual and uncertainty scores reaches 88.74, beating the
+     best single method by 1.16, and survives selection-aware validation."
+    EVIDENCE: A3, 150 split-half selections, wins 100%, selection bias -0.20.
+
+C8. "Naive equal-weight score ensembling fails."
+    EVIDENCE: both pre-registered combinations lost; subsets containing the weak L2
+    member average 80.08 vs 86.44 without it.
+
+--------------------------------------------------------------------------------
+2. CLAIMS THAT ARE *NOT* SUPPORTED — do not write these
+--------------------------------------------------------------------------------
+X1. "This generalises to medical anomaly detection." ONE DATASET. Every number here is
+    RSNA. The correct scope is "on chest radiographs in this benchmark's RSNA split".
+
+X2. "Ensembling improves anomaly detection." It improved for one specific pair, and
+    demonstrably hurt for most subsets. State the pair, not the principle.
+
+X3. "AE-U is unnecessary / can be replaced by the post-hoc head." It cannot: 82.05 vs
+    86.86, and the gap is stable across capacity.
+
+X4. "Our DAE result contradicts the published one." n=1. A single seed cannot separate
+    an implementation gap from seed variation.
+
+X5. "AE-l1 / VAE are worse (or better) than AE." All within seed noise. Report as
+    indistinguishable.
+
+X6. "Larger post-hoc heads degrade performance." The w=16 drop is an optimisation
+    failure (initial losses up to 54,824, +-4.77 spread), not a capacity effect.
+
+X7. "The score is all that matters." The interaction terms are the largest components in
+    the decomposition. The honest statement is that the objective's role is indirect.
+
+--------------------------------------------------------------------------------
+3. OPEN ITEMS, RANKED BY VALUE
+--------------------------------------------------------------------------------
+O1. MULTI-DATASET VALIDATION.  [highest value, ~3 h]
+    Every finding is single-dataset. VinCXR, BrainTumor and LAG use the identical
+    file layout, so the existing loader handles them with a changed name. At 1.6 min per
+    run each dataset costs ~35 min. If perceptual+uncertainty wins there too, C7 becomes
+    a general claim instead of an RSNA observation. If it does not, that is equally worth
+    knowing and must be reported.
+
+O2. VISUAL CHECK OF THE BELOW-CHANCE CELL.  [30 min]
+    AE-PL scored with L2 gives 44.9 — below chance, consistently across 3 seeds. The
+    proposed explanation is that perceptual training leaves a global intensity offset
+    that dominates any pixel metric. Plot input / reconstruction / error map for an
+    AE-PL model beside an AE one. If the reconstruction looks like a plausible
+    radiograph at the wrong brightness, the explanation is confirmed and the finding
+    becomes more interesting. Until then, report the number and label the explanation a
+    hypothesis.
+
+O3. TWO MORE DAE SEEDS.  [~2.7 h]
+    Closes the only reproduction miss, or confirms it is real.
+
+O4. MECHANISM OF THE LEARNED VARIANCE.  [~1 h]
+    What does log_var actually key on — anatomy, edges, high-frequency texture? A figure
+    correlating the predicted variance map with image structure would turn C5/C6 from an
+    observation into an explanation. This is the piece most likely to lift the work from
+    "measurement" to "understanding".
+
+O5. WEIGHTED ENSEMBLING.  [~1 h]
+    C8 says equal weights fail because of a weak member. The obvious follow-up is
+    performance-weighted or rank-correlation-pruned combination. Cheap: no training.
+
+--------------------------------------------------------------------------------
+4. THREATS TO VALIDITY — state these in the report
+--------------------------------------------------------------------------------
+T1. SINGLE DATASET. See X1/O1.
+
+T2. NO SEPARATE VALIDATION SET. The benchmark protocol trains for a fixed 250 epochs and
+    evaluates on the test set; there is no held-out set for model selection, because the
+    setting provides no labelled normal/abnormal data to select on. We inherit this. It
+    is why A3 needed an explicit split-half protocol rather than a validation set.
+
+T3. BALANCED TEST SET. 50% prevalence is a benchmark construction, not clinical reality.
+    AP in particular would be far lower at realistic prevalence.
+
+T4. IMAGE-LEVEL ONLY. Nothing here says where in the image the abnormality is. The
+    scores are single numbers per image; no localisation claim is made or supported.
+
+T5. n=3 SEEDS. Adequate for the large effects reported (+9 to +19 points), inadequate for
+    sub-1.5-point differences. Every comparison in this project either clears that bar or
+    is explicitly reported as indistinguishable.
+
+T6. THE ARCHITECTURE AND HYPERPARAMETERS ARE INHERITED, NOT TUNED. This is deliberate
+    (it is what makes the reproduction valid) but it means no claim is made about
+    optimal settings, and the ranking could change under tuning.
+
+--------------------------------------------------------------------------------
+5. HONESTY NOTES TO CARRY INTO THE WRITE-UP
+--------------------------------------------------------------------------------
+    * Report the FAILED pre-registered ensembles as prominently as the successful pair.
+      The credibility of C7 rests on having pre-registered at all.
+    * Report the w=1 post-hoc failure. It is what makes the capacity control meaningful.
+    * Report the DAE gap and its n=1 status rather than omitting the row.
+    * State that the gradient-score family already decouples objective from score. The
+      contribution is crossing the reconstruction-metric axis, not the idea that the two
+      are separable — that idea has prior art and should be credited.
+    * The best cell in the A1 grid is AE-PL, an existing method. A1 and A4 EXPLAIN the
+      state of the art; only A3 exceeds it, and only by 1.16 points on one dataset.

@@ -1,0 +1,156 @@
+================================================================================
+EXPERIMENT A3 (NOVEL)
+Do different anomaly scores read different things? Combining them, free.
+================================================================================
+
+--------------------------------------------------------------------------------
+1. MOTIVATION
+--------------------------------------------------------------------------------
+A1 showed the scoring function is the dominant lever. That raises an immediate question:
+do the different scores read the SAME signal through different lenses, or do they read
+DIFFERENT parts of the residual?
+
+    * SSIM reads local structure — variance and covariance in an 11x11 window
+    * the perceptual distance reads semantic/textural mismatch in VGG feature space
+    * AE-U's score reads residual relative to the model's own predicted uncertainty
+
+If these are complementary, combining them should beat any one of them. If they are
+redundant, combining changes nothing. Either answer is informative.
+
+COST: zero training. Every run in Step 1 already stored its per-image score vector, so
+this experiment only loads and combines arrays.
+
+--------------------------------------------------------------------------------
+2. METHOD
+--------------------------------------------------------------------------------
+RANK AVERAGING, not score averaging.
+
+    The four scores live on incompatible scales — L2 around 1e-2, perceptual around 0.3,
+    AE-U's is negative. A plain mean would simply return whichever member has the largest
+    numerical range. Each score vector is therefore converted to ranks in [0,1] and the
+    ranks are averaged. AUC and AP depend only on ordering, so nothing is lost by
+    discarding the magnitudes.
+
+PRE-REGISTRATION — the methodological point of this experiment.
+
+    With 4 members there are 15 non-empty subsets. Trying all 15 on the test set and
+    reporting the best one is test-set fitting; it would not survive review and it would
+    not generalise. So two combinations were declared IN CODE before any result was seen:
+
+      all4 = L2 + SSIM + perceptual + uncertainty
+             the assumption-free choice: use everything.
+      noIN = L2 + SSIM + uncertainty
+             pre-registered because it answers an independent question. AE-PL, the best
+             single method, needs ImageNet weights. If a combination without any
+             pre-trained component reaches its accuracy, that is practically useful
+             wherever ImageNet pre-training is unavailable or unwanted.
+
+    All 15 subsets are still computed and printed, but explicitly labelled EXPLORATORY.
+
+--------------------------------------------------------------------------------
+3. RESULT PART 1 — THE PRE-REGISTERED COMBINATIONS BOTH FAILED
+--------------------------------------------------------------------------------
+    all4   L2+SSIM+perceptual+uncertainty   84.88 +- 0.25    vs best single 87.58  (-2.69)
+    noIN   L2+SSIM+uncertainty              81.91 +- 0.36    vs best single 87.58  (-5.66)
+
+    This is a genuine negative result and it should be reported as prominently as the
+    positive one. Pre-registering is what makes it credible rather than embarrassing.
+
+    THE REASON IS VISIBLE AND GENERAL: the L2 member poisons the average.
+        subsets CONTAINING L2 : mean 80.08
+        subsets WITHOUT L2    : mean 86.44
+    The L2 score is 19 points weaker than the others, and equal-weight rank averaging
+    has no mechanism to discount a weak member — every vote counts the same.
+
+    LESSON: naive ensembling of anomaly scores is not safe. Combination requires either
+    a weighting scheme or a principled member-selection rule, which is exactly what the
+    next part supplies.
+
+--------------------------------------------------------------------------------
+4. RESULT PART 2 — THE FULL SCAN
+--------------------------------------------------------------------------------
+    combination                        k    AUC
+    ------------------------------------------------
+    perceptual + uncertainty           2   88.74 +- 0.13    <- best overall
+    SSIM + perceptual + uncertainty    3   88.09 +- 0.22
+    perceptual                         1   87.58 +- 0.32    (AE-PL alone)
+    uncertainty                        1   86.86 +- 0.53    (AE-U alone)
+    SSIM + perceptual                  2   86.69 +- 0.12
+    SSIM + uncertainty                 2   86.33 +- 0.43
+    L2 + perceptual + uncertainty      3   85.00 +- 0.36
+    L2 + SSIM + perceptual + uncert    4   84.88 +- 0.25    (pre-registered "all4")
+    L2 + SSIM + perceptual             3   82.31 +- 0.21
+    L2 + SSIM + uncertainty            3   81.91 +- 0.36    (pre-registered "noIN")
+    L2 + perceptual                    2   81.46 +- 0.50
+    SSIM                               1   80.81 +- 0.43
+    L2 + uncertainty                   2   80.78 +- 0.57
+    L2 + SSIM                          2   75.98 +- 0.15
+    L2                                 1   68.35 +- 0.80
+
+    The top combination, perceptual + uncertainty, beats every single method. Its seed
+    spread (0.13) is the tightest in the table, and the next two best combinations also
+    contain that pair — so it is not one lucky cell.
+
+--------------------------------------------------------------------------------
+5. RESULT PART 3 — SELECTION-AWARE VALIDATION
+--------------------------------------------------------------------------------
+88.74 cannot be reported as it stands: it is the best of 15 options chosen on the test
+set. To measure what that selection is actually worth, the choice was repeated under a
+protocol that never lets the winner see the data it is scored on.
+
+PROTOCOL
+    Repeat 50 times per seed (150 runs total):
+      1. split the 2000 test images into two stratified halves A and B (both keep the
+         50/50 class balance, so an AUC on either half is comparable to the full set),
+      2. evaluate all 15 combinations on half A and select the best,
+      3. report THAT combination's AUC on half B, which it has never seen.
+    The gap between step 2's number and step 3's number IS the selection bias, measured
+    rather than assumed away.
+
+RESULT
+    oracle   (best combo, scored on the half it was chosen on)   88.64   <- optimistic
+    held-out (that same combo on the UNSEEN half)                88.83   <- honest
+    AE-PL alone on the same half (no selection at all)           87.66   <- baseline
+
+    selection bias                     -0.20 AUC points
+    honest gain over AE-PL             +1.18 AUC points
+    held-out beats AE-PL in            100% of 150 splits
+    most frequently selected combo     perceptual + uncertainty, in 100% of splits
+
+INTERPRETATION
+    The selection bias is effectively ZERO, and the reason is the important part: the
+    SAME combination wins in every single split. There is nothing to overfit when the
+    choice is unambiguous. Held-out even edges slightly above oracle, which is ordinary
+    noise around a stable winner.
+
+    The finding therefore survives. perceptual+uncertainty is a real +1.18 over the best
+    single method, and +1.33 over the best published image-reconstruction result (87.5).
+
+--------------------------------------------------------------------------------
+6. WHAT TO CLAIM
+--------------------------------------------------------------------------------
+CLAIM (supported):
+    "A rank-average of the perceptual and uncertainty scores reaches 88.74 AUC, beating
+     the best single reconstruction method by 1.16 points at zero additional training
+     cost, and it wins on held-out data in 100% of 150 selection splits."
+
+CLAIM (supported, and report it alongside):
+    "Naive equal-weight ensembling FAILS: both pre-registered combinations lost to the
+     best single method, because a weak member drags the average down."
+
+DO NOT CLAIM:
+    * that ensembling helps in general — it demonstrably does not (see the L2 subsets)
+    * that this generalises beyond RSNA. The validation is within-dataset. The decisive
+      test is whether the same pair wins on a different dataset, which is the single
+      most valuable remaining experiment.
+
+--------------------------------------------------------------------------------
+7. WHY THE WINNING PAIR MAKES SENSE
+--------------------------------------------------------------------------------
+    Not proven here, but worth stating as the natural reading: the two winning members
+    are the two that read the MOST DIFFERENT things. The perceptual score reads semantic
+    mismatch in a feature space learned from natural images; the uncertainty score reads
+    pixel residual normalised by the model's own expected difficulty. They also come from
+    opposite ends of the pre-training question — one depends on ImageNet entirely, the
+    other not at all. Their combination beating both is consistent with them making
+    different errors.

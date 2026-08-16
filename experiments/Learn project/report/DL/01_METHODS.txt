@@ -1,0 +1,310 @@
+================================================================================
+METHODS — described from their ORIGINAL authors
+Each entry: the problem the authors set out to solve, the mechanism they proposed,
+the exact form we implemented, and what it costs.
+================================================================================
+
+Notation used throughout:
+    x       input image, one channel, 64x64, pixel values in [-1, 1]
+    x_hat   reconstruction produced by the model
+    z       latent code
+    i       index over pixels
+    s(x)    the anomaly score: one scalar per image, HIGHER = more abnormal
+
+The common training assumption of every method below: the training set contains ONLY
+normal images. No abnormal image and no label is ever seen during training. This is
+what makes the setting "unsupervised" and why it is attractive clinically — abnormal
+findings are rare, diverse, and expensive to annotate, while normal studies are plentiful.
+
+################################################################################
+# GROUP 1 — THE RECONSTRUCTION BASELINE AND ITS METRIC VARIANTS
+################################################################################
+
+--------------------------------------------------------------------------------
+1.1  AE — plain convolutional autoencoder with an L2 objective
+--------------------------------------------------------------------------------
+IDEA
+    Compress the image through a narrow bottleneck and reconstruct it. Trained only on
+    normal anatomy, the model has capacity to represent normal structure and none to
+    spare for pathology it has never seen. Whatever it fails to reconstruct is, by that
+    argument, abnormal.
+
+    This is the reference point the whole field is measured against. A comparative study
+    of the family for brain MRI is Baur et al. (2021); the argument and its failure modes
+    are surveyed there.
+
+TRAINING
+    L_AE = mean_i ( x_i - x_hat_i )^2
+
+SCORE
+    s(x) = mean_i ( x_i - x_hat_i )^2
+
+WHY IT IS WEAK (and this matters for interpreting everything else)
+    Squared pixel error is dominated by whatever is hardest to reconstruct, which in a
+    chest radiograph is high-contrast ANATOMY — rib edges, the diaphragm border, the
+    mediastinum — not pathology. Pneumonia presents as a diffuse, low-contrast opacity
+    that changes pixel intensities only mildly. The metric therefore spends most of its
+    dynamic range on structures that are present in every image, normal or not.
+    (The general problem of using residual error as an anomaly score is analysed by
+     Meissen et al., 2022.)
+
+    Our measured result, 68.35 AUC, is consistent with that account.
+
+--------------------------------------------------------------------------------
+1.2  AE-l1 — the same model with an absolute-error objective
+--------------------------------------------------------------------------------
+IDEA
+    L1 penalises large residuals less aggressively than L2, so the reconstruction is
+    less dominated by a few high-contrast edges.
+
+TRAINING / SCORE
+    L = mean_i | x_i - x_hat_i |          s(x) = mean_i | x_i - x_hat_i |
+
+RESULT: 68.53 vs AE's 68.35 — no meaningful difference on this dataset.
+
+--------------------------------------------------------------------------------
+1.3  AE-SSIM — replacing pixel error with a structural similarity metric
+     Bergmann, Löwe, Fauser, Sattlegger, Steger (VISAPP 2019)
+--------------------------------------------------------------------------------
+PROBLEM THE AUTHORS IDENTIFIED
+    Per-pixel distances judge each pixel independently. They are insensitive to the
+    LOCAL STRUCTURE a human uses to spot a defect, and they punish tiny, perceptually
+    irrelevant misalignments (a reconstruction shifted by one pixel is heavily
+    penalised even though it looks identical).
+
+MECHANISM
+    Use the Structural Similarity Index (Wang et al., 2004) instead. SSIM compares two
+    images through local statistics computed in a sliding Gaussian window: local means
+    (luminance), local variances (contrast), and local covariance (structure).
+
+        SSIM(x, y) = [ (2 mu_x mu_y + C1) / (mu_x^2 + mu_y^2 + C1) ]
+                     * [ (2 sigma_xy + C2) / (sigma_x^2 + sigma_y^2 + C2) ]
+
+    with mu, sigma computed under an 11x11 Gaussian window, and C1 = (0.01 L)^2,
+    C2 = (0.03 L)^2 stabilising the ratios where the denominators are near zero.
+
+    A defect changes local variance and covariance even when it barely changes mean
+    intensity — which is exactly the regime a diffuse pulmonary opacity lives in.
+
+TRAINING / SCORE
+    L = mean( 1 - SSIM(x, x_hat) )        s(x) = mean( 1 - SSIM(x, x_hat) )
+
+IMPLEMENTATION NOTE
+    SSIM is defined on non-negative intensities, so both images are mapped from [-1,1]
+    back to [0,1] before the metric is applied. The Gaussian window shrinks the map by
+    (window - 1) pixels; when a full-resolution map is required it is bilinearly resized
+    back. We verified this resize is mass-preserving (rank correlation 1.000), so
+    averaging before or after it gives the same ranking.
+
+RESULT: 80.81 — +12.5 over the plain AE, the largest gain available without ImageNet.
+
+--------------------------------------------------------------------------------
+1.4  AE-PL — replacing pixel error with a deep perceptual distance
+     Shvetsova, Bakker, Fedulova, Schulz, Dylov (IEEE Access, 2021)
+--------------------------------------------------------------------------------
+PROBLEM THE AUTHORS IDENTIFIED
+    Even SSIM is a hand-designed statistic of local intensities. Medical abnormalities
+    are often SEMANTIC — a texture that does not belong, a region that is the wrong kind
+    of tissue — and no fixed pixel statistic captures that.
+
+MECHANISM
+    Measure the distance between x and x_hat in the FEATURE SPACE of a network
+    pre-trained on natural images, rather than in pixel space. The perceptual-loss idea
+    comes from Johnson et al. (2016) for style transfer and super-resolution, and its
+    strength as a similarity metric was established by Zhang et al. (2018, LPIPS).
+    Shvetsova et al. adapted it to medical anomaly detection.
+
+    Features come from VGG-19 (Simonyan & Zisserman, 2015), specifically the relu4_2
+    layer. Two refinements the authors use, both of which we replicate:
+
+      * per-channel normalisation — each feature channel is divided by its
+        ImageNet-wide mean and variance, so no single channel dominates by scale alone
+      * RELATIVE error — the difference is divided by the magnitude of the real image's
+        own features, making the loss scale-invariant across images of different contrast
+
+TRAINING / SCORE
+    f(.)  = normalised VGG-19 relu4_2 features
+    L     = mean_c | f(x)_c - f(x_hat)_c |  /  mean_c | f(x)_c |          (detached denom.)
+    s(x)  = the same quantity, per image
+
+IMPLEMENTATION NOTES (two deliberate deviations, neither changes the objective)
+    * The original code declares 16 convolution layers by hand and copies VGG-19's
+      weights into them. We tap torchvision's `vgg19.features[:23]`, which IS relu4_2 —
+      same weights, same zero padding, verified to produce a 512-channel map.
+    * The per-channel statistics ship as a 106 KB tensor file. Only the 512 relu4_2
+      means and variances are ever read, so those 1024 floats are embedded in the
+      notebook as a compressed literal, verified byte-identical to the original file.
+
+COST: requires ImageNet pre-trained weights. This is the method's main practical
+      limitation and the reason a no-ImageNet alternative is worth having.
+
+RESULT: 87.58 — the strongest single method in our study.
+
+################################################################################
+# GROUP 2 — CHANGING THE LATENT SPACE
+################################################################################
+
+--------------------------------------------------------------------------------
+2.1  VAE — variational autoencoder
+     Kingma & Welling (ICLR 2014)
+--------------------------------------------------------------------------------
+IDEA IN THE ORIGINAL PAPER
+    A generative model with a probabilistic latent space, trained by maximising the
+    evidence lower bound. The encoder outputs a distribution q(z|x) = N(mu, sigma^2)
+    rather than a point, a sample is drawn using the reparameterisation trick
+    z = mu + sigma * eps (eps ~ N(0,1)) so gradients flow, and a KL term pulls q(z|x)
+    towards a standard normal prior.
+
+WHY IT WAS EXPECTED TO HELP ANOMALY DETECTION
+    A stochastic, regularised latent space should be less able to memorise arbitrary
+    inputs, so an abnormal image should be pulled towards the normal manifold and
+    reconstructed poorly.
+
+TRAINING / SCORE
+    L    = mean_i (x_i - x_hat_i)^2  +  beta * KL( q(z|x) || N(0,I) ),   beta = 0.005
+    s(x) = mean_i (x_i - x_hat_i)^2            (reconstruction term only)
+
+IMPLEMENTATION NOTE WORTH KNOWING
+    The sampling step is NOT disabled at test time — the latent is drawn stochastically
+    during evaluation as well. Two scoring passes over identical weights therefore give
+    slightly different numbers. This is faithful to the reference implementation and it
+    is why the VAE row carries the widest seed spread in our table (+-1.41).
+
+RESULT: 67.33 — indistinguishable from the plain AE. The latent restriction does not help.
+
+################################################################################
+# GROUP 3 — CHANGING THE SCORE WHILE KEEPING THE OBJECTIVE
+# (the prior work that shows objective and score are separable)
+################################################################################
+
+--------------------------------------------------------------------------------
+3.1  AE-Grad / VAE-Grad — gradient-based anomaly scores
+     Zimmerer, Isensee, Petersen, Kohl, Maier-Hein (MICCAI 2019)
+--------------------------------------------------------------------------------
+PROBLEM THE AUTHORS IDENTIFIED
+    The residual |x - x_hat| tells you where the model FAILED, but not how strongly the
+    model's own objective would like to change the input. The gradient of the loss with
+    respect to the INPUT is a more direct statement of "how far is this image from what
+    the model considers normal".
+
+MECHANISM
+    Backpropagate the loss to the input and use the magnitude of that gradient as the
+    score. The model, the weights and the training are completely unchanged — ONLY the
+    score is different.
+
+SCORE
+    s(x) = mean_i | d L / d x_i |
+
+    with variants that take the gradient of the reconstruction term, of the KL term, or
+    of the ELBO, and a combined form (residual multiplied by the KL gradient).
+
+IMPLEMENTATION NOTE
+    The gradient is taken of the batch MEAN loss, so scoring a batch of B images divides
+    every score by exactly B relative to scoring one at a time. AUC and AP are rank
+    statistics, so this is invisible to both — verified: ratio constant at B, ranking
+    identical. Raw gradient-score magnitudes are therefore not comparable across batch
+    sizes, but the metrics are.
+
+WHY THIS MATTERS FOR THIS PROJECT
+    These are the only published methods that change the score alone. AE-Grad reaching
+    73.86 against the identically-trained AE's 68.35 is direct prior evidence that the
+    score is a lever in its own right — the premise experiment A1 generalises.
+
+--------------------------------------------------------------------------------
+3.2  AE-U — predicting per-pixel uncertainty and dividing the residual by it
+     Mao, Xue, Wang, Zhang, Wong, Liu (MICCAI 2020)
+--------------------------------------------------------------------------------
+PROBLEM THE AUTHORS IDENTIFIED
+    A plain autoencoder's residual is large wherever reconstruction is intrinsically
+    hard — sharp anatomical boundaries — regardless of whether anything is wrong. Those
+    regions produce large residuals in EVERY image, so they add noise, not signal. What
+    is needed is a residual measured RELATIVE to how well that pixel could ever be
+    reconstructed.
+
+MECHANISM
+    Have the decoder emit a second output channel, an estimate of the per-pixel
+    log-variance, and train with a heteroscedastic Gaussian likelihood. The loss form is
+    the classical mean-and-variance regression objective of Nix & Weigend (1994), used
+    for aleatoric uncertainty in deep networks by Kendall & Gal (2017):
+
+        L = mean_i [ exp(-log_var_i) * (x_i - x_hat_i)^2  +  log_var_i ]
+
+    The first term down-weights pixels the model declares uncertain; the second stops
+    the trivial escape of declaring everything uncertain. The network learns where its
+    own errors are expected.
+
+SCORE
+    s(x) = mean_i [ exp(-log_var_i) * (x_i - x_hat_i)^2 ]
+
+    The +log_var term is deliberately dropped from the score: it is a per-pixel
+    normalising constant, not evidence of abnormality.
+
+COST: 256 extra parameters (2,351,440 vs 2,351,184) — the doubled final output channel.
+      No ImageNet weights required. That combination is why it is the most interesting
+      method in the study.
+
+RESULT: 86.86 — within 0.7 of AE-PL while needing no pre-training at all.
+
+################################################################################
+# GROUP 4 — CHANGING THE INPUT AND THE ARCHITECTURE
+################################################################################
+
+--------------------------------------------------------------------------------
+4.1  DAE — denoising autoencoder with a U-Net
+     Kascenas, Sanchez, Schrempf, Wang, Clackett, Mikhael, Voisey et al. (Medical Image Analysis, 2023)
+--------------------------------------------------------------------------------
+PROBLEM THE AUTHORS IDENTIFIED
+    The bottleneck argument is fragile. Make the bottleneck too tight and normal images
+    reconstruct badly; too loose and abnormal images reconstruct well too. A skip-connected
+    architecture like a U-Net reconstructs beautifully but leaks abnormal information
+    straight from encoder to decoder, defeating the premise entirely.
+
+MECHANISM
+    Remove the reliance on the bottleneck. Train the network to REPAIR a corrupted image
+    rather than to compress a clean one: corrupt the input, ask for the clean original.
+    A network that has only ever repaired normal anatomy will, at test time, also "repair"
+    pathology towards normal — and the difference localises it.
+
+    The corruption is the essential design choice, and it is not per-pixel Gaussian noise:
+
+        1. sample noise at COARSE resolution (16x16),
+        2. bilinearly upsample it to full resolution,
+        3. randomly roll it spatially.
+
+    Coarse noise creates blob-shaped corruptions. Repairing a blob cannot be done by
+    local smoothing; it forces the network to use surrounding CONTEXT. That is what makes
+    the learned behaviour transfer to blob-shaped pathology.
+
+TRAINING / SCORE
+    x_noisy = x + roll(upsample(N(0, sigma^2, 16x16)))          sigma = 0.2
+    L       = mean_i ( x_i - f(x_noisy)_i )^2         (corrupt IN, clean as TARGET)
+    s(x)    = mean_i ( x_i - f(x)_i )^2               (CLEAN input at test time)
+
+ARCHITECTURE
+    A U-Net (Ronneberger, Fischer, Brox, MICCAI 2015), depth 5, 64 base channels, group
+    normalisation. 31.0M parameters — 13x the autoencoder — and ~72x the FLOPs.
+
+DISCREPANCY WORTH RECORDING
+    The reference comparison lists DAE at 2.79M parameters. The published code's own
+    defaults give 31.0M, and no depth/width combination we tested yields 2.79M. The FLOP
+    figure (2.15 G) does match the 31.0M configuration. We follow the code and report our
+    measured 31,042,369.
+
+RESULT: 83.87 (single seed).
+
+################################################################################
+# SHARED BACKBONE AND OPTIMISER
+################################################################################
+
+    Encoder : 4 residual blocks, stride-2 downsampling, base width 16 -> 16/32/64/64 ch
+    Bottleneck: flatten -> Linear(1024) -> BatchNorm -> ReLU -> Linear(latent = 16)
+    Decoder : mirror of the encoder, 4 upsampling residual blocks
+    Params  : AE 2,351,184 | AE-U 2,351,440 | VAE 2,367,584 | DAE U-Net 31,042,369
+
+    Optimiser: Adam (Kingma & Ba, 2015), lr 1e-3, no weight decay, no LR schedule
+    BatchNorm (Ioffe & Szegedy, 2015) throughout; see 02_PROTOCOL.txt for why train/eval
+    mode discipline around it was a source of real bugs.
+
+    The architecture and hyperparameters are taken from the reference implementation
+    rather than tuned by us. This is deliberate: the first goal is a reproduction, and a
+    gap against published numbers is only interpretable if the setup is identical.

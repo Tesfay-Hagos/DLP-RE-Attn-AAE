@@ -1,0 +1,498 @@
+================================================================================
+PAPER FOUNDATION  (revision 2)
+Title, positioning, contributions, and the novelty evidence behind each.
+
+REVISION HISTORY
+  r1  first draft.
+  r2  rewritten after a four-way review (area chair / fact-check / method attack /
+      prior-art). r1 contained four factual blockers and one falsified title; all are
+      corrected here and listed in §10 so the errors are not reintroduced.
+
+Every identifier was resolved against api.crossref.org or export.arxiv.org and checked
+to return the intended paper. See §9.
+================================================================================
+
+
+################################################################################
+# 1. TITLE
+################################################################################
+
+PRIMARY
+    "Objectives Specialise Residuals, Scores Read Them:
+     A Factorial Decomposition of Image-Reconstruction Anomaly Detection
+     on Chest Radiographs"
+
+FALLBACK (if a reviewer objects that "specialise" is anthropomorphic)
+    "Neither the Loss Nor the Score Alone: Attributing Accuracy in
+     Image-Reconstruction Anomaly Detection"
+
+CONDITIONAL — use ONLY if M2 succeeds (see §6)
+    "Most of an Uncertainty Autoencoder's Advantage Is a Scoring Wrapper:
+     Retrofitting Uncertainty to Frozen Image-Reconstruction Anomaly Detectors"
+
+REJECTED, and why it must stay rejected
+    "The Score, Not the Objective ..."  — falsified by our own decomposition. The
+    interaction terms are the LARGEST single components (+9.8 for AE-SSIM, +35.1 for
+    AE-PL) and AE-PL's score share is only 39%, so for one of four methods the score
+    carries a MINORITY of the gain. 07_CLAIMS_AND_LIMITS.txt lists this as forbidden
+    claim X7. A title our own limitations section prohibits is the cheapest possible
+    reject: a reviewer needs one glance at the decomposition table.
+
+Every title must contain "image-reconstruction" — see §5 S1.
+
+
+################################################################################
+# 2. ABSTRACT SKELETON
+################################################################################
+Reconstruction-based anomaly detectors are reported as single methods, but each makes
+two separable decisions: what the model is trained to reconstruct, and how the residual
+is turned into a score. Crossing four objectives with five scores on one backbone and
+one protocol (RSNA, 64x64, 3 seeds), we find the two are not additive: the interaction
+exceeds both main effects (+9.8 for AE-SSIM, +35.1 for AE-PL). A training objective does
+not produce a better reconstruction — it SPECIALISES the residual so that its own metric
+can read it. Scoring a metric-trained model with plain pixel error falls below a plain
+autoencoder in every case we measure (61.9, 65.4, and 44.9 and 44.0, both below chance).
+Scores, by contrast, transfer cheaply: a plain autoencoder rescored with SSIM reaches
+77.4 against its own 68.35, without retraining. We then obtain a cell the grid cannot
+otherwise compute — a plain autoencoder read with an uncertainty score — by fitting a
+variance head to a FROZEN autoencoder. It reaches 82.00, recovering 74% of the
+uncertainty autoencoder's advantage measured from the plain baseline, or 49% measured
+from the same weights rescored with SSIM; a purely linear head fails at 66.94. The
+remaining 4.81 points do not close across an 11.6x capacity range, and we attribute them
+to reconstruction-variance co-adaptation during joint training.
+
+    Final sentence of the abstract must be the reporting-norm recommendation (§8 R2).
+    The 88.74 ensemble does NOT appear in the abstract — see §5 S5 and §7 C4.
+
+
+################################################################################
+# 3. POSITIONING — narrowed, because r1's version was falsifiable
+################################################################################
+The genre is analysis-and-diagnosis, not new-architecture:
+
+  [P1] Baur, C., Denner, S., Wiestler, B., Navab, N., Albarqouni, S.
+       "Autoencoders for Unsupervised Anomaly Segmentation in Brain MR Images:
+        A Comparative Study." Medical Image Analysis 69, 101952, 2021.
+       DOI: 10.1016/j.media.2020.101952        -> compares ARCHITECTURES.
+  [P2] Meissen, F., Wiestler, B., Kaissis, G., Rueckert, D.
+       "On the Pitfalls of Using the Residual Error as Anomaly Score."
+       MIDL 2022. arXiv:2202.03826             -> critiques the residual; does not vary it.
+  [P3] Lagogiannis, I., Meissen, F., Kaissis, G., Rueckert, D.
+       "Unsupervised Pathology Detection: A Deep Dive Into the State of the Art."
+       IEEE TMI 2024. DOI: 10.1109/TMI.2023.3298093   arXiv:2303.00609
+                                                -> benchmarks WHOLE METHODS.
+  [P4] Cai, Y., Zhang, W., Chen, H., Cheng, K.-T. "MedIAnomaly."
+       Medical Image Analysis 2025. DOI: 10.1016/j.media.2025.103500  arXiv:2404.04518
+                                                -> our split, backbone, hyperparameters,
+                                                   reference column, and citation list.
+  [P5] Cai, Y., Chen, H., Cheng, K.-T. "Rethinking Autoencoders for Medical Anomaly
+       Detection from A Theoretical Perspective." MICCAI 2024. arXiv:2403.09303
+                                                -> objective mismatch, remedy framed as
+                                                   latent entropy; not a score factorial.
+
+THE POSITIONING SENTENCE — use this wording, not r1's
+    "[P1]-[P4] compare methods as indivisible units. [P4] is the first to tabulate the
+     training loss and the anomaly score as separate columns, and its gradient-score rows
+     (from Zimmerer et al., 2019) do differ across those two columns; but in every method
+     it evaluates the RECONSTRUCTION METRIC is the same on both sides — no model is
+     trained under one distance function and scored under another. We fill that
+     off-diagonal."
+
+WHY r1's VERSION WAS WRONG (do not reintroduce it)
+    r1 claimed "every method it evaluates lies on the diagonal". False in two ways:
+    (a) the gradient rows (AE-Grad, VAE-Grad_rec, VAE-Grad_combi) hold the objective
+        fixed and change the score;
+    (b) VAE, MemAE and Constrained AE add latent regularisers to the objective that
+        never appear in the score.
+    NEVER write "first to vary the anomaly score". Only ever: "first to cross the
+    reconstruction metric on both axes".
+
+THE NEAREST PRIOR ATTEMPT — cite it defensively, do not let a reviewer find it first
+  [P6] Behrouzi, S., Dix, M., Karampanah, K., Ates, O., Sasidharan, N., Chandna, S.,
+       Vu, B. "Improving Visual Defect Detection and Localization in Industrial Thermal
+       Images Using Autoencoders." Journal of Imaging 9(7):137, 2023.
+       DOI: 10.3390/jimaging9070137
+       -> trains with two losses (MSE, SSIM) and applies three scores (MSE, SSIM, KDE)
+          on 32x32 industrial thermal images. A PARTIAL cross, not a reported grid, and
+          KDE is a latent-density score rather than a reconstruction metric.
+       => our claim becomes "first in MEDICAL imaging, and the first to report the full
+          grid", never "first ever".
+
+THE CONFOUND WE ARE CORRECTING — the quotable target
+  [P7] Bergmann, P., Löwe, S., Fauser, M., Sattlegger, D., Steger, C.
+       arXiv:1807.02011 (VISAPP 2019, DOI 10.5220/0007364503720380)
+       states the design explicitly — SSIM used "as both the loss function and the
+       evaluation metric" — and then reports "by merely changing the loss function, the
+       achieved AUC improves from 0.688 to 0.966". That headline attributes to ONE
+       factor a gain produced by moving TWO. It is the cleanest instance of the
+       conflation in the literature and belongs in the introduction.
+
+
+################################################################################
+# 4. THE ONE SENTENCE THAT CREDITS THE CLOSEST PRIOR ART HONESTLY
+################################################################################
+    "The closest precedent for treating the score as a free variable is the gradient
+     family of Zimmerer et al. (2019), which holds a single trained VAE fixed and
+     compares five scoring rules derived from its ELBO — the reconstruction term, the KL
+     term, their input-gradients, and a product of the two — and thereby establishes
+     that a trained model admits more than one readout; what it varies, however, is
+     which TERM of one fixed objective is differentiated, not which DISTANCE FUNCTION
+     measures the residual, so the reconstruction metric remains tied to training
+     throughout."
+  [P8] Zimmerer, D., Isensee, F., Petersen, J., Kohl, S., Maier-Hein, K.
+       MICCAI 2019. DOI: 10.1007/978-3-030-32251-9_32   arXiv:1907.02796
+
+
+################################################################################
+# 5. CLAIM SCOPE — non-negotiable
+################################################################################
+S1. WE DO NOT BEAT THE STATE OF THE ART.
+    [P4] Table 6, RSNA column: FAE-SSIM 91.1 +- 0.1 AUC / 89.2 +- 0.1 AP, a
+    FEATURE-reconstruction method using ImageNet weights. Best IMAGE-reconstruction
+    method: AE-PL 87.5 +- 0.2. Our best measured configuration is 88.74.
+    (r1 asserted 91.1 without a traceable source; it is now sourced to Table 6 and
+     should be added to the evidence files.)
+    FRAMING: FAE-SSIM is itself a diagonal cell — it changes representation and score in
+    one step — so its number is unattributable by exactly the argument this paper makes.
+    It is not a bar we failed to clear; it is an uninterpretable number our framework
+    explains. See §8 R1 for the sentences.
+
+S2. SPLITS ARE NOT INTERCHANGEABLE. The dual-distribution line ([P9] Cai et al.,
+    arXiv:2210.04227; [P10] Bozorgtabar et al., AMAE, arXiv:2307.12721) reports on a
+    DIFFERENT RSNA split, and its strongest numbers additionally use unlabelled
+    abnormal-containing data — a different problem setting. Never place those in a table
+    with ours. (Do not quote specific values from that line until sourced; r1 quoted an
+    "86.7-88.6" range with no traceable origin.)
+
+S3. SINGLE DATASET until M1 is done. Every number is RSNA.
+S4. IMAGE LEVEL ONLY. No localisation claim is made or supported.
+S5. 64x64, n=3 SEEDS. Differences below ~1.5 AUC points are NOT interpretable
+    (07 T5). This applies to our own results without exception:
+      * the ensemble's +1.16 over AE-PL is BELOW that bar under an unpaired test
+      * the post-hoc head's 82.00 vs retrained AE-SSIM's 80.81 is a 1.19-point gap,
+        also below it, with spreads that all but touch (81.17 vs 81.16)
+    => neither may be stated as "beats". Use "reaches the level of". The correct test
+    for the ensemble is DeLong PAIRED (same test images, correlated scores), which is
+    substantially tighter than the unpaired Hanley-McNeil SE of 0.76 quoted in r1.
+    That paired analysis is M3 and is mandatory.
+S6. HYPERPARAMETERS INHERITED, NOT TUNED. This is what makes the reproduction valid,
+    and it is why the multi-loss extension was rejected (§7.4d).
+
+
+################################################################################
+# 6. CONTRIBUTIONS
+################################################################################
+ORDER: C1 leads. C2 second, framed as the CONSTRUCTIVE TEST of C1, not as a method.
+The reproduction is NOT a numbered contribution — it moves to Experimental Setup as
+"Validation of the reproduction". Listing it as a contribution reads as padding and
+invites reviewers to grade the project on it.
+
+--------------------------------------------------------------------------------
+C1 — FACTORIAL DECOMPOSITION OF OBJECTIVE x SCORE          [primary]
+--------------------------------------------------------------------------------
+STATEMENT
+    We cross four training objectives with five anomaly scores on one backbone and one
+    protocol, and attribute each published method's gain to the objective, the score,
+    and their interaction. The two factors are NOT separable: the interaction is the
+    largest component. An objective does not improve the reconstruction; it specialises
+    the residual so its own metric can read it.
+
+EVIDENCE
+    * interaction exceeds both main effects: +9.8 (AE-SSIM), +35.1 (AE-PL)
+    * every train-only term is NEGATIVE: -6.4 (SSIM), -2.9 (uncertainty),
+      -23.4 (perceptual) — metric-trained models are WORSE reconstructors in pixel terms
+    * scoring a metric-trained model with L2 falls below the plain AE in every case:
+      61.9, 65.4, and 44.9; 44.0 is a second below-chance cell (perceptual/SSIM)
+    * scores transfer: plain AE rescored with SSIM 68.35 -> 77.4; rescored with the
+      gradient score -> 73.86. For a plain AE, L2 is the WORST of its readable scores.
+    * axis spreads: score 26.7 vs objective 14.2 (report as secondary; the interaction
+      is the headline, not this ratio)
+
+NOVELTY — see §3. Verified against [P1]-[P5] plus an industrial/natural-image AD search
+    ([P6], [P7], Bionda et al. DOI 10.1007/978-3-031-06430-2_56, Meissen et al. FAE
+     DOI 10.1007/978-3-031-33842-7_2). No prior work crosses the reconstruction metric.
+
+DO NOT CLAIM (r1 error, now corrected)
+    r1 asserted "breadth and peak are inversely related", citing AE-U as capping at
+    75.1. FALSE: 75.1 is AE-U's best NON-uncertainty score; its own diagonal is 86.9,
+    the second-highest cell in the grid. AE-U has a NARROW 4-column range AND a very
+    high peak, which is a direct counterexample. The inverse relation holds for the
+    perceptual row only and must not be stated as a general property.
+
+--------------------------------------------------------------------------------
+C2 — OBTAINING THE UNDEFINED CELL: POST-HOC UNCERTAINTY     [primary, reframed]
+--------------------------------------------------------------------------------
+STATEMENT
+    The grid has a structural hole: the plain-AE + uncertainty-score cell is undefined,
+    because only the AE-U backbone emits a log-variance. We obtain it constructively by
+    fitting a variance head to a FROZEN autoencoder, and thereby show that the
+    uncertainty autoencoder's advantage is largely a property of its SCORE, not of a
+    better reconstruction.
+
+EVIDENCE
+    plain AE, L2 score                     68.35 +- 0.65
+    plain AE, SSIM rescore (free)          77.4          <- the honest reference, see below
+    frozen AE + variance head (14,528 p)   82.00 +- 0.83
+    jointly trained AE-U                   86.86 +- 0.44
+    linear head (256 p)                    66.94 +- 1.15  <- negative control
+    * plateau 82.00 / 82.05 / 81.81 across 11.6x parameters (spread 0.24)
+    * cross-check from C1: AE-U scored with plain L2 = 65.4, BELOW the plain AE
+
+THREE CORRECTIONS TO r1, ALL MANDATORY
+  (a) IT IS NOT A CAPACITY THRESHOLD. Verified from source: BasicBlock(..., last_layer=
+      True) strips the BatchNorm and ReLU (`layers = layers[:-2]`), so the 256-parameter
+      head is a SINGLE ConvTranspose2d with NO nonlinearity and NO normalisation, while
+      w>=2 is Conv-BN-ReLU x2 + BasicBlock. The w=1 -> w=2 jump confounds width with
+      depth, nonlinearity and normalisation; and the flat plateau across 11.6x proves
+      width itself does nothing.
+      The honest — and sharper — claim: THE VARIANCE IS NOT LINEARLY DECODABLE FROM A
+      FROZEN DECODER'S FEATURES; a small nonlinear head recovers it. Joint training's
+      function is to make the variance linearly readable from the decoder representation.
+      (Note AE-U's own variance branch is also a single linear ConvTranspose, 256
+       marginal parameters, and reaches 86.86 — which is exactly the point.)
+  (b) REPORT BOTH DENOMINATORS. 74% is measured from 68.35, but C1 establishes that L2
+      is the wrong score for a plain AE. Against the strongest training-free rescore of
+      the SAME weights (SSIM, 77.4) the head recovers 48.6%, a marginal +4.6 AUC. Using
+      68.35 alone while arguing elsewhere that 68.35 is an artefact is internally
+      inconsistent and a reviewer will catch it.
+  (c) THERE IS NO COST ADVANTAGE — do not claim one. The head costs 1.5-10 min ON TOP OF
+      the AE's 1.6 min, lands 4.86 below AE-U, and still requires the full training set.
+      AE-U's own increment is 256 parameters and it needs no pre-training. Value
+      proposition is SCIENTIFIC (it obtains the undefined cell), not deployment.
+
+NOVELTY — post-hoc uncertainty on a frozen model is unclaimed in anomaly detection.
+  [P11] Bramlage, L., Curio, C. "Principled Input-Output-Conditioned Post-Hoc
+        Uncertainty Estimation for Regression Networks." arXiv:2506.00918, 2025.
+        -> the same construction, REGRESSION ONLY (UCI, depth). Not anomaly detection.
+  [P12] Mao, Y., et al. MICCAI 2020. DOI: 10.1007/978-3-030-59725-2_51  -> AE-U, joint.
+  [P13] Gu, Y., Lin, Y., Cheng, K.-T., Chen, H. MICCAI 2024. arXiv:2409.17485
+        -> D2UE, jointly trained, explicitly not post-hoc.
+
+--------------------------------------------------------------------------------
+C3 — SCORE COMPLEMENTARITY                                  [supporting only]
+--------------------------------------------------------------------------------
+    Rank-average of perceptual + uncertainty = 88.74 +- 0.13 vs AE-PL 87.58; held-out
+    88.83 under 150 split-half selections, selection bias -0.20, selected in 100% of
+    splits. Reported WITH its negative control: both pre-registered equal-weight
+    ensembles LOST (84.88, 81.91); subsets containing the weak L2 score average 80.08
+    vs 86.44 without it.
+    NOT A CONTRIBUTION — rank-averaging is textbook:
+  [P14] Aggarwal, C.C., Sathe, S. ACM SIGKDD Explorations 17(1), 2015.
+        DOI: 10.1145/2830544.2830549
+  [P15] Zimek, A., Campello, R.J.G.B., Sander, J. ACM SIGKDD Explorations 15(1), 2014.
+        DOI: 10.1145/2594473.2594476
+    Present as EVIDENCE FOR C1 (different scores read different structure) and as a
+    methodological demonstration of selection-aware validation. Sell the protocol, not
+    the +1.16 — which is below our own interpretability bar (S5).
+    NOTE the pre-registration was 2 of 15 ENUMERATED subsets, not 15 pre-declared ones.
+
+
+################################################################################
+# 7. WHAT MUST BE DONE BEFORE SUBMISSION
+################################################################################
+M0. DEGENERACY CONTROLS FOR C2.                          minutes, NO TRAINING   BLOCKER
+    The variance head may be learning a STATIC ANATOMICAL MASK rather than per-image
+    uncertainty. With a 16-d latent on globally-registered radiographs, the optimal head
+    given a frozen residual may be the pixelwise MEAN training error. Head weights are
+    already stored. Rescore under:
+      M0a  static map   : replace lv(x) with its pixelwise mean over the training set
+      M0b  global scalar: replace lv(x) with its own spatial mean per image
+      M0c  no head, no training: s(x) = mean_i[ r_i^2 / (R_bar_i + eps) ], where R_bar
+           is the frozen AE's pixelwise mean squared residual over the training set
+    Also report what fraction of lv's test-set variance the static map explains.
+    IF M0c ~ 82: C2 as a method is finished, and the finding becomes "AE-U's advantage
+    is largely residual whitening by the training-set error profile" — deflationary, but
+    it STRENGTHENS C1. Run this before anything else; it is the first thing a methods
+    reviewer will ask.
+
+M1. MULTI-DATASET REPLICATION.                                   ~1.75-3 h    MANDATORY
+    VinCXR, BrainTumor, LAG share the file layout; the loader handles them with a name
+    change. ~35 min per dataset. Without it, C1 and C2 are RSNA observations.
+    PRE-REGISTER a directional prediction for BrainTumor: C2 should FAIL there, because
+    tumours often sit where the AE already reconstructs badly, so exp(-lv) would
+    down-weight the evidence. A correctly predicted failure is worth more than a third
+    success — it converts the mechanism from hypothesis to tested theory.
+
+M2. GENERALITY OF C2, AND THE PAPER'S SHAPE.                      ~30 min     MANDATORY
+    Fit the head to frozen AE-PL and frozen AE-SSIM. If it lifts AE-PL above 88.74, C2
+    becomes a transferable recipe, leads the paper, and takes the conditional title in
+    §1. If not, C1 leads. DECIDE THE ORDERING AFTER THIS RUNS.
+
+M3. INFERENTIAL STATISTICS.                                        ~2 h       MANDATORY
+    Two-way analysis with a seed random effect over the grid (17 populated cells, not
+    20 — the uncertainty column exists for the AE-U row only). DeLong PAIRED tests with
+    CIs on every headline gap, replacing arithmetic subtraction.
+
+M4. DISENTANGLE THE C2 HEAD ARCHITECTURE.                          ~1 h
+    Two extra heads to break the confound in C2(a):
+      (i) nonlinear-but-tiny (~368 params, the w>=2 template at 2 channels)
+      (ii) linear-but-wide (1x1 conv widening, no BN/ReLU, thousands of params)
+    Then rerun the width sweep with the SAME template at every width.
+    This is the item most likely to IMPROVE the paper.
+
+M5. VERIFY THE BELOW-CHANCE CELL.                                  30 min
+    44.9 is the most striking number and its explanation is a hypothesis. Plot input /
+    reconstruction / error map. Confirm or delete the mechanism sentence.
+
+M6. WIDTH SELECTION HYGIENE FOR C2.                                free
+    82.00 is the best of five widths judged on test AUC, and w=16 was excluded partly on
+    test evidence. Either run A3's split-half protocol on the width choice, or
+    pre-commit to w=2 as the smallest working head and report w=4/8 as robustness. The
+    w=16 exclusion must be justified on TRAINING-side evidence only (initial losses
+    619 / 3,381 / 54,824; final -4.01 vs -4.06/-4.10).
+
+M7. TWO MORE DAE SEEDS.                                            2.7 h
+    Closes the only reproduction miss (83.87, n=1, vs 86.1 +- 0.7).
+
+M8. CLOSE OUT THE MIXTURE QUESTION.                                ~5 min
+    One multi-objective row added to the grid (§8B). Pre-register the reading: the
+    mixture premise survives only if that row's range falls below ~10 while its maximum
+    clears 87.58.
+
+TOTAL: ~8.5-9.5 h depending on M1.  (r1 said "~8.5 h" for a list that summed to 8.8.)
+
+
+################################################################################
+# 8. FRAMING DEVICES TO WRITE INTO THE PAPER
+################################################################################
+R1. THE SCOPE PARAGRAPH — end of the introduction, bold "Scope" run-in.
+    "We study image-reconstruction anomaly detectors — methods whose anomaly score is a
+     distance, in image space, between an input and its reconstruction. The scope is
+     what makes the analysis possible rather than a limitation of it: this family, and
+     only this family, exposes two separately specifiable functions — the distance
+     minimised during training and the distance evaluated at test time — which the
+     literature has so far always instantiated with the same metric, and which can
+     therefore be crossed. Feature-reconstruction and feature-embedding detectors
+     (PaDiM, PatchCore, RD4AD, FAE) score in a pretrained representation and admit no
+     image-space residual to decompose; self-supervised synthetic-anomaly methods
+     (CutPaste, FPI, PII, NSA, AnatPaste) score without a residual at all;
+     diffusion-based detectors do have one, but it depends further on noise level and
+     sampling schedule, so a two-factor design does not cover them. We accordingly make
+     no claim against those families, and we note that on our split the strongest
+     reported result, FAE-SSIM at 91.1 AUC, belongs to one of them; every comparison in
+     this paper is internal to image-reconstruction methods, whose best published result
+     on this split is 87.5."
+
+R2. PRACTICAL IMPLICATIONS — a labelled subsection, and the last of these belongs in the
+    abstract. Analysis papers earn citations from the reporting norm they establish.
+      1. If you hold a trained reconstruction model, RESCORE IT BEFORE YOU RETRAIN IT.
+         SSIM rescoring: 68.35 -> 77.4, free.
+      2. A method that changes both the training objective and the anomaly score CANNOT
+         attribute its gain to either. Ablate the two separately, or report the pair.
+
+R3. THE ANTI-OVERCLAIM SENTENCE — put it in the results before a reviewer supplies it.
+    "We stress that this is not a claim that objectives are irrelevant: the interaction
+     term is the largest single component of the decomposition for both AE-SSIM (+9.8)
+     and AE-PL (+35.1). The objective's role is indirect, but it is not small."
+
+R4. THE FORWARD-VALUE SENTENCE — discussion.
+    "Our decomposition is defined for any method that separates a reconstruction target
+     from a scoring function, and applies unchanged to feature-reconstruction methods;
+     extending the grid to that family is the natural next step, and would test whether
+     FAE-SSIM's 91.1 is a representation result or a scoring result."
+
+R5. DEFENSIVE CITATIONS for the three "you missed X" objections:
+    feature-embedding : PaDiM DOI 10.1007/978-3-030-68799-1_35 | PatchCore
+                        DOI 10.1109/CVPR52688.2022.01392 | RD4AD
+                        DOI 10.1109/CVPR52688.2022.00951 | FAE DOI 10.1007/978-3-031-33842-7_2
+    diffusion         : AnoDDPM DOI 10.1109/CVPRW56347.2022.00080 |
+                        Wolleb et al. DOI 10.1007/978-3-031-16452-1_4
+    self-supervised   : CutPaste DOI 10.1109/CVPR46437.2021.00954 | PII
+                        DOI 10.1007/978-3-030-87240-3_56 | NSA DOI 10.1007/978-3-031-19821-2_27 |
+                        AnatPaste DOI 10.1016/j.isci.2023.107086
+    nearest loss x score attempt : [P6] DOI 10.3390/jimaging9070137
+
+
+################################################################################
+# 8B. THE ABANDONED MULTI-LOSS EXTENSION — why, and what to keep
+################################################################################
+Proposal: weighted sum of uncertainty-weighted L2 + SSIM + perceptual, one shared
+uncertainty map across pixel and perceptual terms, mixture score divided by variance,
+optional memory + cross-attention bottleneck. REJECTED for four independent reasons:
+
+(a) PRIOR ART. Learned variance weighting multiple heterogeneous losses is
+    [P16] Kendall, A., Gal, Y., Cipolla, R. CVPR 2018. DOI: 10.1109/cvpr.2018.00781
+    Weighted L1/L2/SSIM mixtures are
+    [P17] Zhao, H., Gallo, O., Frosio, I., Kautz, J. IEEE TCI 2017.
+          DOI: 10.1109/tci.2016.2644865
+    Memory + cross-attention for CXR AD is
+    [P18] Tian, Y., et al. "MemMC-MAE." arXiv:2203.11725 (MLMI @ MICCAI 2023)
+          (NOTE: arXiv:2203.11495 is an unrelated physics paper — do not cite it)
+    [P19] Gong, D., et al. MemAE. ICCV 2019. DOI: 10.1109/ICCV.2019.00179
+    [P20] Park, H., Noh, J., Ham, B. CVPR 2020. DOI: 10.1109/cvpr42600.2020.01438
+(b) OUR OWN EVIDENCE CONTRADICTS TWO COMPONENTS. Adding SSIM to a perceptual score
+    LOWERED AUC both times measured (86.69 vs 87.58; 88.09 vs 88.74). Every
+    bottleneck-side lever moved nothing (AE 68.35, VAE 67.33, AE-l1 68.53 — inside seed
+    noise), while everything that beat that cluster changed the SCORE.
+(c) THE SHARED UNCERTAINTY MAP IS NOT WELL DEFINED. sigma^2 is 64x64x1; VGG relu4_2 is
+    8x8x512 with a near-global receptive field. Weighting feature residuals by a pooled
+    pixel variance destroys the Gaussian likelihood that gives +log sigma^2 its meaning,
+    and the pooling rule (mean of log-variance vs variance vs precision) is an
+    undeclared hyperparameter with no principled answer.
+(d) UNTUNABLE. 4-5 continuous hyperparameters with no validation set (S6). Selecting on
+    test gives an expected maximum-of-noise of ~+1 to +1.5 AUC — the size of the claimed
+    gain. C3's split-half protocol does NOT transfer: it was credible because the space
+    was 15 enumerated options with a unanimous winner, not a continuous 5-D grid.
+
+KEEP THIS ONE PIECE (M8). The objection "a mixed objective will be mediocre everywhere"
+is an EXTRAPOLATION — every grid cell is a mismatched PAIR, none is a mixed-objective
+point. And there is a real argument the other way: a small pixel term added to a
+perceptual objective would re-anchor absolute intensity, the exact pathology
+hypothesised behind the 44.9 cell. One row, ~5 min, reported as an ablation.
+
+
+################################################################################
+# 9. VERIFICATION STATUS
+################################################################################
+Resolved 2026-08-16 against api.crossref.org/works/{doi} and export.arxiv.org; each
+checked to return the intended title and first author.
+
+ DOI  : P1 10.1016/j.media.2020.101952 | P3 10.1109/TMI.2023.3298093
+        P4 10.1016/j.media.2025.103500 | P6 10.3390/jimaging9070137
+        P7 10.5220/0007364503720380    | P8 10.1007/978-3-030-32251-9_32
+        P12 10.1007/978-3-030-59725-2_51 | P14 10.1145/2830544.2830549
+        P15 10.1145/2594473.2594476    | P16 10.1109/cvpr.2018.00781
+        P17 10.1109/tci.2016.2644865   | P19 10.1109/ICCV.2019.00179
+        P20 10.1109/cvpr42600.2020.01438
+        R5 set: 10.1007/978-3-030-68799-1_35, 10.1109/CVPR52688.2022.01392,
+        10.1109/CVPR52688.2022.00951, 10.1007/978-3-031-33842-7_2,
+        10.1109/CVPRW56347.2022.00080, 10.1007/978-3-031-16452-1_4,
+        10.1109/CVPR46437.2021.00954, 10.1007/978-3-030-87240-3_56,
+        10.1007/978-3-031-19821-2_27, 10.1016/j.isci.2023.107086,
+        10.1007/978-3-031-06430-2_56
+ arXiv: P2 2202.03826 | P3 2303.00609 | P4 2404.04518 | P5 2403.09303
+        P7 1807.02011 | P8 1907.02796 | P9 2210.04227 | P10 2307.12721
+        P11 2506.00918 | P13 2409.17485 | P18 2203.11725
+
+ Method-level bibliography (SSIM, perceptual loss, VGG-19, U-Net, Adam, the
+ heteroscedastic lineage): 08_REFERENCES.txt.
+
+
+################################################################################
+# 10. ERRORS IN r1 — recorded so they are not reintroduced
+################################################################################
+E1. Title "The Score, Not the Objective" — falsified by our own interaction terms and
+    forbidden by 07 X7. Replaced (§1).
+E2. "training on a metric and scoring with another falls below the plain baseline in
+    every case" — true only for the L2 COLUMN. Six off-diagonal cells are ABOVE 68.3
+    (77.4, 75.9, 75.2, 75.1, 73.9, 73.6). Corrected in §2 and C1.
+E3. "AE-U caps at 75.1" and the "breadth vs peak" inverse relation — AE-U's diagonal is
+    86.9, the second-highest cell; it is a counterexample. Removed (C1).
+E4. FAE-SSIM 91.1 asserted without a source — now sourced to [P4] Table 6 and verified
+    (91.1 +- 0.1 AUC, 89.2 +- 0.1 AP). Add to the evidence files.
+E5. "beats retrained AE-SSIM" — 1.19-point gap, below our own 1.5 bar, spreads touch
+    (81.17 vs 81.16). Now "reaches the level of" (S5, C2).
+E6. "below chance in one" — two cells (44.9 and 44.0).
+E7. Total effort "~8.5 h" for a list summing to 8.8 h. Recomputed (§7).
+E8. M3 claimed M2 would supply AE-U's score-only cell — A4 already did. Corrected.
+E9. "15 discrete pre-declared options" — two were pre-registered of fifteen enumerated.
+E10. AE-U's +18.5 called "the largest unexplained gain" — AE-PL's is +19.3.
+E11. "86.7-88.6 on a different split" — unsourced; removed pending a citation.
+E12. "20-cell grid" — 17 cells are populated; the uncertainty column exists for one row.
+E13. C2's "capacity threshold" — confounded with depth/nonlinearity/normalisation.
+     Verified from source. Reframed (C2a).
+E14. C2's 74% recovery — reported against the wrong denominator alone. Both now given
+     (74% from 68.35, 48.6% from the free SSIM rescore at 77.4).
+E15. C2's "upgrade without retraining" cost claim — not supportable (C2c).
+E16. Positioning "every method lies on the diagonal" — false for the gradient rows and
+     for the latent-regularised methods. Narrowed to the reconstruction metric (§3).

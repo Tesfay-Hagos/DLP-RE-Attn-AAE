@@ -2137,11 +2137,22 @@ if not A1.empty:
 
 # %% [CELL 5.1]  A2 — denoising noise-scale sweep
 
-# OFF BY DEFAULT. 12 DAE trainings is ~45 h on a GPU and dominates everything else here.
+# OFF BY DEFAULT, and the cost estimate below is now MEASURED rather than extrapolated.
+# One DAE run took 82 min on a T4 (vs 1.6 min for an AE), so the grid as configured is
+# 4 x 82 min = 5.5 h, and the original 4x3 grid would have been 16.4 h. An earlier comment
+# here said "~45 h", which came from a FLOP-based extrapolation before DAE had ever been
+# timed; it was wrong and is corrected here.
+#
+# It stays off for a reason that cost, not time, decides: DAE scores 83.87 on RSNA --
+# 3.71 below AE-PL, 4.87 below the perceptual+uncertainty ensemble. For this sweep to
+# change any conclusion in an IMAGE-LEVEL study, noise scale alone would have to be worth
+# more than +4.87 AUC, and the largest lever measured anywhere in this project (the
+# scoring function, 26.7 pts of spread) is not a corruption hyperparameter.
+#
 # The experiment is not cancelled, it is RELOCATED to the CV project, where DAE is the
-# benchmark's best pixel-level method and where "does the corruption scale have to match
-# the lesion scale?" actually pays off in localisation. On image-level RSNA it would be a
-# 45 h answer to a secondary question.
+# benchmark's best PIXEL-level method and where "must the corruption scale match the
+# lesion scale?" actually pays off. At image level it answers a question this project
+# cannot ask (no localisation claim is made or supported here).
 RUN_A2  = False
 A2_RES  = [4, 8, 16, 32]        # 4 = very coarse blobs … 32 = near per-pixel
 A2_STD  = [0.2]                 # MedIAnomaly's default; widen only if res shows structure
@@ -2367,12 +2378,27 @@ class PostHocVarHead(nn.Module):
     two possible causes: uncertainty genuinely needs joint training, or 256 parameters
     cannot extract it from features that do not encode it. Running a wide head separates
     them. If wide also fails, capacity is not the explanation."""
-    def __init__(self, width=1):
+    def __init__(self, width=1, chans=None, linear=False):
         super().__init__()
-        if width == 1:
+        # NOTE the confound this parameterisation exists to break. BasicBlock(...,
+        # last_layer=True) does `layers = layers[:-2]`, stripping the BatchNorm and the
+        # ReLU -- so width=1 is a SINGLE ConvTranspose2d with no nonlinearity and no
+        # normalisation, while width>=2 is Conv-BN-ReLU x2 + BasicBlock. The original
+        # w=1 -> w=2 jump therefore varies depth, nonlinearity AND normalisation, not
+        # width, and the flat plateau across w=2/4/8 shows width alone does nothing.
+        #   chans=<int> : use exactly this many hidden channels (decouples capacity from
+        #                 architecture -- a NONLINEAR head with ~AE-U's parameter budget)
+        #   linear=True : widen with a 1x1 conv but keep the whole head LINEAR (no BN,
+        #                 no ReLU) -- many parameters, still linearly decodable only
+        if linear:
+            w = chans if chans is not None else BASE_WIDTH * max(width, 1)
+            self.block = nn.Sequential(
+                nn.Conv2d(1 * BASE_WIDTH, w, 1, bias=False),          # linear widening
+                BasicBlock(w, 1, DE_DEPTH, upsample=True, last_layer=True))
+        elif width == 1 and chans is None:
             self.block = BasicBlock(1 * BASE_WIDTH, 1, DE_DEPTH, upsample=True, last_layer=True)
         else:
-            w = BASE_WIDTH * width
+            w = chans if chans is not None else BASE_WIDTH * width
             self.block = nn.Sequential(
                 nn.Conv2d(1 * BASE_WIDTH, w, 3, padding=1), nn.BatchNorm2d(w), nn.ReLU(True),
                 nn.Conv2d(w, w, 3, padding=1), nn.BatchNorm2d(w), nn.ReLU(True),
@@ -2382,8 +2408,21 @@ class PostHocVarHead(nn.Module):
         return self.block(de1)
 
 
-def a4_posthoc_uncertainty(seed=TRAIN_SEED, width=1, epochs=None, verbose=True):
-    rid = run_id('ae-posthoc-u', seed, w=width)
+def _wtag(width):
+    """Filesystem-safe tag for a width spec, which may be an int or a variant dict."""
+    if isinstance(width, dict):
+        return 'lin' + str(width.get('chans', '')) if width.get('linear') else \
+               'c' + str(width.get('chans', width.get('width', '?')))
+    return str(width)
+
+
+def a4_posthoc_uncertainty(seed=TRAIN_SEED, width=1, base_method='ae', epochs=None,
+                           verbose=True):
+    """`base_method` names the FROZEN backbone the head is fitted onto. Default 'ae'
+    reproduces the original experiment; 'ae-pl' and 'ae-ssim' test whether post-hoc
+    uncertainty is a general wrapper or a property of the L2-trained reconstruction.
+    All three share the AE architecture, so de_features[0] is 16ch at 32x32 either way."""
+    rid = run_id(f'{base_method}-posthoc-u', seed, w=_wtag(width))
     if run_exists(rid) or (USE_WANDB and fetch_run(rid)):
         try:
             man, _ = load_run(rid)
@@ -2393,11 +2432,11 @@ def a4_posthoc_uncertainty(seed=TRAIN_SEED, width=1, epochs=None, verbose=True):
         except (RuntimeError, FileNotFoundError) as e:
             print(f'{rid}: stored record unusable, recomputing\n    {e}')
 
-    base = train_and_eval('ae', seed=seed, verbose=verbose)      # trains only if needed
+    base = train_and_eval(base_method, seed=seed, verbose=verbose)  # trains only if needed
     if base is None:
         return None
-    ae = build_net('ae')
-    load_run(run_id('ae', seed), models={'net': ae})             # load_run calls .eval()
+    ae = build_net(METHODS[base_method]['net'])
+    load_run(run_id(base_method, seed), models={'net': ae})      # load_run calls .eval()
     for p in ae.parameters():
         p.requires_grad = False
 
@@ -2405,7 +2444,8 @@ def a4_posthoc_uncertainty(seed=TRAIN_SEED, width=1, epochs=None, verbose=True):
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
-    head = PostHocVarHead(width=width).to(device)
+    head = (PostHocVarHead(**width) if isinstance(width, dict)
+            else PostHocVarHead(width=width)).to(device)
     opt = Adam(head.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
     n_epochs = epochs if epochs is not None else EPOCHS
     g = torch.Generator().manual_seed(seed)
@@ -2413,7 +2453,8 @@ def a4_posthoc_uncertainty(seed=TRAIN_SEED, width=1, epochs=None, verbose=True):
                         generator=g)
     if verbose:
         print(f'{rid}: head {sum(p.numel() for p in head.parameters()):,} params on a '
-              f'FROZEN AE ({sum(p.numel() for p in ae.parameters()):,}) | {n_epochs} epochs')
+              f'FROZEN {base_method} ({sum(p.numel() for p in ae.parameters()):,}) '
+              f'| {n_epochs} epochs')
 
     epoch_loss, t0 = [], time.time()
     for ep in range(1, n_epochs + 1):
@@ -2452,12 +2493,13 @@ def a4_posthoc_uncertainty(seed=TRAIN_SEED, width=1, epochs=None, verbose=True):
     metrics['minutes'] = (time.time() - t0) / 60
     if verbose:
         print(f"    -> AUC {metrics['AUC']:.4f}  AP {metrics['AP']:.4f}")
-    return save_run(rid, method='ae-posthoc-u', seed=seed,
-                    params={'w': width, 'train_loss': 'l2-frozen+posthoc-var',
+    return save_run(rid, method=f'{base_method}-posthoc-u', seed=seed,
+                    params={'w': width, 'base': base_method,
+                            'train_loss': f'{base_method}-frozen+posthoc-var',
                             'score_loss': 'aeu'},
                     metrics=metrics, epoch_loss=epoch_loss,
                     arrays={'scores': scores}, weights={'head': head.state_dict()},
-                    extra={'base_run': run_id('ae', seed)})
+                    extra={'base_run': run_id(base_method, seed)})
 
 
 # w=1 is capacity-matched to AEU (256 params, its exact increment); the rest map out how
@@ -2581,6 +2623,364 @@ if not A3V.empty:
     verdict = ('SURVIVES selection -- report it' if ho - base > 0.3 and wins > 60 else
                'does NOT survive selection -- report the pre-registered negative result')
     print(f'\n  VERDICT: {verdict}')
+
+
+# %% [markdown]
+# ---
+# # M0 (BLOCKER) — is the variance head learning uncertainty, or a static anatomical mask?
+# ## **Cell 5.4** — degeneracy controls, no training
+# A4 claims the head learns *per-image* uncertainty. There is a cheaper explanation that
+# has to be ruled out before that claim can be made.
+#
+# The head reads `de_features[0]`, which sits downstream of a **16-dimensional latent** on
+# globally-registered chest radiographs, and its training target is a residual that is
+# **frozen** — constant with respect to the head's parameters. For a head that cannot see
+# the residual and receives an almost-templated feature map, the optimal solution may
+# simply be *the pixelwise mean training error*: a fixed anatomical mask that up-weights
+# the lung fields and down-weights ribs, diaphragm and mediastinum. Since the score is
+# `mean(exp(-log_var) * r^2)`, a constant `log_var` makes it exactly a fixed weighted mean
+# of the squared residual — reproducible with **zero parameters and zero training**.
+#
+# A second degeneracy matters too: `exp(-log_var)` need not vary spatially at all. If
+# `log_var` is roughly `static_map + per_image_scalar`, the ranking could come entirely
+# from that scalar — an image-level contrast normalisation dressed as spatial uncertainty.
+#
+# Four scores from the SAME stored head, plus one that uses no head:
+#
+# | variant | `log_var` replaced by | tests |
+# |---|---|---|
+# | `full` | — (as trained) | the reported result |
+# | `static` | its pixelwise mean over the training set | is it image-independent? |
+# | `scalar` | its own spatial mean, per image | is it map-independent? |
+# | `whiten` | **no head at all**: `r² / R̄` | can zero parameters do it? |
+#
+# `R̄` is the frozen AE's pixelwise mean squared residual over the training set.
+#
+# **Pre-registered reading.** If `static` ≈ `full`, the per-image component contributes
+# nothing and the claim must be restated as a learned fixed error-normalisation mask. If
+# `whiten` ≈ `full`, C2 is not a method at all — the finding becomes "AE-U's advantage is
+# largely residual whitening by the training-set error profile", which is deflationary for
+# C2 but *strengthens* C1. Either way we report it.
+
+# %% [CELL 5.4]  M0 — degeneracy controls for the post-hoc variance head
+
+M0_WIDTH = 2          # the smallest head that works; see the A4 capacity sweep
+M0_BASE  = 'ae'
+
+
+@torch.no_grad()
+def _lv_and_resid(ae, head, X, batch=256):
+    """Per-image log-variance maps and squared residuals for a tensor of images."""
+    lvs, res = [], []
+    for i in range(0, len(X), batch):
+        xb = X[i:i + batch].to(device)
+        out = ae(xb)
+        lvs.append(head(out['de_features'][0]).cpu())
+        res.append(((xb - out['x_hat']) ** 2).cpu())
+    return torch.cat(lvs), torch.cat(res)
+
+
+def m0_degeneracy(seeds=None, width=M0_WIDTH, base_method=M0_BASE):
+    seeds = seeds or SEEDS
+    rows = []
+    for s in seeds:
+        rid = run_id(f'{base_method}-posthoc-u', s, w=_wtag(width))
+        if not run_exists(rid) and not (USE_WANDB and fetch_run(rid)):
+            print(f'  seed {s}: {rid} not available — run Cell 5.3 first'); continue
+        ae = build_net(METHODS[base_method]['net'])
+        load_run(run_id(base_method, s), models={'net': ae})
+        head = (PostHocVarHead(**width) if isinstance(width, dict)
+                else PostHocVarHead(width=width)).to(device)
+        load_run(rid, models={'head': head})       # load_run calls .eval() on both
+
+        lv_tr, res_tr = _lv_and_resid(ae, head, X_TRAIN)
+        lv_te, res_te = _lv_and_resid(ae, head, X_TEST)
+
+        LV_bar = lv_tr.mean(dim=0, keepdim=True)          # static map, from TRAIN only
+        R_bar  = res_tr.mean(dim=0, keepdim=True)         # mean squared residual, TRAIN only
+
+        def auc_of(w_map):
+            return evaluate_scores(torch.mean(w_map * res_te, dim=[1, 2, 3]).numpy(), Y_TEST)
+
+        full   = auc_of(torch.exp(-lv_te))
+        static = auc_of(torch.exp(-LV_bar).expand_as(lv_te))
+        scalar = auc_of(torch.exp(-lv_te.mean(dim=[1, 2, 3], keepdim=True)).expand_as(lv_te))
+        whiten = auc_of(1.0 / (R_bar + EPS).expand_as(res_te))       # NO head, NO training
+
+        # variance decomposition: lv_ij = LV_bar_j + d_ij, so
+        #   Var_total = Var_j(LV_bar_j) + E_j[Var_i(d_ij)]
+        v_static = LV_bar.flatten().var(unbiased=False).item()
+        v_resid  = (lv_te - LV_bar).var(dim=0, unbiased=False).mean().item()
+        frac_static = v_static / max(v_static + v_resid, 1e-12)
+
+        rows.append({'seed': s, 'full': full['AUC'], 'static': static['AUC'],
+                     'scalar': scalar['AUC'], 'whiten': whiten['AUC'],
+                     'frac_static': frac_static})
+        del ae, head, lv_tr, res_tr, lv_te, res_te
+    return pd.DataFrame(rows)
+
+
+M0 = m0_degeneracy()
+
+if not M0.empty:
+    ref = completed_runs()
+    ae_auc = ref[ref.method == M0_BASE].AUC.mean() * 100 if not ref.empty else float('nan')
+    print(f'\nM0 — what is the variance head actually doing?  '
+          f'(base={M0_BASE}, w={M0_WIDTH}, {len(M0)} seeds)\n')
+    for k, label in [('full',   'full head, per-image log_var        '),
+                     ('static', 'STATIC map (train-set pixelwise mean)'),
+                     ('scalar', 'per-image SCALAR only (flat map)     '),
+                     ('whiten', 'NO HEAD: r^2 / mean-train-residual   ')]:
+        m, sd = M0[k].mean() * 100, M0[k].std(ddof=0) * 100
+        print(f'  {label}  {m:6.2f}+-{sd:.2f}')
+    print(f'  plain {M0_BASE} with its own score       {ae_auc:6.2f}')
+    print(f'\n  variance of log_var explained by the static map: '
+          f'{M0.frac_static.mean()*100:.1f}%')
+    d_static = (M0.full - M0.static).mean() * 100
+    d_whiten = (M0.full - M0.whiten).mean() * 100
+    print(f'\n  full - static : {d_static:+.2f} pts  '
+          f'{"-> per-image component contributes little" if abs(d_static) < 1.5 else "-> per-image component matters"}')
+    print(f'  full - whiten : {d_whiten:+.2f} pts  '
+          f'{"-> ZERO-PARAMETER whitening reproduces it; C2 is not a method" if abs(d_whiten) < 1.5 else "-> the head does more than whitening"}')
+
+
+# %% [markdown]
+# ---
+# # M2 — does post-hoc uncertainty transfer to other frozen backbones?
+# ## **Cell 5.5** — the experiment that decides the paper's shape
+# C2 currently rests on ONE backbone. "You can retrofit uncertainty onto *a* plain
+# autoencoder" is an observation; "onto any frozen reconstruction model" is a recipe.
+#
+# AE-PL and AE-SSIM share the AE architecture, so `de_features[0]` is 16 channels at
+# 32×32 in all three cases and the same head fits unchanged. Both backbones are already
+# trained and stored, so this only fits heads.
+#
+# **Pre-register the reading before running.** If the head lifts AE-PL above 88.74 — the
+# best number this project has measured — then C2 is a transferable method, leads the
+# paper, and takes the conditional title. If it lifts the weaker backbones but not AE-PL,
+# uncertainty and perceptual scoring are redundant rather than complementary, which is
+# itself informative given that A3 found them complementary *across* models.
+
+# %% [CELL 5.5]  M2 — generality of the post-hoc head
+
+M2_BASES = ['ae', 'ae-ssim', 'ae-pl']
+M2_WIDTH = 2
+
+for _b in M2_BASES:
+    for _s in SEEDS:
+        a4_posthoc_uncertainty(seed=_s, width=M2_WIDTH, base_method=_b)
+
+_m2 = completed_runs()
+if not _m2.empty:
+    print('\nM2 — post-hoc variance head on three frozen backbones\n')
+    print(f"  {'backbone':<10}{'frozen model':>16}{'+ post-hoc head':>18}{'delta':>9}")
+    for b in M2_BASES:
+        base_rows = _m2[_m2.method == b]
+        ph_rows   = _m2[_m2.method == f'{b}-posthoc-u']
+        if base_rows.empty or ph_rows.empty:
+            continue
+        bm = base_rows.AUC.mean() * 100
+        pm, ps = ph_rows.AUC.mean() * 100, ph_rows.AUC.std(ddof=0) * 100
+        print(f'  {b:<10}{bm:>16.2f}{pm:>13.2f}+-{ps:<4.2f}{pm-bm:>+9.2f}')
+    print(f"\n  references: AE-U (jointly trained) 86.86 | "
+          f"best measured configuration (perceptual+uncertainty ensemble) 88.74")
+
+
+# %% [markdown]
+# ---
+# # M4 — is it capacity, or is it nonlinearity?
+# ## **Cell 5.6** — breaking the confound in the A4 width sweep
+# The A4 sweep reported a "sharp capacity threshold" between 256 and 14,528 parameters.
+# It is not one. `BasicBlock(..., last_layer=True)` executes `layers = layers[:-2]`,
+# removing the BatchNorm and the ReLU, so the 256-parameter head is a **single
+# `ConvTranspose2d` with no nonlinearity and no normalisation**, while every wider head is
+# `Conv-BN-ReLU ×2` followed by that block. The w=1 → w=2 comparison therefore varies
+# depth, nonlinearity and normalisation together — and the flat plateau across w=2/4/8
+# (11.6× parameters, 0.24 spread) shows width alone changes nothing.
+#
+# Two heads separate the factors:
+#
+# | variant | parameters | nonlinear? | tests |
+# |---|---|---|---|
+# | `tiny-nonlinear` | ~AE-U's budget | yes | does a *tiny* nonlinear head work? |
+# | `wide-linear` | large | no | do *many* linear parameters work? |
+#
+# **Pre-registered reading.** If `tiny-nonlinear` reaches ~80 and `wide-linear` stays
+# ~67, capacity is irrelevant and the real claim is that **the variance is not linearly
+# decodable from a frozen decoder's features** — joint training's function is to make it
+# linearly readable. That is a sharper, more mechanistic finding than the capacity story
+# it replaces.
+
+# %% [CELL 5.6]  M4 — disentangling capacity from nonlinearity
+
+M4_VARIANTS = [
+    ('linear-256   (as A4 w=1)',   1),
+    ('tiny-nonlinear',             {'chans': 4}),      # ~AE-U's parameter budget, nonlinear
+    ('wide-linear',                {'chans': 256, 'linear': True}),
+    ('nonlinear-32 (as A4 w=2)',   2),
+]
+
+for _label, _w in M4_VARIANTS:
+    for _s in SEEDS:
+        a4_posthoc_uncertainty(seed=_s, width=_w, base_method='ae')
+
+_m4 = completed_runs()
+if not _m4.empty:
+    print('\nM4 — capacity vs nonlinearity in the post-hoc head\n')
+    print(f"  {'variant':<28}{'params':>10}{'nonlin':>8}{'AUC':>16}")
+    for label, w in M4_VARIANTS:
+        h = (PostHocVarHead(**w) if isinstance(w, dict) else PostHocVarHead(width=w))
+        n = sum(p.numel() for p in h.parameters())
+        nl = any(isinstance(m, nn.ReLU) for m in h.modules())
+        rid = run_id('ae-posthoc-u', SEEDS[0], w=_wtag(w))
+        sub = _m4[_m4.run_id.isin([run_id('ae-posthoc-u', s, w=_wtag(w)) for s in SEEDS])]
+        if sub.empty:
+            print(f'  {label:<28}{n:>10,}{"yes" if nl else "no":>8}{"(not run)":>16}'); continue
+        print(f'  {label:<28}{n:>10,}{"yes" if nl else "no":>8}'
+              f'{sub.AUC.mean()*100:>11.2f}+-{sub.AUC.std(ddof=0)*100:<4.2f}')
+    print('\n  If tiny-nonlinear works and wide-linear does not, the threshold is')
+    print('  NONLINEARITY, not capacity, and the A4 headline must be restated.')
+
+
+# %% [markdown]
+# ---
+# # M3 — inferential statistics on the headline gaps
+# ## **Cell 5.7** — DeLong's paired test
+# Every comparison in this project is currently an arithmetic subtraction, and the
+# protocol note says differences below ~1.5 AUC points are not interpretable. That bar
+# came from an **unpaired** standard error (Hanley–McNeil, 0.76 points at AUC 0.887 with
+# 1000/1000 images), and it is the wrong instrument here.
+#
+# Our comparisons are between two scores evaluated on the **same 2000 images**. Those
+# scores are strongly correlated — they come from the same data and often the same
+# weights — and a paired test exploits that correlation, giving a substantially tighter
+# interval on the *difference* than the unpaired bound suggests. DeLong's method is the
+# standard estimator: it forms the structural components of each AUC, takes their
+# covariance, and tests the difference directly.
+#
+# This is what lets us say honestly whether +1.16 (the ensemble over AE-PL) and +1.19
+# (the post-hoc head over retrained AE-SSIM) are real. Under the unpaired bar both are
+# "not interpretable"; under the correct test they may or may not be. Either answer is
+# reportable — what is not defensible is quoting the gaps with no test at all.
+
+# %% [CELL 5.7]  M3 — DeLong paired comparison of AUCs
+
+def _midrank(x):
+    """Ranks with ties averaged — the tie handling is what makes DeLong exact."""
+    J = np.argsort(x, kind='mergesort')
+    z = x[J]
+    N = len(x)
+    T = np.zeros(N, dtype=float)
+    i = 0
+    while i < N:
+        j = i
+        while j < N and z[j] == z[i]:
+            j += 1
+        T[i:j] = 0.5 * (i + j - 1) + 1
+        i = j
+    out = np.empty(N, dtype=float)
+    out[J] = T
+    return out
+
+
+def delong_variance(scores, labels):
+    """Fast DeLong (Sun & Xu, 2014). `scores` is (k, n) for k predictors on the SAME n
+    samples. Returns (aucs, covariance matrix) — the covariance is what a paired test
+    needs and what an unpaired standard error throws away."""
+    labels = np.asarray(labels)
+    order = np.argsort(-labels, kind='mergesort')          # positives first
+    s = np.asarray(scores, dtype=float)[:, order]
+    m = int((labels == 1).sum())                            # positives
+    n = len(labels) - m                                     # negatives
+    k = s.shape[0]
+
+    tx = np.array([_midrank(s[r, :m]) for r in range(k)])
+    ty = np.array([_midrank(s[r, m:]) for r in range(k)])
+    tz = np.array([_midrank(s[r, :])  for r in range(k)])
+
+    aucs = (tz[:, :m].sum(axis=1) - m * (m + 1) / 2.0) / (m * n)
+    v01 = (tz[:, :m] - tx) / n                              # structural components
+    v10 = 1.0 - (tz[:, m:] - ty) / m
+    cov = np.cov(v01) / m + np.cov(v10) / n
+    return aucs, np.atleast_2d(cov)
+
+
+def delong_test(score_a, score_b, labels, alpha=0.05):
+    """Paired comparison of two AUCs on identical samples. Returns a dict with the
+    difference, its standard error, CI and two-sided p-value."""
+    from scipy import stats
+    aucs, cov = delong_variance(np.vstack([score_a, score_b]), labels)
+    diff = aucs[0] - aucs[1]
+    var = cov[0, 0] + cov[1, 1] - 2 * cov[0, 1]
+    se = float(np.sqrt(max(var, 0.0)))
+    z = diff / se if se > 0 else 0.0
+    half = stats.norm.ppf(1 - alpha / 2) * se
+    return {'auc_a': aucs[0], 'auc_b': aucs[1], 'diff': diff, 'se': se,
+            'ci_lo': diff - half, 'ci_hi': diff + half,
+            'p': float(2 * stats.norm.sf(abs(z)))}
+
+
+def _scores_for(rid):
+    """Per-image score vector for a stored run, fetched from wandb if not local."""
+    if not run_exists(rid) and not (USE_WANDB and fetch_run(rid)):
+        return None
+    try:
+        _, arrays = load_run(rid)
+    except (RuntimeError, FileNotFoundError):
+        return None
+    return arrays.get('scores')
+
+
+# Headline comparisons, each stated as (label, run-id builder A, run-id builder B).
+# Every one of these is currently reported as an arithmetic difference somewhere.
+M3_COMPARISONS = [
+    ('ensemble(perc+unc) vs AE-PL',
+     lambda s: run_id('ens-all4', s), lambda s: run_id('ae-pl', s)),
+    ('post-hoc head (w=2) vs AE-SSIM',
+     lambda s: run_id('ae-posthoc-u', s, w='2'), lambda s: run_id('ae-ssim', s)),
+    ('post-hoc head (w=2) vs plain AE',
+     lambda s: run_id('ae-posthoc-u', s, w='2'), lambda s: run_id('ae', s)),
+    ('AE-U vs post-hoc head (w=2)',
+     lambda s: run_id('aeu', s), lambda s: run_id('ae-posthoc-u', s, w='2')),
+    ('AE rescored with SSIM vs AE',
+     lambda s: run_id('a1-l2-ssim', s), lambda s: run_id('ae', s)),
+]
+
+
+def m3_delong(comparisons=None, seeds=None):
+    comparisons = comparisons or M3_COMPARISONS
+    seeds = seeds or SEEDS
+    rows = []
+    for label, ra, rb in comparisons:
+        for s in seeds:
+            sa, sb = _scores_for(ra(s)), _scores_for(rb(s))
+            if sa is None or sb is None:
+                continue
+            r = delong_test(sa, sb, Y_TEST)
+            rows.append({'comparison': label, 'seed': s, **r})
+    return pd.DataFrame(rows)
+
+
+M3 = m3_delong()
+
+if not M3.empty:
+    print('\nM3 — DeLong PAIRED tests on the same 2000 test images\n')
+    print(f"  {'comparison':<34}{'diff (pts)':>13}{'95% CI':>20}{'p':>10}{'':>4}")
+    for label, g in M3.groupby('comparison', sort=False):
+        d = g['diff'].mean() * 100
+        lo, hi = g.ci_lo.mean() * 100, g.ci_hi.mean() * 100
+        p = g['p'].max()                       # most conservative across seeds
+        mark = '***' if p < 0.001 else '**' if p < 0.01 else '*' if p < 0.05 else 'n.s.'
+        print(f'  {label:<34}{d:>+13.2f}[{lo:>+7.2f},{hi:>+7.2f}]{p:>10.2g}  {mark}')
+    print('\n  p is the LEAST significant across seeds (conservative).')
+    # Compare the paired half-widths against the UNPAIRED Hanley-McNeil bound rather
+    # than asserting which is tighter -- the whole point is to measure it, and the
+    # paired advantage depends on how correlated the two scores actually are.
+    hw = ((M3.ci_hi - M3['diff']).mean()) * 100
+    print(f'  mean paired 95% half-width : {hw:.2f} pts')
+    print(f'  unpaired Hanley-McNeil bound: 1.48 pts (AUC 0.887, n=1000/1000)')
+    print(f'  -> paired interval is {"TIGHTER" if hw < 1.48 else "WIDER"}; '
+          f'apply the ~1.5-point rule only to UNPAIRED comparisons.')
 
 
 # %% [markdown]

@@ -1,0 +1,245 @@
+================================================================================
+BIBLIOGRAPHY
+Organised by the concept each source explains.
+
+SOURCE OF THE LIST
+  Entries marked [BM] are the papers the benchmark study (Cai et al., 2025) itself
+  cites for these methods and concepts — extracted from its reference list, not
+  reconstructed from memory. Following its citations keeps our attribution consistent
+  with the study our numbers are compared against.
+  Entries marked [OURS] are components our implementation uses that the benchmark does
+  not cite (U-Net, VGG-19, Adam, the uncertainty-loss lineage, the dataset papers).
+
+VERIFICATION
+  Every DOI below was resolved directly against api.crossref.org/works/{doi} and every
+  arXiv id against export.arxiv.org, on 2026-08-11. For each, the returned title and
+  first author were checked against the intended paper: 17/17 DOIs and 10/10 arXiv ids
+  confirmed. Section 6 records the traps found along the way.
+================================================================================
+
+--------------------------------------------------------------------------------
+1. THE METHODS WE IMPLEMENTED
+--------------------------------------------------------------------------------
+
+[1] AE-SSIM — structural similarity as the reconstruction objective          [BM]
+    Bergmann, P., Löwe, S., Fauser, M., Sattlegger, D., Steger, C.
+    "Improving Unsupervised Defect Segmentation by Applying Structural Similarity
+     to Autoencoders."
+    arXiv:1807.02011, 2018.
+    Peer-reviewed version: VISAPP 2019, DOI 10.5220/0007364503720380
+    NOTE: the benchmark cites the 2018 preprint. Prefer the VISAPP DOI in a
+    bibliography; cite the preprint only if matching the benchmark exactly matters.
+
+[2] AE-PL — deep perceptual autoencoder for medical anomaly detection        [BM]
+    Shvetsova, N., Bakker, B., Fedulova, I., Schulz, H., Dylov, D.V.
+    "Anomaly Detection in Medical Imaging With Deep Perceptual Autoencoders."
+    IEEE Access 9, 118571–118583, 2021.
+    DOI: 10.1109/ACCESS.2021.3107163
+
+[3] AE-U — uncertainty prediction autoencoder for chest radiographs          [BM]
+    Mao, Y., Xue, F.-F., Wang, R., Zhang, J., Zheng, W.-S., Liu, H.
+    "Abnormality Detection in Chest X-Ray Images Using Uncertainty Prediction
+     Autoencoders."
+    MICCAI 2020.
+    DOI: 10.1007/978-3-030-59725-2_51
+
+[4] AE-Grad / VAE-Grad — gradient-based anomaly scores                       [BM]
+    Zimmerer, D., Isensee, F., Petersen, J., Kohl, S., Maier-Hein, K.
+    "Unsupervised Anomaly Localization Using Variational Auto-Encoders."
+    MICCAI 2019.
+    DOI: 10.1007/978-3-030-32251-9_32
+    CORRECTED: an earlier draft of this file listed the authors in the wrong order
+    (Kohl, Petersen, Isensee). The order above is from the benchmark's own reference
+    list and matches the DOI record.
+
+[5] VAE — variational autoencoder                                            [BM]
+    Kingma, D.P., Welling, M.
+    "Auto-Encoding Variational Bayes."
+    arXiv:1312.6114, 2013 (ICLR 2014).
+    No DOI: ICLR issues none. Cite the arXiv id.
+
+[6] DAE — denoising autoencoder with coarse noise                            [BM]
+    Conference version:
+      Kascenas, A., Pugeault, N., O'Neil, A.Q.
+      "Denoising Autoencoders for Unsupervised Anomaly Detection in Brain MRI."
+      MIDL 2022, PMLR, pp. 653–664.  (PMLR issues no DOI.)
+    Journal version — cite this one:
+      Kascenas, A., Sanchez, P., Schrempf, P., Wang, C., Clackett, W., Mikhael, S.S.,
+      Voisey, J.P., Goatman, K., Weir, A., Pugeault, N., et al.
+      "The role of noise in denoising models for anomaly detection in medical images."
+      Medical Image Analysis 90, 102963, 2023.
+      DOI: 10.1016/j.media.2023.102963      arXiv: 2301.08330
+    CORRECTED: an earlier draft of this file gave the wrong author list for the
+    journal version (Papież, O'Neil). The list above is from the benchmark's
+    reference list and the DOI record.
+
+--------------------------------------------------------------------------------
+2. THE CONCEPTS AND LOSS FUNCTIONS THOSE METHODS ARE BUILT FROM
+--------------------------------------------------------------------------------
+
+[7] SSIM — the similarity metric itself                                      [BM]
+    Wang, Z., Bovik, A.C., Sheikh, H.R., Simoncelli, E.P.
+    "Image Quality Assessment: From Error Visibility to Structural Similarity."
+    IEEE Transactions on Image Processing 13(4), 600–612, 2004.
+    DOI: 10.1109/TIP.2003.819861
+    USED FOR: the 1-SSIM objective and score; local mean/variance/covariance windows.
+
+[8] Perceptual loss — comparing deep features instead of pixels              [BM]
+    Johnson, J., Alahi, A., Fei-Fei, L.
+    "Perceptual Losses for Real-Time Style Transfer and Super-Resolution."
+    ECCV 2016.
+    DOI: 10.1007/978-3-319-46475-6_43
+    USED FOR: the idea AE-PL adapts to anomaly detection.
+
+[9] LPIPS — deep features as a perceptual similarity metric                 [OURS]
+    Zhang, R., Isola, P., Efros, A.A., Shechtman, E., Wang, O.
+    "The Unreasonable Effectiveness of Deep Features as a Perceptual Metric."
+    CVPR 2018.
+    DOI: 10.1109/CVPR.2018.00068
+    USED FOR: the evidence that feature distances track perceptual similarity, which
+    is the premise AE-PL relies on.
+
+[10] VGG-19 — the feature extractor inside AE-PL                            [OURS]
+     Simonyan, K., Zisserman, A.
+     "Very Deep Convolutional Networks for Large-Scale Image Recognition."
+     arXiv:1409.1556, 2014 (ICLR 2015).
+     No DOI. The benchmark writes "VGG19-IN" without citing this paper; our report
+     should cite it, since relu4_2 features are the mechanism of the method.
+
+[11] Heteroscedastic mean-and-variance regression — the FORM of AE-U's loss  [OURS]
+     Nix, D.A., Weigend, A.S.
+     "Estimating the mean and variance of the target probability distribution."
+     IEEE ICNN 1994.
+     DOI: 10.1109/ICNN.1994.374138
+     USED FOR: the exp(-log_var)*(x-x_hat)^2 + log_var objective.
+
+[12] Aleatoric uncertainty in deep networks — the modern formulation         [OURS]
+     Kendall, A., Gal, Y.
+     "What Uncertainties Do We Need in Bayesian Deep Learning for Computer Vision?"
+     arXiv:1703.04977, 2017 (NeurIPS 2017).
+     No DOI. USED FOR: why per-pixel predicted variance is the right object to divide
+     the residual by.
+
+[13] U-Net — the backbone DAE uses                                          [OURS]
+     Ronneberger, O., Fischer, P., Brox, T.
+     "U-Net: Convolutional Networks for Biomedical Image Segmentation."
+     MICCAI 2015.
+     DOI: 10.1007/978-3-319-24574-4_28
+     The benchmark describes DAE's "customised UNet" without citing this paper.
+
+[14] Adam — the optimiser used for every run                                [OURS]
+     Kingma, D.P., Ba, J.
+     "Adam: A Method for Stochastic Optimization."
+     arXiv:1412.6980, 2014 (ICLR 2015).  No DOI.
+
+--------------------------------------------------------------------------------
+3. RELATED METHODS IN THE SAME FAMILY (reproduced or discussed, not extended)
+--------------------------------------------------------------------------------
+
+[15] MemAE — memory-augmented autoencoder                                    [BM]
+     Gong, D., Liu, L., Le, V., Saha, B., Mansour, M.R., Venkatesh, S., van den
+     Hengel, A.
+     "Memorizing Normality to Detect Anomaly: Memory-Augmented Deep Autoencoder for
+      Unsupervised Anomaly Detection."
+     ICCV 2019.  DOI: 10.1109/ICCV.2019.00179
+
+[16] Constrained AE — latent consistency between input and reconstruction    [BM]
+     Chen, X., Konukoglu, E.
+     "Unsupervised Detection of Lesions in Brain MRI using constrained adversarial
+      auto-encoders."
+     arXiv:1806.04972, 2018 (MIDL 2018).  No DOI.
+
+[17] GANomaly — adversarial encoder-decoder-encoder                          [BM]
+     Akcay, S., Atapour-Abarghouei, A., Breckon, T.P.
+     "GANomaly: Semi-supervised Anomaly Detection via Adversarial Training."
+     ACCV 2018.  DOI: 10.1007/978-3-030-20893-6_39
+
+[18] CeAE — context-encoding VAE (inpainting pretext)                        [BM]
+     Zimmerer, D., Kohl, S.A.A., Petersen, J., Isensee, F., Maier-Hein, K.H.
+     "Context-encoding Variational Autoencoder for Unsupervised Anomaly Detection."
+     arXiv:1812.05941, 2018.  No DOI.
+
+--------------------------------------------------------------------------------
+4. DATASET
+--------------------------------------------------------------------------------
+NOTE: the benchmark cites RSNA only as a challenge URL, with no paper reference. The
+two sources below are the correct primary citations and should be used in our report.
+
+[19] RSNA Pneumonia Detection Challenge — the expert annotations            [OURS]
+     Shih, G., Wu, C.C., Halabi, S.S., Kohli, M.D., Prevedello, L.M., Cook, T.S., et al.
+     "Augmenting the National Institutes of Health Chest Radiograph Dataset with
+      Expert Annotations of Possible Pneumonia."
+     Radiology: Artificial Intelligence 1(1), 2019.
+     DOI: 10.1148/ryai.2019180041
+
+[20] The underlying image database                                          [OURS]
+     Wang, X., Peng, Y., Lu, L., Lu, Z., Bagheri, M., Summers, R.M.
+     "ChestX-ray8: Hospital-Scale Chest X-ray Database and Benchmarks on
+      Weakly-Supervised Classification and Localization of Common Thorax Diseases."
+     CVPR 2017.
+     DOI: 10.1109/CVPR.2017.369      arXiv: 1705.02315
+
+--------------------------------------------------------------------------------
+5. COMPARATIVE STUDIES — context, and our reference column
+--------------------------------------------------------------------------------
+
+[21] Cai, Y., Zhang, W., Chen, H., Cheng, K.-T.
+     "MedIAnomaly: A comparative study of anomaly detection in medical images."
+     Medical Image Analysis, 2025.
+     DOI: 10.1016/j.media.2025.103500      arXiv: 2404.04518
+     ROLE IN THIS PROJECT, precisely: supplies (i) the fixed RSNA split, (ii) the
+     shared architecture and hyperparameters, (iii) the reference column our
+     reproduction is checked against, and (iv) the citation list above. Method
+     descriptions in our report come from [1]-[6], not from this study.
+
+[22] Baur, C., Denner, S., Wiestler, B., Navab, N., Albarqouni, S.                [BM]
+     "Autoencoders for Unsupervised Anomaly Segmentation in Brain MR Images:
+      A Comparative Study."
+     Medical Image Analysis 69, 101952, 2021.
+     DOI: 10.1016/j.media.2020.101952
+     RELEVANT BECAUSE: the earlier comparative study of the same family; found AE
+     variants perform closely to one another, which our "flat cluster" echoes.
+
+[23] Meissen, F., Wiestler, B., Kaissis, G., Rueckert, D.                    [OURS]
+     "On the Pitfalls of Using the Residual Error as Anomaly Score."
+     arXiv:2202.03826, 2022 (MIDL 2022).  No DOI.
+     RELEVANT BECAUSE: the direct argument that the pixel residual is a poor anomaly
+     score. Our A1 grid quantifies exactly this; the below-chance cell is an extreme case.
+
+[24] Lagogiannis, I., Meissen, F., Kaissis, G., Rueckert, D.                 [OURS]
+     "Unsupervised Pathology Detection: A Deep Dive Into the State of the Art."
+     IEEE Transactions on Medical Imaging, 2024.
+     DOI: 10.1109/TMI.2023.3298093
+     RELEVANT BECAUSE: independent evidence that rankings in this field are protocol-
+     sensitive — the motivation for reproducing before extending.
+
+--------------------------------------------------------------------------------
+6. VERIFICATION LOG — traps found, so they are not repeated
+--------------------------------------------------------------------------------
+V1. TWO AUTHOR-LIST ERRORS IN THE EARLIER DRAFT, both found by comparing against the
+    benchmark's own reference list and the DOI records:
+      * Zimmerer et al. 2019 — correct order is Zimmerer, Isensee, Petersen, Kohl,
+        Maier-Hein (the earlier draft had Kohl and Isensee transposed).
+      * Kascenas et al. 2023 — the earlier draft invented "Papież, O'Neil" as
+        co-authors. Correct list is in [6].
+
+V2. TITLE SEARCHES THAT RESOLVE TO THE WRONG PAPER — always resolve by DOI/arXiv id:
+      * "Abnormality Detection in Chest X-ray Images Using Uncertainty Prediction
+        Autoencoders" returns a different 2021 paper by Saparkhojayev et al.
+        (10.1109/icecco53203.2021.9663852). The correct work is [3].
+      * "Auto-Encoding Variational Bayes" returns an unrelated 2024 item
+        (10.61603/ceas.v2i1.33). Use arXiv:1312.6114.
+      * "U-Net: Convolutional Networks for Biomedical Image Segmentation" also returns
+        a 2017 invited-talk abstract by the same author
+        (10.1007/978-3-662-54345-0_3). Use 10.1007/978-3-319-24574-4_28.
+      * "Very Deep Convolutional Networks..." returns a super-resolution paper by Kim
+        et al. Use arXiv:1409.1556.
+      * "Adam: A Method for Stochastic Optimization" returns an R package.
+        Use arXiv:1412.6980.
+
+V3. VENUES WITH NO DOI — ICLR, NeurIPS, MIDL/PMLR and arXiv preprints. Cite the arXiv
+    id; do not attach a DOI that was not issued. Affected here: [5], [10], [12], [14],
+    [16], [18], [23], and the MIDL version of [6].
+
+V4. CONFIRMED 2026-08-11: 17/17 DOIs and 10/10 arXiv ids resolve to the intended paper
+    with matching first author. Re-run the check before submission if entries change.
