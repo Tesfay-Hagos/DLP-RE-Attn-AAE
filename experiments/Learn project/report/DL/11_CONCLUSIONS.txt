@@ -177,8 +177,15 @@ E3. BUT IT IS MOSTLY A PER-IMAGE SCALAR, NOT PER-PIXEL UNCERTAINTY. [major refra
     => THE FOLLOW-UP CONTROL HAS NOW RUN, and it sharpens E3 into something more
        specific than "a per-image scale":
 
-         log_var used ALONE as a score                     64.42 +- 1.91
-         rank corr(scalar, that image's own mean residual)      -0.506
+         PRECISION WEIGHT (-log_var) used ALONE as a score  64.42 +- 1.91
+         rank corr(  log_var, that image's mean residual)       +0.506
+         rank corr( -log_var, that image's mean residual)       -0.506
+
+       BOTH SIGNS ARE CORRECT AND THEY ARE THE SAME FACT — the second is the negation of
+       the first. State the quantity every time. An earlier version of this line read
+       "rank corr(scalar, ...) = -0.506" without saying which scalar, which reads as a
+       contradiction of the +0.506 in section 1.1 and makes the mechanism look inverted.
+       THE MECHANISM QUANTITY IS corr(log_var, residual) = +0.506, un-negated.
 
        THE SCALAR IS A WEAKER DETECTOR THAN THE RESIDUAL, BUT A USEFUL DIVISOR. The
        precision weight -log_var alone scores 64.42 — above chance, but below the plain

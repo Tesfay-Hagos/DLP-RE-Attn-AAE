@@ -98,10 +98,21 @@ THE CAPACITY CONTROL — without this the experiment is uninterpretable
     plain autoencoder's 68.35, an increase of +13.65 for no reconstruction retraining.
 
     Practical consequence: an existing trained autoencoder can be upgraded substantially
-    without retraining it. Note also that 82.00 BEATS fully-retrained AE-SSIM (80.81),
-    and needs no ImageNet weights.
+    without retraining it. 82.00 REACHES THE LEVEL OF fully-retrained AE-SSIM (80.81)
+    without ImageNet weights — +1.19, but p=0.66 under paired DeLong, so this is a
+    "matches", NOT a "beats" (retracted in 11: E8/R3; the earlier "BEATS" wording is
+    exactly what a reviewer would quote back).
+    ALSO: the 74% is measured against the plain AE's own L2 score. Against the FREE SSIM
+    rescore of the same weights (77.4) it is 49%. Quote whichever you like, but never
+    without its denominator (11: N3).
 
-4.2 THE CAPACITY THRESHOLD IS SHARP, AND THEN IT PLATEAUS.
+4.2 THE THRESHOLD IS A NONLINEARITY THRESHOLD, NOT A CAPACITY ONE — AND THEN IT PLATEAUS.
+    [heading corrected: 11 E4/R1 replaced the capacity reading. 808 NONLINEAR params reach
+     78.27 while 8,192 LINEAR params reach 66.75, so width was never the operative
+     variable. The original w=1 head was a single ConvTranspose2d with BN and ReLU
+     stripped by `last_layer=True`, confounding width, depth, normalisation and
+     nonlinearity in one step. The body text below still argues the capacity reading and
+     must be rewritten before any of it is quoted.]
     Between w=1 and w=2 the result jumps +15.06 points. After that it is flat: 82.00,
     82.05, 81.81 across a 12x range of capacity, a spread of 0.24.
 

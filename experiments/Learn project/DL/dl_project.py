@@ -2713,22 +2713,47 @@ if not _a4.empty and 'ae-posthoc-u' in set(_a4.method):
     au_m, au_s, _ = _m('aeu')
     print('\nA4 — where does AE-U\'s advantage live?\n')
     print(f'  plain AE, L2 score                   {ae_m:6.2f}+-{ae_s:.2f}')
-    for _w in A4_WIDTHS:
-        sub = _a4[(_a4.method == 'ae-posthoc-u') & (_a4.get('w', pd.Series(dtype=float)) == _w)] \
-              if 'w' in _a4 else _a4[_a4.method == 'ae-posthoc-u']
+    # `w` is stored by _wtag as a STRING ('2', 'lin8', 'c32'), so comparing it against the
+    # INTEGERS in A4_WIDTHS matched nothing and every width fell through the `continue` --
+    # the per-width table printed as an empty block while the recovery line below still
+    # printed, because that one never filtered. Compare on _wtag(_w), the stored form.
+    if 'w' not in _a4:
+        print('  (no `w` column stored — cannot separate widths)')
+    for _w in A4_WIDTHS if 'w' in _a4 else []:
+        sub = _a4[(_a4.method == 'ae-posthoc-u') & (_a4['w'].astype(str) == _wtag(_w))]
         if sub.empty:
             continue
-        m, sd = sub.AUC.mean() * 100, sub.AUC.std(ddof=0) * 100
+        m, sd, n = sub.AUC.mean() * 100, sub.AUC.std(ddof=0) * 100, len(sub)
         tag = 'capacity-matched' if _w == 1 else 'capacity control '
-        print(f'  frozen AE + var head (w={_w}, {tag}) {m:6.2f}+-{sd:.2f}   '
+        # Print n. A width reduced to 2 seeds by the non-finite guard used to render
+        # identically to one with 3, so a silently-dropped run was invisible here.
+        print(f'  frozen AE + var head (w={_w}, {tag}) {m:6.2f}+-{sd:.2f} n={n}  '
               f'({m - ae_m:+.2f} over the AE it was fitted onto)')
     print(f'  AE-U, jointly trained                {au_m:6.2f}+-{au_s:.2f}')
     gap = au_m - ae_m
     ph = _a4[_a4.method == 'ae-posthoc-u']
     if gap > 0 and not ph.empty:
-        best = ph.AUC.max() * 100
-        print(f'\n  best post-hoc head recovers {(best - ae_m) / gap * 100:.0f}% of AE-U\'s '
-              f'+{gap:.2f} advantage, with the reconstruction never retrained.')
+        # Best WIDTH by its 3-seed mean, not best RUN. `ph.AUC.max()` took a max over ~24
+        # rows (5 widths x 3 seeds, plus the M4 variants, which share this method string)
+        # and divided it by a 3-seed mean baseline -- a max numerator against a mean
+        # denominator, which inflated the headline. The width is still chosen on TEST AUC,
+        # so the sentence has to say so rather than let the number imply otherwise.
+        if 'w' in ph:
+            per_w = ph.groupby(ph['w'].astype(str)).AUC.agg(['mean', 'size'])
+            per_w = per_w[per_w['size'] >= 2]
+        else:
+            per_w = pd.DataFrame()
+        if not per_w.empty:
+            best_w = per_w['mean'].idxmax()
+            best   = per_w.loc[best_w, 'mean'] * 100
+            wtag   = f'w={best_w}, n={int(per_w.loc[best_w, "size"])}'
+        else:
+            best, wtag = ph.AUC.mean() * 100, 'all widths pooled'
+        print(f'\n  best-WIDTH post-hoc head ({wtag}) recovers '
+              f'{(best - ae_m) / gap * 100:.0f}% of AE-U\'s +{gap:.2f} advantage, '
+              f'with the reconstruction never retrained.')
+        print('  NOTE the width is selected on TEST AUC — report it as a test-set maximum,')
+        print('       not as an unbiased estimate of what a post-hoc head recovers.')
     print('  (A1 cross-check: AE-U scored with plain L2 = 65.4, i.e. BELOW the plain AE —'
           '\n   uncertainty training does not improve the reconstruction itself.)')
 
@@ -2954,12 +2979,26 @@ if not M0.empty:
           f'{M0.frac_static.mean()*100:.1f}%')
     print(f'  precision weight (-log_var) used ALONE as a score : '
           f'{M0.precision_alone.mean()*100:6.2f}+-{M0.precision_alone.std(ddof=0)*100:.2f}')
+    # Per-seed spread on BOTH mechanism quantities. These two numbers carry the primary
+    # contribution ("residual relative to expected difficulty"), and were previously
+    # printed as bare 3-seed means with no dispersion and no per-seed values -- so a
+    # reader could not tell whether a 0.0997 gap on a variable centred near -5.1 was a
+    # real effect or noise. Print sd and the individual seeds so it can be judged.
+    _rho_v = M0.rho_logvar_resid.values
     print(f'  rank corr(log_var, that image\'s mean residual)     : '
-          f'{M0.rho_logvar_resid.mean():+.3f}')
+          f'{_rho_v.mean():+.3f}+-{_rho_v.std(ddof=0):.3f}   '
+          f'per-seed {", ".join(f"{v:+.3f}" for v in _rho_v)}')
     print(f'    -> {"REDUNDANT: log_var mostly restates residual magnitude" if abs(M0.rho_logvar_resid.mean()) > 0.8 else "log_var carries information the residual does not"}')
+    _dlv_v = (M0.logvar_abnormal - M0.logvar_normal).values
     print(f'  mean log_var  normal {M0.logvar_normal.mean():+.4f} | '
           f'abnormal {M0.logvar_abnormal.mean():+.4f}  '
-          f'(abnormal - normal = {M0.logvar_abnormal.mean()-M0.logvar_normal.mean():+.4f})')
+          f'(abnormal - normal = {_dlv_v.mean():+.4f}+-{_dlv_v.std(ddof=0):.4f})')
+    print(f'    class contrast per-seed: {", ".join(f"{v:+.4f}" for v in _dlv_v)}   '
+          f'sign consistent: {"YES" if (np.sign(_dlv_v) == np.sign(_dlv_v[0])).all() else "NO"}')
+    # The weight ratio is what actually enters the score, so state it with its spread too.
+    _wr = (np.exp(-M0.logvar_abnormal.values) / np.exp(-M0.logvar_normal.values) - 1) * 100
+    print(f'    -> abnormal images weighted {_wr.mean():+.1f}%+-{_wr.std(ddof=0):.1f}% '
+          f'relative to normal (precision weight exp(-log_var))')
     _rho = M0.rho_logvar_resid.mean()
     _dlv = M0.logvar_abnormal.mean() - M0.logvar_normal.mean()
     print(f'    -> rho is {"POSITIVE" if _rho > 0 else "NEGATIVE"}: globally-harder images get a '
@@ -3174,13 +3213,22 @@ def ensemble_scores(seed, members=(('ae-pl', {}), ('aeu', {}))):
     return np.mean(vecs, axis=0)
 
 
-def _scores_for(rid):
-    """Per-image score vector for a stored run, fetched from wandb if not local."""
+def _scores_for(rid, quiet=False):
+    """Per-image score vector for a stored run, fetched from wandb if not local.
+
+    Returns None if unavailable -- and SAYS SO. This used to fail silently, which is how
+    a single missing run turned a headline into a 2-seed mean printed with the same
+    formatting as a 3-seed one: m3_delong turns None into `continue`, so the row simply
+    lost a seed with no trace in the output."""
     if not run_exists(rid) and not (USE_WANDB and fetch_run(rid)):
+        if not quiet:
+            print(f'  !! MISSING RUN {rid} — this seed is being DROPPED from the statistic')
         return None
     try:
         _, arrays = load_run(rid)
-    except (RuntimeError, FileNotFoundError):
+    except (RuntimeError, FileNotFoundError) as e:
+        if not quiet:
+            print(f'  !! UNUSABLE RUN {rid} ({type(e).__name__}) — seed DROPPED: {e}')
         return None
     return arrays.get('scores')
 
@@ -3200,6 +3248,12 @@ M3_COMPARISONS = [
      lambda s: run_id('aeu', s), lambda s: run_id('ae-posthoc-u', s, w='2')),
     ('AE rescored with SSIM vs AE',
      lambda s: run_id('a1-l2-ssim', s), lambda s: run_id('ae', s)),
+    # C3's headline (86.99 vs 86.86, +0.13) sat UNTESTED behind a contribution heading
+    # that called it "an ImageNet-free route to AE-U's accuracy". One line, and the score
+    # vectors were already stored. An untested +0.13 with sds 0.57/0.44 supports
+    # "indistinguishable from", not "reaches" -- this decides which verb is allowed.
+    ('frozen-AE-SSIM+head vs AE-U',
+     lambda s: run_id('ae-ssim-posthoc-u', s, w='2'), lambda s: run_id('aeu', s)),
 ]
 
 
@@ -3221,24 +3275,89 @@ def m3_delong(comparisons=None, seeds=None):
 
 M3 = m3_delong()
 
-if not M3.empty:
-    print('\nM3 — DeLong PAIRED tests on the same 2000 test images\n')
-    print(f"  {'comparison':<34}{'diff (pts)':>13}{'95% CI':>20}{'p':>10}{'':>4}")
+def m3_report(M3, alpha=0.05):
+    """Two DIFFERENT tests, reported side by side, because they answer different questions.
+
+    The previous version averaged the three per-seed DeLong endpoints and called the result
+    a 95% CI. It is not one: averaging endpoints yields the precision of a TYPICAL SINGLE
+    SEED, which does not shrink as seeds are added, so it is not an interval for the
+    quantity actually being reported (the seed mean). It also took p = max across seeds,
+    an intersection-union test of a different null from the one the interval addressed --
+    and the two were then quoted in whichever direction supported the conclusion.
+
+    What is reported instead:
+      DeLong (pooled) -- mean difference, SE = sqrt(mean(se_i^2)/k). Treats the 2000 TEST
+        IMAGES as the sampling unit. Valid CONDITIONAL ON THESE TRAINED MODELS; it carries
+        no seed-variance component, so it cannot speak to retraining.
+      seed-level t   -- paired t on the k per-seed differences, k-1 df. Treats the SEED as
+        the sampling unit, so it does address retraining. With k=3 the 95% multiplier is
+        4.30 against DeLong's 1.96, i.e. >2x wider before any variance is counted. This is
+        the test that bears on the project's own ~1.5-point rule (07 T5), which is a
+        SEED-COUNT argument and is NOT retired by a paired image-level test.
+      Holm           -- family-wise correction across the comparisons reported here.
+    A claim is only safe if BOTH tests agree. Where they disagree, say which is which."""
+    from scipy import stats
+    rows = []
     for label, g in M3.groupby('comparison', sort=False):
-        d = g['diff'].mean() * 100
-        lo, hi = g.ci_lo.mean() * 100, g.ci_hi.mean() * 100
-        p = g['p'].max()                       # most conservative across seeds
-        mark = '***' if p < 0.001 else '**' if p < 0.01 else '*' if p < 0.05 else 'n.s.'
-        print(f'  {label:<34}{d:>+13.2f}[{lo:>+7.2f},{hi:>+7.2f}]{p:>10.2g}  {mark}')
-    print('\n  p is the LEAST significant across seeds (conservative).')
-    # Compare the paired half-widths against the UNPAIRED Hanley-McNeil bound rather
-    # than asserting which is tighter -- the whole point is to measure it, and the
-    # paired advantage depends on how correlated the two scores actually are.
-    hw = ((M3.ci_hi - M3['diff']).mean()) * 100
-    print(f'  mean paired 95% half-width : {hw:.2f} pts')
-    print(f'  unpaired Hanley-McNeil bound: 1.48 pts (AUC 0.887, n=1000/1000)')
-    print(f'  -> paired interval is {"TIGHTER" if hw < 1.48 else "WIDER"}; '
-          f'apply the ~1.5-point rule only to UNPAIRED comparisons.')
+        d_i = g['diff'].values
+        k   = len(d_i)
+        d   = float(d_i.mean())
+        se_pool = float(np.sqrt((g['se'].values ** 2).mean() / k)) if 'se' in g else float('nan')
+        z   = d / se_pool if se_pool > 0 else 0.0
+        p_dl = float(2 * stats.norm.sf(abs(z)))
+        half = stats.norm.ppf(1 - alpha / 2) * se_pool
+        # Seed-level: needs >=2 seeds and non-zero spread to be defined at all.
+        if k >= 2 and np.std(d_i, ddof=1) > 0:
+            t_stat, p_seed = stats.ttest_1samp(d_i, 0.0)
+            t_half = stats.t.ppf(1 - alpha / 2, k - 1) * np.std(d_i, ddof=1) / np.sqrt(k)
+        else:
+            p_seed, t_half = float('nan'), float('nan')
+        rows.append({'comparison': label, 'n_seeds': k, 'diff': d * 100,
+                     'dl_lo': (d - half) * 100, 'dl_hi': (d + half) * 100, 'p_delong': p_dl,
+                     'seed_lo': (d - t_half) * 100, 'seed_hi': (d + t_half) * 100,
+                     'p_seed': p_seed})
+    R = pd.DataFrame(rows)
+    # Holm-Bonferroni over the DeLong p-values of THIS family. State the family size --
+    # an uncorrected p from a family of 6+ is not a defensible number on its own.
+    order = R.p_delong.values.argsort()
+    n_c   = len(R)
+    holm  = np.empty(n_c)
+    running = 0.0
+    for i, idx in enumerate(order):
+        running = max(running, (n_c - i) * R.p_delong.values[idx])
+        holm[idx] = min(running, 1.0)
+    R['p_holm'] = holm
+    return R
+
+
+if not M3.empty:
+    M3R = m3_report(M3)
+    print('\nM3 — paired comparisons on the same test images\n')
+    print(f"  {'comparison':<32}{'n':>3}{'diff':>8}"
+          f"{'DeLong 95%':>19}{'p_holm':>9}{'seed-level 95%':>21}{'p_seed':>9}")
+    for _, r in M3R.iterrows():
+        mark = '***' if r.p_holm < 0.001 else '**' if r.p_holm < 0.01 else \
+               '*' if r.p_holm < 0.05 else 'n.s.'
+        seed_ci = (f'[{r.seed_lo:>+7.2f},{r.seed_hi:>+7.2f}]'
+                   if np.isfinite(r.seed_lo) else f'{"n/a":>18}')
+        print(f'  {r.comparison:<32}{int(r.n_seeds):>3}{r["diff"]:>+8.2f}'
+              f'[{r.dl_lo:>+7.2f},{r.dl_hi:>+7.2f}]{r.p_holm:>9.2g}'
+              f'{seed_ci:>21}{r.p_seed:>9.2g}  {mark}')
+    print(f'\n  DeLong: 2000 test images are the sampling unit. Pooled SE = '
+          f'sqrt(mean(se_i^2)/k).')
+    print( '          Valid CONDITIONAL ON THESE TRAINED MODELS — no seed variance.')
+    print(f'  seed  : the SEED is the sampling unit, k-1 df. This is the one that speaks')
+    print( '          to retraining, and the one the ~1.5-point rule (07 T5) is about.')
+    print(f'  p_holm: Holm-corrected across the {len(M3R)} comparisons in THIS family.')
+    _both = M3R[(M3R.p_holm < 0.05) & (M3R.p_seed < 0.05)]
+    _dlonly = M3R[(M3R.p_holm < 0.05) & ~(M3R.p_seed < 0.05)]
+    print(f'\n  SURVIVES BOTH TESTS ({len(_both)}/{len(M3R)}): '
+          f'{", ".join(_both.comparison) if len(_both) else "none"}')
+    if len(_dlonly):
+        print(f'  DeLong ONLY — do NOT call these robust to retraining:')
+        for c in _dlonly.comparison:
+            print(f'      {c}')
+    M3R.to_csv(f'{OUTPUT_DIR}/m3_tests_{RUN_VERSION}.csv', index=False)
 
 
 # %% [markdown]
@@ -3533,3 +3652,292 @@ else:
     print(ALL[cols].sort_values('AUC', ascending=False).to_string(index=False))
     ALL.to_csv(f'{OUTPUT_DIR}/all_runs_{RUN_VERSION}.csv', index=False)
     print(f'\nwritten -> {OUTPUT_DIR}/all_runs_{RUN_VERSION}.csv')
+
+
+# %% [markdown]
+# ---
+# ## **Cell 6.1** — AUROC and AP side by side
+# The project reports AUROC everywhere and AP for four runs only. AP is already computed
+# and stored by `evaluate_scores` for **every** run, so the full table costs nothing —
+# it is pure retrieval, no retraining, no rescoring.
+#
+# Why it matters: the test set is constructed at 50% prevalence, so AP tracks AUROC
+# closely *here* — and that is precisely why it cannot be omitted. A reader needs both to
+# reason about the realistic-prevalence case, where AP would be far lower (07 T3).
+# MedIAnomaly reports both; a paper arguing the field measures carelessly cannot itself
+# report a single rank metric on a constructed prevalence.
+
+# %% [CELL 6.1]  AUROC + AP for every stored run
+
+_AP = completed_runs()
+if _AP.empty or 'AP' not in _AP:
+    print('no runs with AP stored yet')
+else:
+    g = (_AP.groupby('method')[['AUC', 'AP']]
+         .agg(['mean', 'std', 'size']).sort_values(('AUC', 'mean'), ascending=False))
+    print(f'\nAUROC and AP by method — {DATASET}, {RUN_VERSION}\n')
+    print(f"  {'method':<24}{'AUROC':>16}{'AP':>16}{'n':>4}")
+    for meth, r in g.iterrows():
+        n = int(r[('AUC', 'size')])
+        sd_a = 0.0 if n < 2 or not np.isfinite(r[('AUC', 'std')]) else r[('AUC', 'std')]
+        sd_p = 0.0 if n < 2 or not np.isfinite(r[('AP', 'std')]) else r[('AP', 'std')]
+        print(f'  {meth:<24}{r[("AUC","mean")]*100:>9.2f}+-{sd_a*100:<5.2f}'
+              f'{r[("AP","mean")]*100:>9.2f}+-{sd_p*100:<5.2f}{n:>4}')
+    _flat = g.copy()
+    _flat.columns = ['_'.join(c) for c in _flat.columns]
+    _flat.to_csv(f'{OUTPUT_DIR}/auc_ap_{RUN_VERSION}.csv')
+    print(f'\n  written -> {OUTPUT_DIR}/auc_ap_{RUN_VERSION}.csv')
+    print('  NOTE: 50% prevalence is a benchmark construction (07 T3). AP at clinical')
+    print('        prevalence would be substantially lower; state this beside the table.')
+
+
+# %% [markdown]
+# ---
+# ## **Cell 6.2** — the selection card: a REAL held-out protocol
+# Every "validated" number in this project so far was selected on the same test set it is
+# reported on. The split-half protocol splits the test set in half — the code does that
+# correctly, but both halves are still test data, so it measures *selection stability*,
+# not generalisation. There is no held-out set anywhere (07 T2).
+#
+# This cell creates one, for **zero GPU cost**, by using the dataset axis:
+#
+# 1. On **RSNA**, every choice that was made by looking at test AUC — the head width, the
+#    ensemble membership — is written to a `selection_card.json`.
+# 2. On **VinCXR / LAG**, the card is *read* and those choices are applied **frozen**. No
+#    scan, no maximum, no re-selection. Whatever the card says is what gets evaluated.
+#
+# The resulting VinCXR and LAG numbers are genuinely held out: nothing about them
+# influenced the configuration. This answers "you selected on test", "you have no
+# validation set" and "does it generalise" with one protocol.
+#
+# **Carrying the card across sessions:** each dataset runs in its own Kaggle session, so
+# download the RSNA bundle (Cell 7.0), and either upload `selection_card.json` as a Kaggle
+# dataset input or paste its contents into `SELECTION_CARD_FALLBACK` below.
+
+# %% [CELL 6.2]  Selection card — write on RSNA, apply frozen elsewhere
+
+CARD_PATH = f'{OUTPUT_DIR}/selection_card.json'
+
+# THE EASY PATH — no file transfer between Kaggle sessions.
+# Each Kaggle session runs one DATASET and cannot see another session's files, so the
+# RSNA choices have to reach the VinCXR and LAG sessions somehow. Rather than downloading
+# and re-uploading a file, just leave this dict as it is: it already states the choices
+# RSNA makes. On RSNA the cell OVERWRITES it from the actual runs and writes the file, so
+# if the two ever disagree you will see it in the printed output.
+SELECTION_CARD_FALLBACK = {
+    'selected_on': 'RSNA',
+    'run_version': 'dl-v1',
+    'posthoc_head_width': '2',
+    'ensemble_members': [['ae-pl', {}], ['aeu', {}]],
+    'ensemble_members_extended': [['ae-pl', {}], ['aeu', {}],
+                                  ['ae-ssim-posthoc-u', {'w': '2'}]],
+    'note': 'Chosen on RSNA. Applied unchanged elsewhere, which is what makes those '
+            'datasets held out.',
+}
+
+
+def _find_card():
+    """A real card file wins over the pasted literal, so that uploading one actually
+    takes effect; the literal is the no-transfer convenience path."""
+    cands = [CARD_PATH] + sorted(_glob.glob('/kaggle/input/**/selection_card.json',
+                                            recursive=True))
+    for c in cands:
+        if os.path.exists(c):
+            with open(c) as f:
+                return json.load(f), c
+    if SELECTION_CARD_FALLBACK:
+        return dict(SELECTION_CARD_FALLBACK), '<SELECTION_CARD_FALLBACK literal>'
+    return None, None
+
+
+def write_selection_card():
+    """RSNA only. Records every test-selected choice so other datasets inherit it."""
+    runs = completed_runs()
+    ph = runs[runs.method == 'ae-posthoc-u'] if not runs.empty else pd.DataFrame()
+    width = '2'
+    if not ph.empty and 'w' in ph:
+        # SMALLEST width within one sd of the best, NOT argmax. Argmax picks w=4 (82.05)
+        # over w=2 (82.00) on a 0.05 difference against sds of ~0.6 -- i.e. it chases
+        # noise, and it contradicts the paper's own stated rule ("the smallest head that
+        # works"). The smallest-within-noise rule is pre-committable, is what the write-up
+        # already claims, and is far easier to defend than a test-set maximum.
+        per_w = ph.groupby(ph['w'].astype(str)).AUC.agg(['mean', 'std', 'size'])
+        per_w = per_w[per_w['size'] >= 2]
+        num = per_w[per_w.index.str.fullmatch(r'\d+')]      # drop the M4 variants
+        if not num.empty:
+            best = num['mean'].max()
+            tol  = float(num.loc[num['mean'].idxmax(), 'std'] or 0.0)
+            ok   = num[num['mean'] >= best - tol]
+            width = str(min(int(w) for w in ok.index))
+    card = {
+        'selected_on': DATASET,
+        'run_version': RUN_VERSION,
+        'posthoc_head_width': width,
+        'ensemble_members': [['ae-pl', {}], ['aeu', {}]],
+        'ensemble_members_extended': [['ae-pl', {}], ['aeu', {}],
+                                      ['ae-ssim-posthoc-u', {'w': width}]],
+        'note': ('Every entry here was chosen by inspecting TEST AUC on the selecting '
+                 'dataset. Applying them unchanged to another dataset is what makes that '
+                 "dataset's numbers held out."),
+    }
+    with open(CARD_PATH, 'w') as f:
+        json.dump(card, f, indent=2)
+    return card
+
+
+def apply_selection_card():
+    """Non-RSNA. Evaluates the card's frozen choices — no scan, no maximum."""
+    card, src = _find_card()
+    if card is None:
+        print('  no selection_card.json found. Run this cell on RSNA first, download the')
+        print('  bundle from Cell 7.0, and upload the card as a Kaggle dataset input')
+        print('  (or paste it into SELECTION_CARD_FALLBACK).')
+        return None
+    if card['selected_on'] == DATASET:
+        print(f'  card was selected on {DATASET} — these numbers are NOT held out here.')
+    print(f'  card loaded from {src}, selected on {card["selected_on"]}\n')
+    rows = []
+    for s in SEEDS:
+        ens = ensemble_scores(s, members=[(m, p) for m, p in card['ensemble_members']])
+        ext = ensemble_scores(s, members=[(m, p) for m, p in
+                                          card['ensemble_members_extended']])
+        head = _scores_for(run_id('ae-posthoc-u', s, w=card['posthoc_head_width']))
+        base = _scores_for(run_id('ae-pl', s))
+        r = {'seed': s}
+        for name, v in [('ensemble_pair', ens), ('ensemble_ext', ext),
+                        ('posthoc_head', head), ('ae_pl_baseline', base)]:
+            r[name] = evaluate_scores(v, Y_TEST)['AUC'] * 100 if v is not None else np.nan
+        rows.append(r)
+    H = pd.DataFrame(rows)
+    print(f'  HELD-OUT on {DATASET} — configuration frozen from {card["selected_on"]}\n')
+    for c in ['ae_pl_baseline', 'posthoc_head', 'ensemble_pair', 'ensemble_ext']:
+        v = H[c].dropna()
+        if len(v):
+            print(f'    {c:<18}{v.mean():6.2f}+-{v.std(ddof=0):.2f}  n={len(v)}')
+    if H.ensemble_pair.notna().any() and H.ae_pl_baseline.notna().any():
+        d = (H.ensemble_pair - H.ae_pl_baseline).dropna()
+        print(f'\n    ensemble_pair - AE-PL = {d.mean():+.2f}  '
+              f'per-seed {", ".join(f"{v:+.2f}" for v in d)}')
+        print('    ^ THIS is a held-out gain: no part of it was tuned on this dataset.')
+    H.to_csv(f'{OUTPUT_DIR}/heldout_{DATASET}_{RUN_VERSION}.csv', index=False)
+    print(f'\n  written -> {OUTPUT_DIR}/heldout_{DATASET}_{RUN_VERSION}.csv')
+    return H
+
+
+if DATASET == 'RSNA':
+    _card = write_selection_card()
+    print(f'  selection card WRITTEN -> {CARD_PATH}')
+    print(f'  head width {_card["posthoc_head_width"]}, '
+          f'{len(_card["ensemble_members"])}-member pair, '
+          f'{len(_card["ensemble_members_extended"])}-member extended')
+    print('\n  Carry this file to the VinCXR and LAG sessions to make their numbers')
+    print('  genuinely held out. It is included in the Cell 7.0 bundle.')
+    HELDOUT = None
+else:
+    HELDOUT = apply_selection_card()
+
+
+# %% [markdown]
+# ---
+# ## **Cell 7.0** — Bundle everything into one downloadable zip
+# Collects **every** artifact this notebook produced — model weights, per-image score
+# vectors, per-run manifests, all CSV tables, all figures, and a written summary — into a
+# single zip under `/kaggle/working` for direct download. No wandb involved.
+#
+# `INCLUDE_WEIGHTS` controls the size. Weights are ~9 MB per run, so a full 100-run
+# session is roughly 1 GB; the per-image **scores** are a few KB each and are what every
+# table in the paper is actually derived from. Set it to `False` for a small bundle that
+# still reproduces every number, `True` when you want the trained models themselves.
+
+# %% [CELL 7.0]  Collect and zip all results
+
+INCLUDE_WEIGHTS = True        # False -> scores + manifests + tables only (~50x smaller)
+
+import zipfile, datetime, shutil
+
+
+def _human(nbytes):
+    for u in ['B', 'KB', 'MB', 'GB']:
+        if nbytes < 1024 or u == 'GB':
+            return f'{nbytes:.1f} {u}'
+        nbytes /= 1024
+
+
+def write_summary(path):
+    """A plain-text record of what this session produced, so the zip is readable on its
+    own without re-running anything."""
+    runs = completed_runs()
+    L = []
+    A = L.append
+    A('=' * 78)
+    A(f'DL PROJECT RESULTS BUNDLE')
+    A(f'dataset      : {DATASET}')
+    A(f'run version  : {RUN_VERSION}')
+    A(f'generated    : {datetime.datetime.now().isoformat(timespec="seconds")}')
+    A(f'seeds        : {SEEDS}')
+    A(f'epochs       : {EPOCHS}   sample mode: {SAMPLE_MODE}')
+    A(f'runs stored  : {len(runs)}')
+    A('=' * 78)
+    if not runs.empty:
+        A('')
+        A('ALL RUNS (sorted by AUROC)')
+        A('-' * 78)
+        cols = [c for c in ['run_id', 'method', 'seed', 'AUC', 'AP', 'n_params',
+                            'minutes'] if c in runs]
+        A(runs[cols].sort_values('AUC', ascending=False).to_string(index=False))
+        A('')
+        A('BY METHOD (mean +- population sd over seeds)')
+        A('-' * 78)
+        gg = runs.groupby('method')[['AUC', 'AP']].agg(['mean', 'std', 'size'])
+        for meth, r in gg.sort_values(('AUC', 'mean'), ascending=False).iterrows():
+            n = int(r[('AUC', 'size')])
+            A(f'  {meth:<26}AUROC {r[("AUC","mean")]*100:6.2f}   '
+              f'AP {r[("AP","mean")]*100:6.2f}   n={n}')
+    A('')
+    A('CAVEATS THAT TRAVEL WITH THESE NUMBERS')
+    A('-' * 78)
+    A('  * sd values are POPULATION sd (ddof=0); on n=3 this understates the sample sd')
+    A('    by a factor of 1.22.')
+    A('  * DeLong p-values condition on THESE trained models and carry no seed variance.')
+    A('    The seed-level column in m3_tests_*.csv is the one that speaks to retraining.')
+    A('  * the post-hoc head WIDTH was selected on test AUC; the reported recovery % is')
+    A('    therefore a test-set maximum.')
+    A('  * the test set is 50% prevalence by construction, so AP is optimistic relative')
+    A('    to clinical prevalence.')
+    A(f'  * held-out numbers exist only where a selection card from another dataset was')
+    A(f'    applied (heldout_*.csv). Everything else was selected on the data it reports.')
+    with open(path, 'w') as f:
+        f.write('\n'.join(L) + '\n')
+    return path
+
+
+BUNDLE_DIR = f'/kaggle/working' if os.path.isdir('/kaggle/working') else '.'
+_stamp = datetime.datetime.now().strftime('%Y%m%d-%H%M')
+BUNDLE = f'{BUNDLE_DIR}/dl_results_{DATASET}_{RUN_VERSION}_{_stamp}.zip'
+
+write_summary(f'{OUTPUT_DIR}/SUMMARY_{DATASET}.txt')
+
+_skip_ext = () if INCLUDE_WEIGHTS else ('.pt', '.pth', '.ckpt')
+_counts, _bytes = {}, 0
+with zipfile.ZipFile(BUNDLE, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as z:
+    for root, _dirs, files in os.walk(OUTPUT_DIR):
+        for fn in sorted(files):
+            if fn.endswith(_skip_ext):
+                continue
+            full = os.path.join(root, fn)
+            z.write(full, os.path.relpath(full, os.path.dirname(OUTPUT_DIR)))
+            ext = os.path.splitext(fn)[1] or '(none)'
+            _counts[ext] = _counts.get(ext, 0) + 1
+            _bytes += os.path.getsize(full)
+
+print(f'\nBUNDLE WRITTEN\n  {BUNDLE}')
+print(f'  zipped size   : {_human(os.path.getsize(BUNDLE))}   '
+      f'(raw {_human(_bytes)})')
+_wmsg = 'INCLUDED' if INCLUDE_WEIGHTS else 'EXCLUDED (set INCLUDE_WEIGHTS=True to keep)'
+print(f'  weights       : {_wmsg}')
+print('\n  contents by type:')
+for ext, n in sorted(_counts.items(), key=lambda kv: -kv[1]):
+    print(f'    {ext:<10}{n:>5}')
+print('\n  Download it from the Kaggle sidebar: Output -> right-click the .zip -> Download.')
+if not INCLUDE_WEIGHTS:
+    print('  NOTE weights excluded; every table still recomputes from the stored scores.')

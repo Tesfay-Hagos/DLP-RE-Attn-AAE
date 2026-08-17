@@ -61,9 +61,18 @@ X1. "This generalises to medical anomaly detection." ONE DATASET. Every number h
 X2. "Ensembling improves anomaly detection." It improved for one specific pair, and
     demonstrably hurt for most subsets. State the pair, not the principle.
 
-X3. "AE-U is unnecessary / can be replaced by the post-hoc head." STANDALONE it cannot:
-    82.00 vs 86.86, +4.86 apart, p=4.3e-09, stable across capacity.
-    QUALIFIER ADDED (11: E10): AS AN ENSEMBLE COMPONENT it is substitutable —
+X3. "AE-U is unnecessary / can be replaced by the post-hoc head."
+    ALWAYS NAME THE FROZEN BACKBONE. "The post-hoc head" is two different objects, and
+    stating the claim without the backbone produced a flat contradiction between this
+    file and 10/11, which quote the two halves against each other:
+      * head on a frozen PLAIN AE      82.00 vs AE-U 86.86 -> 4.86 BELOW, p=4.3e-09,
+        stable across capacity. Here AE-U is NOT replaceable.
+      * head on a frozen AE-SSIM       86.99 +- 0.57 vs AE-U 86.86 +- 0.44 -> +0.13.
+        NOW TESTED by paired DeLong (added to M3_COMPARISONS). Until that p is read off,
+        write "indistinguishable from", never "reaches" or "an ImageNet-free route to
+        AE-U's accuracy" — an untested +0.13 against sds of 0.57/0.44 supports the first
+        verb and not the other two.
+    QUALIFIER (11: E10): AS AN ENSEMBLE COMPONENT it is substitutable —
     perceptual+AE-U 88.74 vs perceptual+frozen-AE-SSIM+head 89.12, difference +0.38,
     p=0.788. Standalone and component-level are different claims; keep them apart.
 
