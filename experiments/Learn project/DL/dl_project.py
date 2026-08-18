@@ -3673,7 +3673,14 @@ _AP = completed_runs()
 if _AP.empty or 'AP' not in _AP:
     print('no runs with AP stored yet')
 else:
-    g = (_AP.groupby('method')[['AUC', 'AP']]
+    # Group by method AND width. Grouping on `method` alone pools all five head widths
+    # plus the M4 variants into one `ae-posthoc-u` row (n=21), which is not a quantity --
+    # it averages a 66.94 linear head with an 82.05 nonlinear one. Same defect as the A4
+    # table had; keep the key identical to how the runs are actually distinguished.
+    _AP = _AP.copy()
+    _AP['group'] = _AP.method + (('_w' + _AP['w'].astype(str)) if 'w' in _AP else '')
+    _AP['group'] = _AP['group'].fillna(_AP.method)
+    g = (_AP.groupby('group')[['AUC', 'AP']]
          .agg(['mean', 'std', 'size']).sort_values(('AUC', 'mean'), ascending=False))
     print(f'\nAUROC and AP by method — {DATASET}, {RUN_VERSION}\n')
     print(f"  {'method':<24}{'AUROC':>16}{'AP':>16}{'n':>4}")
@@ -3830,8 +3837,14 @@ if DATASET == 'RSNA':
     print(f'  head width {_card["posthoc_head_width"]}, '
           f'{len(_card["ensemble_members"])}-member pair, '
           f'{len(_card["ensemble_members_extended"])}-member extended')
-    print('\n  Carry this file to the VinCXR and LAG sessions to make their numbers')
-    print('  genuinely held out. It is included in the Cell 7.0 bundle.')
+    _lit = SELECTION_CARD_FALLBACK or {}
+    _agree = (_lit.get('posthoc_head_width') == _card['posthoc_head_width'])
+    print(f'\n  The VinCXR and LAG sessions read these settings from the'
+          f' SELECTION_CARD_FALLBACK\n  literal in Cell 6.2 — nothing has to be'
+          f' downloaded or uploaded between sessions.')
+    print(f'  literal says width {_lit.get("posthoc_head_width")!r}, '
+          f'this run computed {_card["posthoc_head_width"]!r} -> '
+          f'{"AGREE, nothing to do" if _agree else "DISAGREE: edit the literal in Cell 6.2 to match"}')
     HELDOUT = None
 else:
     HELDOUT = apply_selection_card()
@@ -3938,6 +3951,44 @@ print(f'  weights       : {_wmsg}')
 print('\n  contents by type:')
 for ext, n in sorted(_counts.items(), key=lambda kv: -kv[1]):
     print(f'    {ext:<10}{n:>5}')
-print('\n  Download it from the Kaggle sidebar: Output -> right-click the .zip -> Download.')
+_size = os.path.getsize(BUNDLE)
+_LIMIT = 900 * 1024 ** 2       # Kaggle's browser download is unreliable well below 1 GB
+
+# Kaggle serves /kaggle/working through the Output pane, but clicking Download on a large
+# single file often does nothing at all -- no error, no progress. Splitting into volumes
+# under the limit is what actually makes it downloadable, so do it automatically.
+PARTS = [BUNDLE]
+if _size > _LIMIT:
+    print(f'\n  {_human(_size)} is too large for a reliable browser download — splitting.')
+    PARTS = []
+    with open(BUNDLE, 'rb') as src:
+        i = 0
+        while True:
+            chunk = src.read(_LIMIT)
+            if not chunk:
+                break
+            part = f'{BUNDLE}.part{i:02d}'
+            with open(part, 'wb') as out:
+                out.write(chunk)
+            PARTS.append(part)
+            i += 1
+    os.remove(BUNDLE)          # keep only the parts, or the Output pane shows both
+    print(f'  {len(PARTS)} parts written. Rejoin them locally with:')
+    print(f'    cat {os.path.basename(BUNDLE)}.part* > {os.path.basename(BUNDLE)}')
+
+print('\n  DOWNLOAD — try these in order:')
+print('   1. Click each file below (works even when the Output pane button does not).')
+try:
+    from IPython.display import FileLink, display
+    for p_ in PARTS:
+        display(FileLink(os.path.relpath(p_, '/kaggle/working')
+                         if p_.startswith('/kaggle/working') else p_))
+except Exception as _e:
+    print(f'   (FileLink unavailable: {type(_e).__name__})')
+print('   2. If nothing downloads: Save Version -> "Save & Run All (Commit)". When it')
+print('      finishes, open the finished version and use its Output tab. Committed')
+print('      output downloads reliably; an interactive session\'s often does not.')
+print('   3. Still stuck? Set INCLUDE_WEIGHTS=False and re-run this cell — that drops')
+print('      the bundle to a few MB and every table still recomputes from the scores.')
 if not INCLUDE_WEIGHTS:
-    print('  NOTE weights excluded; every table still recomputes from the stored scores.')
+    print('\n  NOTE weights excluded; every table still recomputes from the stored scores.')
