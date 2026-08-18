@@ -1,0 +1,37 @@
+{
+  "run_id": "vae-grad-rec_ds-LAG_s44",
+  "method": "vae-grad-rec",
+  "seed": 44,
+  "params": {
+    "train_loss": "vae",
+    "score_loss": "vaegrad-rec"
+  },
+  "metrics": {
+    "AUC": 0.7543882588513975,
+    "AP": 0.7266017822980099,
+    "normal_score": 1.3766477877652505e-06,
+    "abnormal_score": 2.0475902147154557e-06,
+    "n_params": 2367584.0
+  },
+  "config": {
+    "image_size": 64,
+    "latent_dim": 16,
+    "hidden_num": 1024,
+    "base_width": 16,
+    "en_depth": 1,
+    "de_depth": 1,
+    "dae_unet_depth": 5,
+    "dae_unet_wf": 6,
+    "epochs": 250,
+    "batch_size": 64,
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "pixel_range": [
+      -1.0,
+      1.0
+    ],
+    "sample_mode": false,
+    "run_version": "dl-v1-lag",
+    "dataset": "LAG"
+  }
+}

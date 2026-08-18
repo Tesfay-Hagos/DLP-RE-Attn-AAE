@@ -1,0 +1,37 @@
+{
+  "run_id": "a1-aeu-l2grad_ds-LAG_s42",
+  "method": "a1-aeu-l2grad",
+  "seed": 42,
+  "params": {
+    "train_loss": "aeu",
+    "score_loss": "l2grad"
+  },
+  "metrics": {
+    "AUC": 0.8281627012061346,
+    "AP": 0.8148450788524416,
+    "normal_score": 4.624665450592147e-07,
+    "abnormal_score": 7.227467904158402e-07,
+    "n_params": 2351440.0
+  },
+  "config": {
+    "image_size": 64,
+    "latent_dim": 16,
+    "hidden_num": 1024,
+    "base_width": 16,
+    "en_depth": 1,
+    "de_depth": 1,
+    "dae_unet_depth": 5,
+    "dae_unet_wf": 6,
+    "epochs": 250,
+    "batch_size": 64,
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "pixel_range": [
+      -1.0,
+      1.0
+    ],
+    "sample_mode": false,
+    "run_version": "dl-v1-lag",
+    "dataset": "LAG"
+  }
+}

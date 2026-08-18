@@ -1,0 +1,39 @@
+{
+  "run_id": "ae_ds-VinCXR_s42",
+  "method": "ae",
+  "seed": 42,
+  "params": {
+    "train_loss": "l2",
+    "score_loss": "l2"
+  },
+  "metrics": {
+    "AUC": 0.560467,
+    "AP": 0.5993311758465879,
+    "normal_score": 0.013308055698871613,
+    "abnormal_score": 0.01630713976919651,
+    "train_loss_final": 0.00877560233324766,
+    "n_params": 2351184.0,
+    "minutes": 1.6233209252357483
+  },
+  "config": {
+    "image_size": 64,
+    "latent_dim": 16,
+    "hidden_num": 1024,
+    "base_width": 16,
+    "en_depth": 1,
+    "de_depth": 1,
+    "dae_unet_depth": 5,
+    "dae_unet_wf": 6,
+    "epochs": 250,
+    "batch_size": 64,
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "pixel_range": [
+      -1.0,
+      1.0
+    ],
+    "sample_mode": false,
+    "run_version": "dl-v1-vincxr",
+    "dataset": "VinCXR"
+  }
+}

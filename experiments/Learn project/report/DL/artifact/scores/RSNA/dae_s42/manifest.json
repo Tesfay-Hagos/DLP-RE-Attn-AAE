@@ -1,0 +1,38 @@
+{
+  "run_id": "dae_s42",
+  "method": "dae",
+  "seed": 42,
+  "params": {
+    "train_loss": "l2",
+    "score_loss": "l2"
+  },
+  "metrics": {
+    "AUC": 0.8387189999999999,
+    "AP": 0.8017914020679234,
+    "normal_score": 0.008185873739421368,
+    "abnormal_score": 0.020172085613012314,
+    "train_loss_final": 0.0017189569457503526,
+    "n_params": 31042369.0,
+    "minutes": 82.16080055634181
+  },
+  "config": {
+    "image_size": 64,
+    "latent_dim": 16,
+    "hidden_num": 1024,
+    "base_width": 16,
+    "en_depth": 1,
+    "de_depth": 1,
+    "dae_unet_depth": 5,
+    "dae_unet_wf": 6,
+    "epochs": 250,
+    "batch_size": 64,
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "pixel_range": [
+      -1.0,
+      1.0
+    ],
+    "sample_mode": false,
+    "run_version": "dl-v1"
+  }
+}

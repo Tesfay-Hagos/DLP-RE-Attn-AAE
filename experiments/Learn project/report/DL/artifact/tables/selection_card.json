@@ -1,0 +1,32 @@
+{
+  "selected_on": "RSNA",
+  "run_version": "dl-v1",
+  "posthoc_head_width": "2",
+  "ensemble_members": [
+    [
+      "ae-pl",
+      {}
+    ],
+    [
+      "aeu",
+      {}
+    ]
+  ],
+  "ensemble_members_extended": [
+    [
+      "ae-pl",
+      {}
+    ],
+    [
+      "aeu",
+      {}
+    ],
+    [
+      "ae-ssim-posthoc-u",
+      {
+        "w": "2"
+      }
+    ]
+  ],
+  "note": "Every entry here was chosen by inspecting TEST AUC on the selecting dataset. Applying them unchanged to another dataset is what makes that dataset's numbers held out."
+}

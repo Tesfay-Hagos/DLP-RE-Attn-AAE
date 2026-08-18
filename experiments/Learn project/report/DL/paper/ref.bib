@@ -1,0 +1,291 @@
+% ===================================================================
+% ML4H 2026 — reference list.
+% Identifiers were resolved against Crossref/arXiv during preparation.
+% EVERY entry must still be opened and confirmed by a human before
+% submission: ML4H's LLM policy permits retraction for citations that
+% do not exist, do not resolve, or do not support the use made of them.
+% Highest priority: lagogiannis2024unsupervised, whose Section V-D
+% quotation this paper's central claim depends on.
+% ===================================================================
+
+% ---------- benchmarks / comparative studies ----------
+@article{cai2025medianomaly,
+  title   = {{MedIAnomaly}: A comparative study of anomaly detection in medical images},
+  author  = {Cai, Yu and Zhang, Weiwen and Chen, Hao and Cheng, Kwang-Ting},
+  journal = {Medical Image Analysis},
+  year    = {2025},
+  doi     = {10.1016/j.media.2025.103500},
+  note    = {arXiv:2404.04518}
+}
+
+@article{lagogiannis2024unsupervised,
+  title   = {Unsupervised Pathology Detection: A Deep Dive Into the State of the Art},
+  author  = {Lagogiannis, Ioannis and Meissen, Felix and Kaissis, Georgios and Rueckert, Daniel},
+  journal = {IEEE Transactions on Medical Imaging},
+  volume  = {43},
+  number  = {1},
+  pages   = {241--252},
+  year    = {2024},
+  doi     = {10.1109/TMI.2023.3298093},
+  note    = {arXiv:2303.00609; see Section V-D on residual extraction}
+}
+
+@article{baur2021autoencoders,
+  title   = {Autoencoders for unsupervised anomaly segmentation in brain {MR} images:
+             A comparative study},
+  author  = {Baur, Christoph and Denner, Stefan and Wiestler, Benedikt and Navab, Nassir
+             and Albarqouni, Shadi},
+  journal = {Medical Image Analysis},
+  volume  = {69},
+  pages   = {101952},
+  year    = {2021},
+  doi     = {10.1016/j.media.2020.101952}
+}
+
+@inproceedings{cai2024rethinking,
+  title     = {Rethinking Autoencoders for Medical Anomaly Detection from
+               A Theoretical Perspective},
+  author    = {Cai, Yu and Chen, Hao and Cheng, Kwang-Ting},
+  booktitle = {Medical Image Computing and Computer Assisted Intervention (MICCAI)},
+  year      = {2024},
+  doi       = {10.1007/978-3-031-72120-5_51},
+  note      = {arXiv:2403.09303}
+}
+
+% ---------- the anomaly score as a free variable ----------
+@inproceedings{zimmerer2019unsupervised,
+  title     = {Unsupervised Anomaly Localization Using Variational Auto-Encoders},
+  author    = {Zimmerer, David and Isensee, Fabian and Petersen, Jens and
+               Kohl, Simon and Maier-Hein, Klaus},
+  booktitle = {Medical Image Computing and Computer Assisted Intervention (MICCAI)},
+  year      = {2019},
+  doi       = {10.1007/978-3-030-32251-9_32},
+  note      = {arXiv:1907.02796}
+}
+
+@inproceedings{meissen2022pitfalls,
+  title     = {On the Pitfalls of Using the Residual Error as Anomaly Score},
+  author    = {Meissen, Felix and Wiestler, Benedikt and Kaissis, Georgios and
+               Rueckert, Daniel},
+  booktitle = {Medical Imaging with Deep Learning (MIDL)},
+  year      = {2022},
+  note      = {PMLR v172; arXiv:2202.03826}
+}
+
+@inproceedings{meissen2023fae,
+  title     = {Unsupervised Anomaly Detection in Medical Images Using
+               Structural Feature Autoencoders},
+  author    = {Meissen, Felix and Paetzold, Johannes and Kaissis, Georgios and
+               Rueckert, Daniel},
+  booktitle = {Information Processing in Medical Imaging (IPMI)},
+  year      = {2023},
+  doi       = {10.1007/978-3-031-33842-7_2}
+}
+
+% ---------- the conflation, as exhibited ----------
+@inproceedings{bergmann2019improving,
+  title     = {Improving Unsupervised Defect Segmentation by Applying Structural
+               Similarity to Autoencoders},
+  author    = {Bergmann, Paul and L{\"o}we, Sindy and Fauser, Michael and
+               Sattlegger, David and Steger, Carsten},
+  booktitle = {Proceedings of the 14th International Joint Conference on Computer
+               Vision, Imaging and Computer Graphics Theory and Applications (VISAPP)},
+  year      = {2019},
+  doi       = {10.5220/0007364503720380},
+  note      = {arXiv:1807.02011}
+}
+
+@article{fan2025ssim,
+  title   = {{SSIM} over {MSE}: A new perspective for video anomaly detection},
+  author  = {Fan, Pei and others},
+  journal = {Neural Networks},
+  year    = {2025},
+  doi     = {10.1016/j.neunet.2024.107115}
+}
+
+% ---------- methods reproduced ----------
+@article{shvetsova2021anomaly,
+  title   = {Anomaly Detection in Medical Imaging With Deep Perceptual Autoencoders},
+  author  = {Shvetsova, Nina and Bakker, Bart and Fedulova, Irina and Schulz, Heinrich
+             and Dylov, Dmitry V.},
+  journal = {IEEE Access},
+  volume  = {9},
+  pages   = {118571--118583},
+  year    = {2021},
+  doi     = {10.1109/ACCESS.2021.3107163}
+}
+
+@inproceedings{mao2020abnormality,
+  title     = {Abnormality Detection in Chest X-Ray Images Using Uncertainty
+               Prediction Autoencoders},
+  author    = {Mao, Yifan and Xue, Fei-Fei and Wang, Ruixuan and Zhang, Jianguo and
+               Zheng, Wei-Shi and Liu, Hongmei},
+  booktitle = {Medical Image Computing and Computer Assisted Intervention (MICCAI)},
+  year      = {2020},
+  doi       = {10.1007/978-3-030-59725-2_51}
+}
+
+@article{kascenas2023role,
+  title   = {The role of noise in denoising models for anomaly detection in
+             medical images},
+  author  = {Kascenas, Antanas and Sanchez, Pedro and Schrempf, Patrick and
+             Wang, Chaoyang and Clackett, William and Mikhael, Shadia S. and
+             Voisey, Jeremy P. and Goatman, Keith and Weir, Alexander and
+             Pugeault, Nicolas and Tsaftaris, Sotirios A. and O'Neil, Alison Q.},
+  journal = {Medical Image Analysis},
+  volume  = {90},
+  pages   = {102963},
+  year    = {2023},
+  doi     = {10.1016/j.media.2023.102963},
+  note    = {arXiv:2301.08330}
+}
+
+@article{kingma2014auto,
+  title   = {Auto-Encoding Variational {B}ayes},
+  author  = {Kingma, Diederik P. and Welling, Max},
+  journal = {arXiv preprint arXiv:1312.6114},
+  year    = {2014}
+}
+
+@article{wang2004image,
+  title   = {Image quality assessment: from error visibility to structural similarity},
+  author  = {Wang, Zhou and Bovik, Alan C. and Sheikh, Hamid R. and
+             Simoncelli, Eero P.},
+  journal = {IEEE Transactions on Image Processing},
+  volume  = {13},
+  number  = {4},
+  pages   = {600--612},
+  year    = {2004},
+  doi     = {10.1109/TIP.2003.819861}
+}
+
+% ---------- heteroscedastic uncertainty ----------
+@inproceedings{nix1994estimating,
+  title     = {Estimating the mean and variance of the target probability
+               distribution},
+  author    = {Nix, David A. and Weigend, Andreas S.},
+  booktitle = {Proceedings of the IEEE International Conference on Neural Networks
+               (ICNN)},
+  year      = {1994},
+  doi       = {10.1109/ICNN.1994.374138}
+}
+
+@inproceedings{kendall2017uncertainties,
+  title     = {What Uncertainties Do We Need in {B}ayesian Deep Learning for
+               Computer Vision?},
+  author    = {Kendall, Alex and Gal, Yarin},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  year      = {2017},
+  note      = {arXiv:1703.04977}
+}
+
+% ---------- statistics ----------
+@article{delong1988comparing,
+  title   = {Comparing the areas under two or more correlated receiver operating
+             characteristic curves: a nonparametric approach},
+  author  = {DeLong, Elizabeth R. and DeLong, David M. and
+             Clarke-Pearson, Daniel L.},
+  journal = {Biometrics},
+  volume  = {44},
+  number  = {3},
+  pages   = {837--845},
+  year    = {1988},
+  doi     = {10.2307/2531595}
+}
+
+@article{holm1979simple,
+  title   = {A simple sequentially rejective multiple test procedure},
+  author  = {Holm, Sture},
+  journal = {Scandinavian Journal of Statistics},
+  volume  = {6},
+  number  = {2},
+  pages   = {65--70},
+  year    = {1979}
+}
+
+@article{sun2014fast,
+  title   = {Fast Implementation of {D}eLong's Algorithm for Comparing the Areas
+             Under Correlated Receiver Operating Characteristic Curves},
+  author  = {Sun, Xu and Xu, Weichao},
+  journal = {IEEE Signal Processing Letters},
+  volume  = {21},
+  number  = {11},
+  pages   = {1389--1393},
+  year    = {2014},
+  doi     = {10.1109/LSP.2014.2337313}
+}
+
+% ---------- datasets ----------
+@article{shih2019rsna,
+  title   = {Augmenting the National Institutes of Health Chest Radiograph Dataset
+             with Expert Annotations of Possible Pneumonia},
+  author  = {Shih, George and Wu, Carol C. and Halabi, Safwan S. and others},
+  journal = {Radiology: Artificial Intelligence},
+  volume  = {1},
+  number  = {1},
+  pages   = {e180041},
+  year    = {2019},
+  doi     = {10.1148/ryai.2019180041}
+}
+
+@article{nguyen2022vindr,
+  title   = {{VinDr-CXR}: An open dataset of chest X-rays with radiologist's
+             annotations},
+  author  = {Nguyen, Ha Q. and Lam, Khanh and Le, Linh T. and others},
+  journal = {Scientific Data},
+  volume  = {9},
+  pages   = {429},
+  year    = {2022},
+  doi     = {10.1038/s41597-022-01498-w}
+}
+
+@inproceedings{li2019lag,
+  title     = {Attention Based Glaucoma Detection: A Large-Scale Database and
+               {CNN} Model},
+  author    = {Li, Liu and Xu, Mai and Wang, Xiaofei and Jiang, Lai and Liu, Hanruo},
+  booktitle = {IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+  year      = {2019},
+  doi       = {10.1109/CVPR.2019.01082}
+}
+
+% ---------- defensive: an instance of the confound, not prior art ----------
+@article{behrouzi2023anomaly,
+  title   = {Anomaly Detection in Thermal Images of Perishable Items Using
+             Autoencoders},
+  author  = {Behrouzi, Sepehr and others},
+  journal = {Journal of Imaging},
+  volume  = {9},
+  number  = {7},
+  pages   = {137},
+  year    = {2023},
+  doi     = {10.3390/jimaging9070137},
+  note    = {Results table indexes the anomaly score only, not the training loss,
+             so no loss-by-score attribution can be recovered from it}
+}
+
+% ---------- clinical context for the health framing ----------
+@article{soh2021undetected,
+  title   = {The Global Extent of Undetected Glaucoma in Adults: A Systematic Review
+             and Meta-analysis},
+  author  = {Soh, Zhi and Yu, Marco and Betzler, Bjorn Kaijun and others},
+  journal = {Ophthalmology},
+  volume  = {128},
+  number  = {10},
+  pages   = {1393--1404},
+  year    = {2021},
+  doi     = {10.1016/j.ophtha.2021.04.009},
+  note    = {More than half of prevalent glaucoma was previously undetected in every
+             geographical region}
+}
+
+@article{zhang2021poag,
+  title   = {Prevalence of primary open angle glaucoma in the last 20 years:
+             a meta-analysis and systematic review},
+  author  = {Zhang, Ning and Wang, Jiaxing and Li, Ye and Jiang, Bin},
+  journal = {Scientific Reports},
+  volume  = {11},
+  pages   = {13762},
+  year    = {2021},
+  doi     = {10.1038/s41598-021-92971-w},
+  note    = {Worldwide POAG prevalence 2.4\% (95\% CI 2.0--2.8)}
+}

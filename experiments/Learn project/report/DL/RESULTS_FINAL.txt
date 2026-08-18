@@ -1,0 +1,75 @@
+================================================================================
+CONSOLIDATED RESULTS — three datasets, read from the run bundles
+Generated 2026-08-18. Every value computed from stored manifests / score vectors.
+================================================================================
+
+1. HEADLINE — held-out transfer of the RSNA-selected configuration
+--------------------------------------------------------------------------------
+  Head width (w=2) and ensemble membership (perceptual+uncertainty) were chosen on
+  RSNA. VinCXR and LAG applied them UNCHANGED -> their numbers are held out.
+
+    RSNA     gain +1.16   per-seed +0.90, +1.10, +1.49   IN-SAMPLE (config selected here)
+    VinCXR   gain +1.57   per-seed +1.96, +2.52, +0.25   HELD OUT
+    LAG      gain +1.08   per-seed +0.71, +0.77, +1.76   HELD OUT
+
+    POOLED HELD-OUT (VinCXR+LAG, n=6)
+      mean +1.33  95% CI [+0.41, +2.25]  t=3.70 df=5 p=0.0140
+      sign 6/6 positive, one-sided p=0.0156
+      CONSERVATIVE: dataset as unit = n=2; report 2/2 agreement, not a p-value.
+
+
+2. CROSS-DATASET REPLICATION — paired DeLong, Holm-corrected within each dataset
+--------------------------------------------------------------------------------
+    comparison                            RSNA    VinCXR       LAG   verdict
+    ensemble(perc+unc) vs AE-PL         +1.16*    +1.57*    +1.08*   REPLICATES 3/3
+    ensemble(perc+unc) vs AE-U          +1.88*    +2.95*    +4.49*   REPLICATES 3/3
+    post-hoc head (w=2) vs AE-SSIM      +1.19*   +13.95*   +15.92*   REPLICATES 3/3
+    post-hoc head (w=2) vs plain AE    +13.65*   +12.38*    +4.31*   REPLICATES 3/3
+    AE-U vs post-hoc head (w=2)         +4.86*    +5.72*    -0.78    REVERSES
+    AE rescored with SSIM vs AE         +9.08*    -2.37*   -10.54*   REVERSES
+    frozen-AE-SSIM+head vs AE-U         +0.13     -1.03     -4.35*   REVERSES
+
+    * Holm-significant on that dataset.   REPLICATES 4 / REVERSES 3
+
+
+3. THE REVERSALS — report as prominently as the successes
+--------------------------------------------------------------------------------
+    AE-U vs post-hoc head (w=2)
+      RSNA      +4.86   p_holm=6.9e-35
+      VinCXR    +5.72   p_holm=1.65e-34
+      LAG       -0.78   p_holm=0.0546
+
+    AE rescored with SSIM vs AE
+      RSNA      +9.08   p_holm=2.08e-115
+      VinCXR    -2.37   p_holm=0.000568
+      LAG      -10.54   p_holm=3.56e-113
+
+    frozen-AE-SSIM+head vs AE-U
+      RSNA      +0.13   p_holm=0.714
+      VinCXR    -1.03   p_holm=0.094
+      LAG       -4.35   p_holm=6.04e-10
+
+
+4. THE 3-MEMBER EXTENSION — does NOT replicate; keep 89.46 out of the headline
+--------------------------------------------------------------------------------
+    RSNA   +0.72  SELECTED on RSNA (contaminated)
+    VinCXR +0.82  held out
+    LAG    -1.26  held out, matched seeds 42/44 only (-0.79, -1.73); seed 43 run missing
+
+
+5. TOP METHODS PER DATASET (AUROC/AP, mean over seeds)
+--------------------------------------------------------------------------------
+    RSNA    ae-pl 87.58/84.98  ae-ssim-posthoc-u 86.99/86.50  aeu 86.86/84.71  ens-all4 84.88/82.40  dae 83.87/80.18
+    VinCXR  ae-pl 75.50/73.94  aeu 74.13/72.60  ae-ssim-posthoc-u 73.11/71.12  dae 69.55/71.80  ens-all4 68.11/68.62
+    LAG     ae-pl 85.90/82.12  a1-aeu-l2grad 82.91/81.60  aeu 82.50/80.21  ens-all4 82.32/79.11  vae-grad-combi 81.75/79.67
+
+
+6. CAVEATS THAT TRAVEL WITH EVERY NUMBER
+--------------------------------------------------------------------------------
+    * n=3 seeds. DeLong conditions on these trained models and carries no seed
+      variance; the seed-level column is the one that speaks to retraining.
+    * a non-significant seed-level result at n=3 means UNDERPOWERED, not equivalent.
+    * 50% prevalence by construction -> AP is optimistic vs clinical prevalence.
+    * LAG has 99 runs, not 100: ae-ssim-posthoc-u_ds-LAG_w-2_s43 failed the
+      non-finite-loss guard. Every statistic using it is n=2 and is marked so.
+    * head width w=2 was selected on RSNA test AUC. Held-out datasets inherit it.

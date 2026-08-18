@@ -1,0 +1,39 @@
+{
+  "run_id": "ae_ds-LAG_s44",
+  "method": "ae",
+  "seed": 44,
+  "params": {
+    "train_loss": "l2",
+    "score_loss": "l2"
+  },
+  "metrics": {
+    "AUC": 0.7985893714812208,
+    "AP": 0.7653512718110358,
+    "normal_score": 0.0035425620153546333,
+    "abnormal_score": 0.006311324890702963,
+    "train_loss_final": 0.003091977837185065,
+    "n_params": 2351184.0,
+    "minutes": 0.6130053599675497
+  },
+  "config": {
+    "image_size": 64,
+    "latent_dim": 16,
+    "hidden_num": 1024,
+    "base_width": 16,
+    "en_depth": 1,
+    "de_depth": 1,
+    "dae_unet_depth": 5,
+    "dae_unet_wf": 6,
+    "epochs": 250,
+    "batch_size": 64,
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "pixel_range": [
+      -1.0,
+      1.0
+    ],
+    "sample_mode": false,
+    "run_version": "dl-v1-lag",
+    "dataset": "LAG"
+  }
+}

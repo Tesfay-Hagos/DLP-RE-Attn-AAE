@@ -1,0 +1,482 @@
+================================================================================
+PAPER FRAMING — ML4H 2026
+Target: ML4H 2026, Proceedings track (8pp, PMLR, archival). Sydney, 6-7 Dec 2026.
+Deadline: 10 September 2026, 11:59pm AoE.
+Written 2026-08-18 from RESULTS_FINAL.txt. Supersedes 10_PAPER_FOUNDATION.txt §1-§6.
+================================================================================
+
+
+################################################################################
+# 0. THE FINDING THAT DETERMINES THE FRAMING
+################################################################################
+Lagogiannis et al. (IEEE TMI 2024), the current SOTA benchmark in this area, ALREADY
+performs the off-diagonal substitution, in §V-D "Residual extraction and Post-processing",
+verbatim:
+
+    "For residual-based methods (VAE, r-VAE, f-AnoGAN, FAE, and DAE in this study),
+     anomaly maps are typically extracted from the pixel-wise absolute error [...]
+     Instead, we opted to use the Structural Similarity Index (SSIM) as a more powerful
+     measure of dissimilarity [...] This change increased the performance of ALL selected
+     models it was applied to."
+
+VAE, r-VAE, f-AnoGAN and DAE are trained under pixel-space objectives. So a published,
+peer-reviewed benchmark trains under one distance function, scores under another, and
+states a UNIVERSAL generalisation about the result.
+
+OUR DATA FALSIFIES THAT GENERALISATION:
+    AE rescored with SSIM vs AE:  +9.08 (RSNA) / -2.37 (VinCXR) / -10.54 (LAG)
+    all three Holm-significant under paired DeLong; two of three NEGATIVE.
+
+This is the paper. Not "we noticed scores are dataset-dependent" (folklore, and already
+published at the LOSS level by MedIAnomaly §4.2.3: AE-PL beats l2 by >20% AUC on some
+datasets and loses on ISIC2018). Instead: A SPECIFIC, ATTRIBUTABLE CORRECTION TO A NAMED
+CLAIM IN THE CURRENT BENCHMARK, with paired tests and multiplicity control.
+
+CONSEQUENCE FOR CLAIMS: we did NOT discover the off-diagonal. Lagogiannis entered it
+first. We claim the FULL CROSS, the ATTRIBUTION, and the CROSS-DATASET TEST.
+
+
+################################################################################
+# 1. TITLE
+################################################################################
+PRIMARY
+    Scores Do Not Transfer: Attributing Reconstruction-Based Anomaly Detection
+    Across Medical Imaging Datasets
+
+ALT 1  The Same Free Upgrade Helps on One Dataset and Harms on Another:
+       A Transfer Audit of Reconstruction-Based Medical Anomaly Detection
+ALT 2  What Replicates and What Reverses: Separating the Training Objective from
+       the Anomaly Score in Medical Image Anomaly Detection
+
+DEAD — DO NOT USE
+    "Objectives Specialise Residuals, Scores Read Them" — the asymmetric specialisation
+    law it asserts was derived on RSNA alone and is contradicted by the LAG reversals.
+    A title falsified by the paper's own Table 2 is the cheapest possible reject.
+    "The Score, Not the Objective ..." — forbidden by 07 X7; interaction terms are the
+    largest components of the decomposition.
+
+
+################################################################################
+# 2. ABSTRACT  (196 words)
+################################################################################
+Unsupervised anomaly detection on medical images is reported as a contest between named
+methods, but every reconstruction-based detector bundles two separable decisions: the
+objective the model is trained to reconstruct, and the rule that turns the residual into a
+score. The literature moves them together. The one exception -- substituting a structural
+similarity residual into models trained under pixel objectives -- is recommended in the
+current state-of-the-art benchmark on the grounds that it improved every model it was
+applied to. We test that claim. Reproducing ten methods under one protocol and crossing
+four training objectives with five anomaly scores on three datasets (RSNA, VinDr-CXR, LAG;
+64x64, three seeds), we find the substitution improves AUROC by 9.08 points on RSNA and
+harms it by 2.37 and 10.54 points on the other two; all three are Holm-significant under
+paired DeLong tests and they disagree in sign. Two further design-level comparisons
+reverse across datasets while four replicate three of three. A variance head fitted to a
+frozen autoencoder shows what an uncertainty score computes: residual relative to expected
+difficulty. A configuration selected on RSNA and applied unchanged elsewhere gains 1.33
+AUROC over the strongest single method (95% CI [0.41, 2.25]; six of six held-out seed
+measurements positive). We do not reach the benchmark's best reported accuracy; we report
+what it is made of.
+
+KEYWORDS: anomaly detection, medical imaging, evaluation, reproducibility, autoencoders
+
+NOTE: the 89.46 three-member ensemble does NOT appear (it reverses on LAG, -1.26).
+NOTE: no code link in the abstract — indexing services strip it (template instruction).
+
+
+################################################################################
+# 3. THE GAP  (use this wording)
+################################################################################
+In a reconstruction-based anomaly detector the reconstruction metric appears TWICE -- once
+as the objective the model is trained under, and once as the distance that converts the
+residual into a score -- and the literature moves the two together. Bergmann et al. state
+the design explicitly ("by adapting the loss AND evaluation functions") and then attribute
+the resulting 0.688 -> 0.966 AUC gain to "merely changing the loss function". MedIAnomaly
+is the first to tabulate loss and score as separate columns, yet instantiates them with the
+same distance in every reconstruction method it evaluates. The off-diagonal has been
+entered exactly once, unsystematically: Lagogiannis et al. substitute an SSIM residual into
+models trained under pixel objectives and report that it helped every model it was applied
+to. No work in any domain -- medical, industrial, or video -- evaluates the two axes as a
+crossed design, so no published gain in this family is attributable to the objective, to
+the score, or to their interaction.
+
+POSITIONING SENTENCE FOR RELATED WORK (replaces 10 §3's, which is factually wrong):
+    "Baur et al. and Cai et al. hold the residual distance fixed while varying
+     architecture, bottleneck, or extraction paradigm; Cai et al. are the first to tabulate
+     the training loss and the anomaly score as separate columns, but in every
+     reconstruction method they evaluate the two are instantiated with the same distance
+     function. The single exception in the literature is Lagogiannis et al., who substitute
+     an SSIM residual into four models trained under pixel objectives and report that this
+     'increased the performance of all selected models it was applied to' -- one
+     off-diagonal cell per model, reported as a preprocessing decision rather than as a
+     result. We evaluate the full cross, and find that this substitution's sign is
+     dataset-dependent."
+
+NEVER WRITE (each is false and a reviewer can produce the counterexample):
+    x "first to vary the anomaly score"                    -> Zimmerer et al. 2019
+    x "no prior work crosses the reconstruction metric"    -> Lagogiannis §V-D
+    x "first to score a model under a distance it was not trained under" -> Lagogiannis
+    x "[P1]-[P4] compare methods as indivisible units"     -> false for Baur AND Lagogiannis
+SAFE:
+    + "first to report the full objective x score cross"
+    + "first to attribute published gains to objective, score, and interaction"
+    + "first to test whether an off-diagonal rescore transfers across datasets"
+
+
+################################################################################
+# 4. RESEARCH QUESTION
+################################################################################
+PRIMARY
+    When a reconstruction-based medical anomaly detector reports a gain, which of its two
+    coupled design decisions -- the training objective or the anomaly score -- earned that
+    gain, and does the answer hold when the same decision is applied to a different dataset?
+
+RQ1  Crossing objectives with scores factorially on one backbone and one protocol, how much
+     of each published method's advantage is attributable to the score, to the objective,
+     and to their interaction?
+RQ2  Which attributions replicate across three datasets and which reverse -- and are the
+     reversals large and significant enough to be findings rather than noise?
+RQ3  What does an uncertainty-weighted residual score actually compute, and does that
+     mechanism predict where it will fail?
+RQ4  Does any configuration selected on one dataset transfer, unchanged, to datasets it was
+     not selected on?
+
+
+################################################################################
+# 5. HYPOTHESES  (each falsifiable, each mapped to evidence, each with a verdict)
+################################################################################
+H1  THE ANOMALY SCORE IS A SEPARABLE, TRANSFERABLE LEVER.
+    Falsifiable form: rescoring fixed trained weights with a different reconstruction
+    metric changes AUROC in a CONSISTENT DIRECTION across datasets.
+    Evidence: +9.08 / -2.37 / -10.54, all Holm-significant.
+    VERDICT: REFUTED — AND THIS REFUTATION IS THE PAPER. The magnitude claim survives
+    (a free rescore moves AUROC by up to 10.5 points); the direction claim does not.
+    Both directions significant on the same test => not noise, not a power failure.
+
+H2  OBJECTIVE AND SCORE INTERACT; MISMATCHING THEM IS ACTIVELY HARMFUL.
+    Falsifiable form: a model trained under one metric and scored with plain L2 will not
+    fall below a plain autoencoder.
+    Evidence: every such cell falls below (61.9 SSIM-trained, 65.4 uncertainty-trained,
+    44.9 perceptual-trained); interactions +9.8 and +35.1 exceed both main effects.
+    VERDICT: SUPPORTED. 44.9 is BELOW CHANCE.
+
+H3  UNCERTAINTY TRAINING PRODUCES A BETTER RECONSTRUCTOR.
+    Evidence: AE-U scored with L2 = 65.4 vs plain AE 68.35.
+    VERDICT: REFUTED. Its entire advantage lives in the scoring rule.
+
+H4  A POST-HOC VARIANCE HEAD BEATS THE FROZEN BACKBONE IT IS FITTED ONTO.
+    Evidence: vs plain AE +13.65 / +12.38 / +4.31; vs AE-SSIM +1.19 / +13.95 / +15.92.
+    VERDICT: SUPPORTED 3/3. THE MOST ROBUST FINDING IN THE PAPER.
+
+H5  THE JOINT-VS-POST-HOC GAP IS CAUSED BY RECONSTRUCTION/VARIANCE CO-ADAPTATION.
+    Falsifiable form: jointly trained AE-U exceeds frozen-backbone-plus-head on EVERY
+    dataset.
+    Evidence: +4.86 / +5.72 / -0.78 (LAG, p_holm=0.055).
+    VERDICT: REFUTED AS STATED. Co-adaptation predicts a gap everywhere; LAG shows none.
+    This was OUR OWN proposed mechanism. Report the falsification — it is worth more than
+    the original claim.
+
+H6  THE UNCERTAINTY SCORE MEASURES RECONSTRUCTION ERROR MAGNITUDE.
+    Evidence: corr(log_var, residual) = +0.506 (far from 1); log_var(abnormal) -
+    log_var(normal) = -0.0997, OPPOSITE in sign to the residual difference.
+    VERDICT: REFUTED, AND THE REFUTATION IS THE MECHANISM — residual relative to EXPECTED
+    difficulty. Normal-but-hard: large residual, large log_var, ratio moderate.
+    Abnormal: large residual, SMALL log_var, ratio large.
+
+H7  A CONFIGURATION SELECTED ON ONE DATASET TRANSFERS UNCHANGED TO UNSEEN DATASETS.
+    Evidence: RSNA +1.16 (in-sample), VinCXR +1.57, LAG +1.08 (both held out);
+    pooled held-out +1.33, 95% CI [+0.41,+2.25], t=3.70 df=5 p=0.0140; 6/6 positive.
+    VERDICT: SUPPORTED — with the unit-of-analysis caveat IN THE SAME BREATH: dataset as
+    unit gives n=2, which supports 2/2 agreement and NO p-value.
+
+H8  THE THREE-MEMBER EXTENSION ALSO TRANSFERS.
+    Evidence: +0.72 (RSNA, selected here) / +0.82 (VinCXR) / -1.26 (LAG, matched seeds).
+    VERDICT: REFUTED ON HELD-OUT DATA. Keep out of every headline. Its RSNA number is
+    exactly the selected-on-test artefact this paper argues against — say so.
+
+
+################################################################################
+# 6. CONTRIBUTIONS  (numbered and categorised)
+################################################################################
+-- PRIMARY --------------------------------------------------------------------
+
+C1  [EMPIRICAL FINDING + CORRECTION TO PUBLISHED WORK]
+    A benchmark-recommended, no-retraining score substitution reverses sign across
+    datasets. Lagogiannis et al. report that replacing a pixel residual with an SSIM
+    residual "increased the performance of all selected models it was applied to"; under
+    paired DeLong with Holm correction we measure +9.08 (RSNA), -2.37 (VinCXR), -10.54
+    (LAG), all significant.
+    FALSIFY BY: showing the negative direction is an artefact of these two splits, or that
+    it vanishes with >=10 seeds.
+
+C2  [EMPIRICAL FINDING + NEGATIVE RESULT]
+    A design-decision replication table: of seven design-level comparisons applied
+    unchanged to three datasets, FOUR replicate 3/3 and THREE reverse. Replications and
+    reversals appear in ONE table with equal prominence.
+    FALSIFY BY: showing a replicating row reverses on a further dataset (which would
+    strengthen the thesis while falsifying that row), or that a reversal is a loader bug.
+
+C3  [METHODOLOGICAL / INSTRUMENT]
+    The objective x score factorial as an attribution instrument. Crossing four objectives
+    with five scores on one backbone and one protocol makes the two decisions individually
+    testable and shows they are NOT additive — the interaction exceeds both main effects
+    (+9.8 AE-SSIM, +35.1 AE-PL) — so no method that changes both can attribute its gain to
+    either. Credit Lagogiannis for entering the off-diagonal; we claim the full cross.
+    FALSIFY BY: showing the decomposition is unstable under a different backbone.
+
+C4  [NEGATIVE RESULT]
+    Mismatching objective and score is actively harmful, including below chance. Every
+    metric-trained model scored with plain L2 falls below a plain autoencoder; a
+    perceptually trained model scored with L2 reaches 44.9 — below chance, consistently
+    across seeds — because the perceptual objective constrains deep features, not absolute
+    intensity or contrast.
+    FALSIFY BY: showing it disappears under per-image intensity normalisation before
+    scoring (which would locate it in preprocessing, not the objective).
+
+-- SUPPORTING -----------------------------------------------------------------
+
+C5  [MECHANISM]
+    What an uncertainty score computes: residual relative to expected difficulty.
+    corr(log_var, residual) = +0.506, yet abnormal images get a SMALLER log_var (-0.0997)
+    and are discounted LESS than their residual alone would predict.
+    FALSIFY BY: showing the class contrast vanishes on a further dataset while the head
+    still helps — decoupling the mechanism from the benefit.
+
+C6  [EMPIRICAL FINDING]
+    A genuinely held-out transfer result: head width and ensemble membership selected on
+    RSNA, applied unchanged to VinCXR and LAG, beat the strongest single method by a pooled
+    +1.33 AUROC. Reported ALONGSIDE its own failed extension (-1.26 on held-out LAG).
+    FALSIFY BY: a negative gain on a further dataset, or non-survival at higher seed count.
+
+C7  [ARTIFACT]
+    Ten methods reproduced under one protocol on three datasets with matched parameter
+    counts; a rescoring harness computing any (objective, score) cell from stored weights
+    at ZERO training cost; the frozen-backbone variance-head probe; and per-image score
+    vectors for every cell, so a third party can add an objective or a score WITHOUT A GPU.
+    FALSIFY BY: re-running the released code and landing outside the reproduction band.
+
+
+################################################################################
+# 7. THE "WE DO NOT BEAT SOTA" PARAGRAPH  (use as written; never apologise)
+################################################################################
+The best result on this benchmark's RSNA split is FAE-SSIM at 91.1 AUROC, a
+feature-reconstruction method built on ImageNet weights; the best result we measure is an
+existing method. That is the correct outcome for this study, because a number and an
+explanation are different products and this paper produces the second. FAE-SSIM changes the
+representation and the score in one step, which is precisely the design our analysis shows
+to be unattributable: its 91.1 cannot be assigned to its representation or to its scoring
+rule by any evidence currently published, including its own. Our contribution is the
+machinery that would make such an assignment possible, and the demonstration -- on three
+datasets, with all three directions statistically significant -- that assignments made on
+one dataset do not survive to the next. A practitioner who takes 91.1 from a table and
+deploys it on their own data is making exactly the bet that our rescore row shows can cost
+10.5 AUROC points. Every comparison here is internal to image-reconstruction detectors,
+whose best published result on this split is 87.5; extending the factorial to
+feature-reconstruction methods is the natural next step.
+
+RULE: never write "although we do not beat SOTA". State the scope positively, once, early.
+
+
+################################################################################
+# 8. THE FIVE REJECTION SENTENCES, AND THE ANSWERS
+################################################################################
+R1 "This is an ablation of MedIAnomaly. Where is the novelty?"
+   -> MedIAnomaly's unit of analysis is the METHOD; ours is the DESIGN DECISION inside it,
+      and the two disagree: method rankings are stable across our three datasets while
+      three of seven design-level comparisons reverse. And we correct a specific universal
+      claim in the current SOTA benchmark (Lagogiannis §V-D).
+
+R2 "You do not beat the state of the art."
+   -> Correct, stated in the abstract. The product is the attribution of published numbers,
+      and the benchmark's best number is itself unattributable by our argument.
+
+R3 "Your reversals are noise — three seeds, and DeLong carries no seed variance."
+   -> The reversals are 9-10.5 AUROC points against seed sds under one point, the sign is
+      consistent across all three seeds within each dataset, and we report the SEED-LEVEL
+      test alongside the paired one rather than resting on DeLong.
+
+R4 "Three datasets, two of them chest X-ray, proves nothing about transfer."
+   -> We claim no general law: we exhibit a specific, quantified, twice-significant FAILURE
+      of transfer, which is sufficient to refute the implicit universality of
+      single-dataset attribution. Dataset-as-unit is marked n=2 with no p-value.
+
+R5 "64x64 and one small backbone says nothing about deployable systems."
+   -> Resolution, architecture and hyperparameters are inherited unchanged from the
+      benchmark precisely so the reproduction is valid and the factorial confounder-free.
+      A study that retuned the backbone could not make this argument at all.
+
+
+################################################################################
+# 9. TEMPLATE REQUIREMENTS — DESK-REJECT CONDITIONS
+################################################################################
+\mlhtrack{proceedings}          DECIDED: PROCEEDINGS. Track switching is ONE-WAY —
+                                "Proceedings track submissions that are not accepted will
+                                automatically be considered for the Findings track.
+                                Findings track submissions cannot be considered for the
+                                Proceedings track." So Proceedings = two chances,
+                                Findings = one. There is no downside.
+                                proceedings = 8pp excl. refs/appendices, PMLR, ARCHIVAL
+                                              (+1 content page if accepted)
+                                findings    = 4pp, OpenReview only, NON-archival, and its
+                                              CFP text describes this paper exactly:
+                                              "insightful negative results ...
+                                               reproducibility studies, and opinion pieces
+                                               or critiques"
+
+SUBMISSION AREA                 AREA 2 — "Applications and Practice: Investigation,
+                                Evaluation, Interpretation, and Deployment".
+                                Its scope line is this paper: "works applying robust
+                                methods, models, or practices to identify, characterize,
+                                audit, evaluate, or benchmark ML approaches to healthcare
+                                problems" and "Surveys, benchmarks, evaluations and best
+                                practices of using ML in healthcare".
+                                PRECEDENT in its own example list: Groger et al., "Towards
+                                Reliable Dermatology Evaluation Benchmarks", ML4H 2023 —
+                                an evaluation-methodology paper on medical imaging,
+                                accepted here.
+                                DO NOT pick Area 1 (Models and Methods) — that area
+                                selects for algorithmic novelty, which this paper does not
+                                claim and would lose on.
+
+*** RECIPROCAL REVIEWING — ACT ON THIS FIRST, IT IS A DESK REJECT ***
+                                "Every submission must include at least one author
+                                registered to review a minimum of three (3) papers. A
+                                qualified reviewer will have at least one prior archival
+                                publication at a comparable peer-reviewed venue."
+                                "If no author is registered as a reviewer by the specified
+                                deadline, the submission may be desk rejected."
+                                => An MSc first author with no prior archival publication
+                                   does NOT qualify. Check whether any co-author does.
+                                => IF NOT: there is an EXEMPTION FORM, and the CFP is
+                                   explicitly welcoming — "We welcome and encourage
+                                   submissions from first-time contributors at ML4H."
+                                   FILL IT EARLY. Do not leave it to September.
+
+METADATA LOCKS AT THE DEADLINE  "title, author list, paper content, track, subject areas,
+                                and data modality" — "Edits to these metadata will not be
+                                permitted past the paper submission deadline."
+                                Author lists CANNOT change after submission.
+
+LLM POLICY — RETRACTION RISK    "Violations can include ... utilizing references produced
+                                by an LLM without verifying their accuracy, existence, or
+                                suitability within the manuscript's context." ML4H may
+                                RETRACT after publication.
+                                => Every reference in §10 must be opened and confirmed by a
+                                   human before submission: it exists, it resolves to the
+                                   intended paper, and it says what we cite it for.
+                                => HIGHEST PRIORITY: the Lagogiannis §V-D quote. The paper
+                                   corrects a named published claim; if that quote is
+                                   mis-stated the whole framing collapses.
+
+DATES                           Sep 10 submission (AoE) | Oct 5 reviews out | Oct 12 author
+                                response ends | Oct 22 decisions | Nov 7 camera-ready
+                                | Dec 6-7 Sydney. NO separate abstract deadline.
+SUBMISSION SITE                 openreview.net/group?id=ML4H/2026/Symposium
+OVERLEAF TEMPLATE               overleaf.com/latex/templates/
+                                machine-learning-for-health-ml4h-2026-template/sqgwhtyswgcy
+REGISTRATION                    At least one presenting author MUST register and attend.
+
+DATA AND CODE AVAILABILITY      MANDATORY paragraph, immediately after the abstract.
+                                Template verbatim: "If you do not include this data and
+                                code availability statement [...] or you provide code that
+                                is not anonymized at the time of submission, then your
+                                paper will be desk-rejected."
+                                => the artifact (C7) is a REQUIRED SECTION, not a bonus.
+                                => ANONYMISE: 'univr' appears 12x in new_result.txt and the
+                                   wandb project is named 'https-www-univr-it-/MedIAnomaly-DL'.
+                                   Both must be scrubbed from the repo before submission.
+
+IRB STATEMENT                   MANDATORY. Ours: public de-identified benchmark datasets
+                                (RSNA, VinDr-CXR, LAG); no IRB approval required. State it
+                                explicitly — omission is a desk reject.
+
+KEYWORDS                        Required block after the abstract.
+NO CODE LINK IN THE ABSTRACT    Indexing services strip it. It goes in the availability
+                                statement.
+DOUBLE-BLIND                    \finalfalse for submission.
+
+
+################################################################################
+# 10. REFERENCES — 18 core, identifiers verified against Crossref
+################################################################################
+BENCHMARKS / COMPARATIVE
+  Cai et al., MedIAnomaly, MedIA 2025        10.1016/j.media.2025.103500  arXiv:2404.04518
+  Lagogiannis et al., IEEE TMI 2024          10.1109/TMI.2023.3298093     arXiv:2303.00609
+                                             *** CITE §V-D SPECIFICALLY ***
+  Baur et al., MedIA 69:101952, 2021         10.1016/j.media.2020.101952
+  Cai et al., MICCAI 2024 (Rethinking AEs)   10.1007/978-3-031-72120-5_51 arXiv:2403.09303
+
+SCORE CRITIQUES / SCORE AS A FREE VARIABLE
+  Meissen et al., MIDL 2022                  arXiv:2202.03826  (PMLR v172, no DOI)
+  Zimmerer et al., MICCAI 2019               10.1007/978-3-030-32251-9_32 arXiv:1907.02796
+  Meissen et al., IPMI 2023 (FAE)            10.1007/978-3-031-33842-7_2
+
+THE CONFLATION, AS EXHIBITED
+  Bergmann et al., VISAPP 2019               10.5220/0007364503720380  arXiv:1807.02011
+                                             *** the two quotes: "loss AND evaluation
+                                             functions" then "merely changing the loss" ***
+  Fan et al., Neural Networks 2025           10.1016/j.neunet.2024.107115
+                                             (2025 instance — the confound is not historical)
+
+METHODS REPRODUCED
+  Shvetsova et al., IEEE Access 2021 (AE-PL) 10.1109/ACCESS.2021.3107163
+  Mao et al., MICCAI 2020 (AE-U)             10.1007/978-3-030-59725-2_51
+  Kascenas et al., MedIA 2023 (DAE)          10.1016/j.media.2023.102963  arXiv:2301.08330
+  Kingma & Welling (VAE)                     arXiv:1312.6114
+  Wang et al., IEEE TIP 2004 (SSIM)          10.1109/TIP.2003.819861
+
+UNCERTAINTY LINEAGE
+  Nix & Weigend, ICNN 1994                   10.1109/ICNN.1994.374138
+  Kendall & Gal, NeurIPS 2017 (optional)     arXiv:1703.04977
+
+STATISTICS
+  DeLong et al., Biometrics 1988             10.2307/2531595
+  Holm, Scand. J. Statist. 6(2):65-70, 1979  (no DOI)
+  Sun & Xu, IEEE SPL 2014 (fast DeLong)      10.1109/LSP.2014.2337313
+
+DATASETS
+  Shih et al., Radiology:AI 2019 (RSNA)      10.1148/ryai.2019180041
+  Nguyen et al., Sci. Data 2022 (VinDr-CXR)  10.1038/s41597-022-01498-w
+  Li et al., CVPR 2019 (LAG)                 10.1109/CVPR.2019.01082
+
+DEFENSIVE, only if space
+  Behrouzi et al., J. Imaging 2023           10.3390/jimaging9070137
+    -> cite as an INSTANCE OF THE CONFOUND, not as prior art: its results table indexes
+       only the anomaly score and not the training loss, so no loss-by-score attribution
+       can be recovered from it.
+
+
+################################################################################
+# 11. WHAT MUST BE CREDITED TO OTHERS  (so no reviewer has to point it out)
+################################################################################
+ 1. That a trained model admits more than one readout        -> Zimmerer et al. 2019
+ 2. Scoring a pixel-trained model with an SSIM residual      -> Lagogiannis et al. 2024 §V-D
+ 3. Varying the anomaly-extraction procedure on fixed models -> Baur et al. 2021 §K
+ 4. That the choice of reconstruction DISTANCE is dataset-dependent, at the LOSS level
+                                                             -> MedIAnomaly §4.2.3
+                                                                (AE-PL vs l2 on ISIC2018)
+ 5. That method rankings reverse across datasets             -> Baur 2021, Lagogiannis 2024
+ 6. Every method reproduced      -> Bergmann, Shvetsova, Mao, Kascenas, Zimmerer, Kingma
+ 7. Split, backbone, hyperparameters, reference column       -> MedIAnomaly
+ 8. Heteroscedastic mean-and-variance regression             -> Nix & Weigend 1994;
+                                                                Kendall & Gal 2017
+    (ours: fitting it POST HOC to a FROZEN backbone, and the interpretation)
+ 9. Rank averaging                                           -> textbook
+10. SSIM, perceptual loss, VGG-19, Adam                      -> standard
+
+
+################################################################################
+# 12. STALE DOCUMENTS TO RECONCILE BEFORE WRITING PROSE
+################################################################################
+10_PAPER_FOUNDATION §3   "compare methods as indivisible units" — FALSE for Baur and
+                         Lagogiannis. Replace with §3 above.
+10 §6 C1 novelty note    "No prior work crosses the reconstruction metric" — FALSE.
+10 §3 Behrouzi entry     downgrade from "nearest prior attempt" to "confound instance";
+                         Lagogiannis takes that slot.
+10 §8 R2                 "RESCORE IT BEFORE YOU RETRAIN IT — free" — retracted by C4/
+                         RESULTS_FINAL, and it is ALSO Lagogiannis's recommendation, so
+                         publishing it unchanged would be both wrong and unoriginal.
+10 §2, §5 S3             still RSNA-only; RESULTS_FINAL supersedes.
+07 C7                    still names 89.46 as the headline. The extension reverses on LAG.
+                         Demote to appendix.
+11 §3                    the "asymmetric specialisation law" is RSNA-only and contradicted
+                         by the LAG reversals. Do not promote it to a contribution.

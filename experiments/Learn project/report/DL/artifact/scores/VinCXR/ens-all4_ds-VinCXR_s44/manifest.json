@@ -1,0 +1,35 @@
+{
+  "run_id": "ens-all4_ds-VinCXR_s44",
+  "method": "ens-all4",
+  "seed": 44,
+  "params": {
+    "members": "l2+ssim+perceptual+aeu"
+  },
+  "metrics": {
+    "AUC": 0.6739529999999999,
+    "AP": 0.6815905056613629,
+    "normal_score": 0.42847761380690347,
+    "abnormal_score": 0.5715223861930965
+  },
+  "config": {
+    "image_size": 64,
+    "latent_dim": 16,
+    "hidden_num": 1024,
+    "base_width": 16,
+    "en_depth": 1,
+    "de_depth": 1,
+    "dae_unet_depth": 5,
+    "dae_unet_wf": 6,
+    "epochs": 250,
+    "batch_size": 64,
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "pixel_range": [
+      -1.0,
+      1.0
+    ],
+    "sample_mode": false,
+    "run_version": "dl-v1-vincxr",
+    "dataset": "VinCXR"
+  }
+}

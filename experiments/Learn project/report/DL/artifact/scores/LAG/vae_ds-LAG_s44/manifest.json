@@ -1,0 +1,39 @@
+{
+  "run_id": "vae_ds-LAG_s44",
+  "method": "vae",
+  "seed": 44,
+  "params": {
+    "train_loss": "vae",
+    "score_loss": "vae"
+  },
+  "metrics": {
+    "AUC": 0.8040111232574298,
+    "AP": 0.7683569431141347,
+    "normal_score": 0.006183119956403971,
+    "abnormal_score": 0.010725677944719791,
+    "train_loss_final": 0.009901646723349889,
+    "n_params": 2367584.0,
+    "minutes": 0.6726181904474894
+  },
+  "config": {
+    "image_size": 64,
+    "latent_dim": 16,
+    "hidden_num": 1024,
+    "base_width": 16,
+    "en_depth": 1,
+    "de_depth": 1,
+    "dae_unet_depth": 5,
+    "dae_unet_wf": 6,
+    "epochs": 250,
+    "batch_size": 64,
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "pixel_range": [
+      -1.0,
+      1.0
+    ],
+    "sample_mode": false,
+    "run_version": "dl-v1-lag",
+    "dataset": "LAG"
+  }
+}

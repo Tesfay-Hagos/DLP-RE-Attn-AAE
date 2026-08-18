@@ -1,0 +1,38 @@
+{
+  "run_id": "aeu_s42",
+  "method": "aeu",
+  "seed": 42,
+  "params": {
+    "train_loss": "aeu",
+    "score_loss": "aeu"
+  },
+  "metrics": {
+    "AUC": 0.863024,
+    "AP": 0.8408014045675403,
+    "normal_score": 1.3295754194259644,
+    "abnormal_score": 2.364992618560791,
+    "train_loss_final": -3.9448219791259804,
+    "n_params": 2351440.0,
+    "minutes": 1.6480695366859437
+  },
+  "config": {
+    "image_size": 64,
+    "latent_dim": 16,
+    "hidden_num": 1024,
+    "base_width": 16,
+    "en_depth": 1,
+    "de_depth": 1,
+    "dae_unet_depth": 5,
+    "dae_unet_wf": 6,
+    "epochs": 250,
+    "batch_size": 64,
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "pixel_range": [
+      -1.0,
+      1.0
+    ],
+    "sample_mode": false,
+    "run_version": "dl-v1"
+  }
+}

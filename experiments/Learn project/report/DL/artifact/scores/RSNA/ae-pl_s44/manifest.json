@@ -1,0 +1,38 @@
+{
+  "run_id": "ae-pl_s44",
+  "method": "ae-pl",
+  "seed": 44,
+  "params": {
+    "train_loss": "perceptual",
+    "score_loss": "perceptual"
+  },
+  "metrics": {
+    "AUC": 0.8720159999999999,
+    "AP": 0.8474933064492989,
+    "normal_score": 0.40091291069984436,
+    "abnormal_score": 0.5038440227508545,
+    "train_loss_final": 0.3216224127049819,
+    "n_params": 2351184.0,
+    "minutes": 20.089912724494933
+  },
+  "config": {
+    "image_size": 64,
+    "latent_dim": 16,
+    "hidden_num": 1024,
+    "base_width": 16,
+    "en_depth": 1,
+    "de_depth": 1,
+    "dae_unet_depth": 5,
+    "dae_unet_wf": 6,
+    "epochs": 250,
+    "batch_size": 64,
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "pixel_range": [
+      -1.0,
+      1.0
+    ],
+    "sample_mode": false,
+    "run_version": "dl-v1"
+  }
+}

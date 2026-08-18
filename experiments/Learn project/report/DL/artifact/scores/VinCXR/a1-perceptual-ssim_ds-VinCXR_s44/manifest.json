@@ -1,0 +1,37 @@
+{
+  "run_id": "a1-perceptual-ssim_ds-VinCXR_s44",
+  "method": "a1-perceptual-ssim",
+  "seed": 44,
+  "params": {
+    "train_loss": "perceptual",
+    "score_loss": "ssim"
+  },
+  "metrics": {
+    "AUC": 0.355337,
+    "AP": 0.4038233434642549,
+    "normal_score": 0.5980048775672913,
+    "abnormal_score": 0.5664862394332886,
+    "n_params": 2351184.0
+  },
+  "config": {
+    "image_size": 64,
+    "latent_dim": 16,
+    "hidden_num": 1024,
+    "base_width": 16,
+    "en_depth": 1,
+    "de_depth": 1,
+    "dae_unet_depth": 5,
+    "dae_unet_wf": 6,
+    "epochs": 250,
+    "batch_size": 64,
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "pixel_range": [
+      -1.0,
+      1.0
+    ],
+    "sample_mode": false,
+    "run_version": "dl-v1-vincxr",
+    "dataset": "VinCXR"
+  }
+}

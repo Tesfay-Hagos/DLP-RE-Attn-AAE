@@ -1,0 +1,8 @@
+{
+  "full": 82.0,
+  "scalar": 79.87,
+  "static": 69.1,
+  "whiten": 69.59,
+  "source": "Cell 5.4 M0 degeneracy controls, RSNA, ae base, w=2, 3 seeds",
+  "note": "transcribed from the notebook run output; NOT recomputable from the bundles because the intermediate log_var maps were not persisted"
+}

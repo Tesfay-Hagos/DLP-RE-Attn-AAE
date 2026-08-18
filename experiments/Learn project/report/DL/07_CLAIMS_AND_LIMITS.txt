@@ -21,16 +21,48 @@ C3. "Objective and score must match; mismatching them is actively harmful."
     EVIDENCE: every 'trained on a metric, scored with L2' cell falls below the plain AE;
     interaction terms (+9.8 for AE-SSIM, +35.1 for AE-PL) exceed both main effects.
 
-C4. "A plain autoencoder rescored with SSIM captures 73% of AE-SSIM's advantage with no
-     retraining." (68.3 -> 77.4)
-    EVIDENCE: A1, 3 seeds.
+C4. RETRACTED AS A GENERAL CLAIM — IT REVERSES ON VinCXR.       [2026-08-18]
+    Was: "A plain autoencoder rescored with SSIM captures 73% of AE-SSIM's advantage with
+    no retraining." (68.3 -> 77.4) EVIDENCE: A1, 3 seeds, RSNA.
+    The two-dataset test, paired DeLong on the same images:
+        RSNA    +9.08   p_holm=2.1e-115   seed p=0.0005
+        VinCXR  -2.37   p_holm=0.00057    seed p=0.0127
+    BOTH DIRECTIONS ARE SIGNIFICANT ON BOTH TESTS. The free SSIM rescore HELPS on RSNA
+    and HURTS on VinCXR. This is not noise and it is not a power problem.
+    WHAT MAY STILL BE CLAIMED:
+      "Rescoring a trained autoencoder with SSIM changes its AUROC substantially without
+       retraining -- by +9.08 on RSNA and by -2.37 on VinCXR. The direction is
+       DATASET-DEPENDENT, so a rescore must be validated per dataset and cannot be
+       recommended as a free upgrade."
+    WHY THIS IS WORTH MORE THAN THE CLAIM IT REPLACES: it is direct evidence for the
+    paper's own thesis. A score is not a property of a method that transfers -- it reads
+    structure that a given objective may or may not have left in the residual, and
+    whether it reads anything useful depends on the data. A reviewer who finds this
+    reversal before we report it concludes we did not check. Reporting it ourselves makes
+    it a result.
 
 C5. "Uncertainty training does not produce a better reconstructor."
     EVIDENCE: AE-U scored with plain L2 = 65.4, below the plain AE's 68.35, 3 seeds.
 
-C6. "74% of AE-U's advantage is recoverable post hoc from a frozen autoencoder for 0.62%
-     additional parameters; the remaining 26% does not close with more capacity."
-    EVIDENCE: A4, plateau of 0.24 across an 11.6x capacity range.
+C6. NARROWED — THE "IRREDUCIBLE GAP" IS NOT IRREDUCIBLE. IT VANISHES ON LAG. [2026-08-18]
+    Was: "74% of AE-U's advantage is recoverable post hoc from a frozen autoencoder for
+    0.62% additional parameters; the remaining 26% does not close with more capacity."
+    AE-U vs post-hoc head (w=2), paired DeLong, Holm-corrected per dataset:
+        RSNA    +4.86   p_holm=6.9e-35     joint training wins
+        VinCXR  +5.72   p_holm=1.7e-34     joint training wins
+        LAG     -0.78   p_holm=0.055       NO GAP — the head matches AE-U
+    So the 26% shortfall is NOT a property of post-hoc extraction. On one of three
+    datasets a frozen backbone plus a 14,528-parameter head is indistinguishable from
+    joint training. The co-adaptation explanation in 06 section 4.3 predicts a gap
+    everywhere and is therefore CONTRADICTED, not merely untested.
+    WHAT MAY STILL BE CLAIMED:
+      "A variance head fitted to a frozen autoencoder recovers most of the uncertainty
+       autoencoder's advantage on all three datasets. Whether a residual gap remains is
+       dataset-dependent: 4.86 and 5.72 points on RSNA and VinCXR, and no measurable gap
+       on LAG."
+    ALSO STILL TRUE, and it is the ROBUST half of A4: the head beats the plain AE it was
+    fitted onto on all three datasets (+13.65 / +12.38 / +4.31, all Holm-significant).
+    That is the claim to lead with; the size of the remaining gap is the fragile part.
     UPDATED (11: E4, N3, E5): report BOTH denominators — 74% measured from the plain AE's
     own L2 score, 49% from the free SSIM rescore of the same weights (77.4). The w=1
     failure is a NONLINEARITY threshold, not a capacity one. And the head does NOT

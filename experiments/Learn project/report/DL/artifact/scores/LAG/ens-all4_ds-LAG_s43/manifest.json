@@ -1,0 +1,35 @@
+{
+  "run_id": "ens-all4_ds-LAG_s43",
+  "method": "ens-all4",
+  "seed": 43,
+  "params": {
+    "members": "l2+ssim+perceptual+aeu"
+  },
+  "metrics": {
+    "AUC": 0.8232107534957831,
+    "AP": 0.7897151865744048,
+    "normal_score": 0.35746874978606163,
+    "abnormal_score": 0.6425312502139383
+  },
+  "config": {
+    "image_size": 64,
+    "latent_dim": 16,
+    "hidden_num": 1024,
+    "base_width": 16,
+    "en_depth": 1,
+    "de_depth": 1,
+    "dae_unet_depth": 5,
+    "dae_unet_wf": 6,
+    "epochs": 250,
+    "batch_size": 64,
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "pixel_range": [
+      -1.0,
+      1.0
+    ],
+    "sample_mode": false,
+    "run_version": "dl-v1-lag",
+    "dataset": "LAG"
+  }
+}

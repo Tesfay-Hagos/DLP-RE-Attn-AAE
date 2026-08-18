@@ -1,0 +1,41 @@
+{
+  "run_id": "ae-posthoc-u_ds-VinCXR_w-c4_s42",
+  "method": "ae-posthoc-u",
+  "seed": 42,
+  "params": {
+    "w": {
+      "chans": 4
+    },
+    "base": "ae",
+    "train_loss": "ae-frozen+posthoc-var",
+    "score_loss": "aeu"
+  },
+  "metrics": {
+    "AUC": 0.6355360000000001,
+    "AP": 0.6552640337769766,
+    "normal_score": 1.7695221900939941,
+    "abnormal_score": 2.3285317420959473,
+    "minutes": 1.0578583359718323
+  },
+  "config": {
+    "image_size": 64,
+    "latent_dim": 16,
+    "hidden_num": 1024,
+    "base_width": 16,
+    "en_depth": 1,
+    "de_depth": 1,
+    "dae_unet_depth": 5,
+    "dae_unet_wf": 6,
+    "epochs": 250,
+    "batch_size": 64,
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "pixel_range": [
+      -1.0,
+      1.0
+    ],
+    "sample_mode": false,
+    "run_version": "dl-v1-vincxr",
+    "dataset": "VinCXR"
+  }
+}

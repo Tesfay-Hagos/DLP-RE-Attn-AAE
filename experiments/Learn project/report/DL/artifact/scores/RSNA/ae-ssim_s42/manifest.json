@@ -1,0 +1,38 @@
+{
+  "run_id": "ae-ssim_s42",
+  "method": "ae-ssim",
+  "seed": 42,
+  "params": {
+    "train_loss": "ssim",
+    "score_loss": "ssim"
+  },
+  "metrics": {
+    "AUC": 0.8085979999999999,
+    "AP": 0.7891582781584436,
+    "normal_score": 0.17383308708667755,
+    "abnormal_score": 0.25876080989837646,
+    "train_loss_final": 0.11230829411885919,
+    "n_params": 2351184.0,
+    "minutes": 2.094167149066925
+  },
+  "config": {
+    "image_size": 64,
+    "latent_dim": 16,
+    "hidden_num": 1024,
+    "base_width": 16,
+    "en_depth": 1,
+    "de_depth": 1,
+    "dae_unet_depth": 5,
+    "dae_unet_wf": 6,
+    "epochs": 250,
+    "batch_size": 64,
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "pixel_range": [
+      -1.0,
+      1.0
+    ],
+    "sample_mode": false,
+    "run_version": "dl-v1"
+  }
+}

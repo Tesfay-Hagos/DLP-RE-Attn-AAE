@@ -1,0 +1,39 @@
+{
+  "run_id": "aeu_ds-VinCXR_s43",
+  "method": "aeu",
+  "seed": 43,
+  "params": {
+    "train_loss": "aeu",
+    "score_loss": "aeu"
+  },
+  "metrics": {
+    "AUC": 0.7615099999999999,
+    "AP": 0.7374491618138311,
+    "normal_score": 1.2801135778427124,
+    "abnormal_score": 1.9885042905807495,
+    "train_loss_final": -4.184232887268067,
+    "n_params": 2351440.0,
+    "minutes": 1.7157282789548238
+  },
+  "config": {
+    "image_size": 64,
+    "latent_dim": 16,
+    "hidden_num": 1024,
+    "base_width": 16,
+    "en_depth": 1,
+    "de_depth": 1,
+    "dae_unet_depth": 5,
+    "dae_unet_wf": 6,
+    "epochs": 250,
+    "batch_size": 64,
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "pixel_range": [
+      -1.0,
+      1.0
+    ],
+    "sample_mode": false,
+    "run_version": "dl-v1-vincxr",
+    "dataset": "VinCXR"
+  }
+}

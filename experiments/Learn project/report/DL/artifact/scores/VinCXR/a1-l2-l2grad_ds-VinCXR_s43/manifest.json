@@ -1,0 +1,37 @@
+{
+  "run_id": "a1-l2-l2grad_ds-VinCXR_s43",
+  "method": "a1-l2-l2grad",
+  "seed": 43,
+  "params": {
+    "train_loss": "l2",
+    "score_loss": "l2grad"
+  },
+  "metrics": {
+    "AUC": 0.620805,
+    "AP": 0.6489596861579641,
+    "normal_score": 7.964455903675116e-07,
+    "abnormal_score": 9.668585789768258e-07,
+    "n_params": 2351184.0
+  },
+  "config": {
+    "image_size": 64,
+    "latent_dim": 16,
+    "hidden_num": 1024,
+    "base_width": 16,
+    "en_depth": 1,
+    "de_depth": 1,
+    "dae_unet_depth": 5,
+    "dae_unet_wf": 6,
+    "epochs": 250,
+    "batch_size": 64,
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "pixel_range": [
+      -1.0,
+      1.0
+    ],
+    "sample_mode": false,
+    "run_version": "dl-v1-vincxr",
+    "dataset": "VinCXR"
+  }
+}

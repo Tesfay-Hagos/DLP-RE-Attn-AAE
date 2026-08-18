@@ -1,0 +1,39 @@
+{
+  "run_id": "ae-ssim_ds-LAG_s42",
+  "method": "ae-ssim",
+  "seed": 42,
+  "params": {
+    "train_loss": "ssim",
+    "score_loss": "ssim"
+  },
+  "metrics": {
+    "AUC": 0.6673695989636943,
+    "AP": 0.6377223595241734,
+    "normal_score": 0.1624814122915268,
+    "abnormal_score": 0.20134568214416504,
+    "train_loss_final": 0.09130655815203985,
+    "n_params": 2351184.0,
+    "minutes": 0.8201351841290792
+  },
+  "config": {
+    "image_size": 64,
+    "latent_dim": 16,
+    "hidden_num": 1024,
+    "base_width": 16,
+    "en_depth": 1,
+    "de_depth": 1,
+    "dae_unet_depth": 5,
+    "dae_unet_wf": 6,
+    "epochs": 250,
+    "batch_size": 64,
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "pixel_range": [
+      -1.0,
+      1.0
+    ],
+    "sample_mode": false,
+    "run_version": "dl-v1-lag",
+    "dataset": "LAG"
+  }
+}

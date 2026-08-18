@@ -1,0 +1,37 @@
+{
+  "run_id": "a1-perceptual-l2grad_ds-LAG_s42",
+  "method": "a1-perceptual-l2grad",
+  "seed": 42,
+  "params": {
+    "train_loss": "perceptual",
+    "score_loss": "l2grad"
+  },
+  "metrics": {
+    "AUC": 0.5278165057828471,
+    "AP": 0.5019086182573524,
+    "normal_score": 2.56440689554438e-05,
+    "abnormal_score": 2.6914634872809984e-05,
+    "n_params": 2351184.0
+  },
+  "config": {
+    "image_size": 64,
+    "latent_dim": 16,
+    "hidden_num": 1024,
+    "base_width": 16,
+    "en_depth": 1,
+    "de_depth": 1,
+    "dae_unet_depth": 5,
+    "dae_unet_wf": 6,
+    "epochs": 250,
+    "batch_size": 64,
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "pixel_range": [
+      -1.0,
+      1.0
+    ],
+    "sample_mode": false,
+    "run_version": "dl-v1-lag",
+    "dataset": "LAG"
+  }
+}

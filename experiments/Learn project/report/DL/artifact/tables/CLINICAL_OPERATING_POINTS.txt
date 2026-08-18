@@ -1,0 +1,57 @@
+==============================================================================
+CLINICAL OPERATING POINTS  —  anchored at 95% SPECIFICITY
+The glaucoma DL literature reports at 95% specificity; Prevent Blindness America's
+minimum screening criterion is 85% sensitivity at 95% specificity. We use that anchor.
+Same frozen weights in both arms; only the SCORING RULE changes. Generated 2026-08-18.
+==============================================================================
+
+------------------------------------------------------------------------------
+RSNA   n=2000, 1000 abnormal
+
+  SPLIT-HALF THRESHOLD PROTOCOL (threshold on half A, sensitivity on half B,
+  500 stratified splits) — removes test-set threshold selection.
+     seed    sens L2   sens SSIM   difference       95% CI (paired)
+       42      19.4%       31.1%       +11.7         [+5.9, +17.5]
+       43      17.4%       31.9%       +14.5         [+8.7, +20.4]
+       44      16.8%       31.5%       +14.7         [+9.5, +20.2]
+
+    per-seed differences: +11.7, +14.5, +14.7   (range +11.7 to +14.7)
+    full test set @spec0.95: L2 17.7% -> SSIM 31.2%   RELATIVE change +76%
+    AUROC 68.35 -> 77.42  (+9.08)
+
+------------------------------------------------------------------------------
+VinCXR   n=2000, 1000 abnormal
+
+  SPLIT-HALF THRESHOLD PROTOCOL (threshold on half A, sensitivity on half B,
+  500 stratified splits) — removes test-set threshold selection.
+     seed    sens L2   sens SSIM   difference       95% CI (paired)
+       42      13.8%       10.8%        -3.0          [-6.2, +0.6]
+       43      14.9%       11.5%        -3.4          [-6.5, -0.4]
+       44      13.0%       10.8%        -2.2          [-5.4, +0.4]
+
+    per-seed differences: -3.0, -3.4, -2.2   (range -3.4 to -2.2)
+    full test set @spec0.95: L2 13.6% -> SSIM 10.9%   RELATIVE change -20%
+    AUROC 56.03 -> 53.65  (-2.37)
+
+------------------------------------------------------------------------------
+LAG   n=1622, 811 abnormal
+
+  SPLIT-HALF THRESHOLD PROTOCOL (threshold on half A, sensitivity on half B,
+  500 stratified splits) — removes test-set threshold selection.
+     seed    sens L2   sens SSIM   difference       95% CI (paired)
+       42      20.4%       12.7%        -7.7         [-12.1, -3.2]
+       43      25.1%       13.7%       -11.5         [-16.3, -6.2]
+       44      22.0%       12.1%        -9.9         [-16.0, -3.7]
+
+    per-seed differences: -7.7, -11.5, -9.9   (range -11.5 to -7.7)
+    full test set @spec0.95: L2 21.9% -> SSIM 12.6%   RELATIVE change -42%
+    AUROC 78.96 -> 68.43  (-10.54)
+
+==============================================================================
+THE SPREAD — the quantity the claim is actually about
+  same substitution, same benchmark, same backbone, same preprocessing, same seeds:
+    RSNA    +9.08     VinCXR   -2.37     LAG   -10.54
+  best-to-worst spread: 19.62 AUROC points
+  RSNA and VinCXR are BOTH CHEST RADIOGRAPHS and disagree in sign.
+  => the reversal is NOT a modality effect.
+==============================================================================

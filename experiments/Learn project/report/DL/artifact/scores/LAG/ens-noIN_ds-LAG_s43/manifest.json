@@ -1,0 +1,35 @@
+{
+  "run_id": "ens-noIN_ds-LAG_s43",
+  "method": "ens-noIN",
+  "seed": 43,
+  "params": {
+    "members": "l2+ssim+aeu"
+  },
+  "metrics": {
+    "AUC": 0.7873574053436032,
+    "AP": 0.7598765805609717,
+    "normal_score": 0.37028362584887575,
+    "abnormal_score": 0.6297163741511244
+  },
+  "config": {
+    "image_size": 64,
+    "latent_dim": 16,
+    "hidden_num": 1024,
+    "base_width": 16,
+    "en_depth": 1,
+    "de_depth": 1,
+    "dae_unet_depth": 5,
+    "dae_unet_wf": 6,
+    "epochs": 250,
+    "batch_size": 64,
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "pixel_range": [
+      -1.0,
+      1.0
+    ],
+    "sample_mode": false,
+    "run_version": "dl-v1-lag",
+    "dataset": "LAG"
+  }
+}

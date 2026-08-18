@@ -1,0 +1,39 @@
+{
+  "run_id": "ae-posthoc-u_ds-LAG_w-4_s43",
+  "method": "ae-posthoc-u",
+  "seed": 43,
+  "params": {
+    "w": 4,
+    "base": "ae",
+    "train_loss": "ae-frozen+posthoc-var",
+    "score_loss": "aeu"
+  },
+  "metrics": {
+    "AUC": 0.8488622075317649,
+    "AP": 0.8068750038120996,
+    "normal_score": 1.879442811012268,
+    "abnormal_score": 3.4758453369140625,
+    "minutes": 0.9248684366544088
+  },
+  "config": {
+    "image_size": 64,
+    "latent_dim": 16,
+    "hidden_num": 1024,
+    "base_width": 16,
+    "en_depth": 1,
+    "de_depth": 1,
+    "dae_unet_depth": 5,
+    "dae_unet_wf": 6,
+    "epochs": 250,
+    "batch_size": 64,
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "pixel_range": [
+      -1.0,
+      1.0
+    ],
+    "sample_mode": false,
+    "run_version": "dl-v1-lag",
+    "dataset": "LAG"
+  }
+}

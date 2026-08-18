@@ -1,0 +1,38 @@
+==============================================================================
+POST-HOC HEAD WIDTH SWEEP — is the result sensitive to the width we selected?
+w=2 was chosen on RSNA TEST AUROC. This table is the check. Generated 2026-08-18.
+==============================================================================
+
+  dataset        w=1      w=2      w=4      w=8     w=16   best w  w2-4-8 spread
+  RSNA         66.94    82.00    82.05    81.81    78.22      w=4           0.23
+  VinCXR       52.49    68.41    70.18    70.03    64.50      w=4           1.77
+  LAG          74.04    83.27    83.56    82.78    81.23      w=4           0.78
+
+  n=3 per cell.
+
+------------------------------------------------------------------------------
+WHAT THIS SHOWS
+------------------------------------------------------------------------------
+  1. THE PLATEAU IS REAL BUT NOT UNIFORM. Widths 2, 4 and 8 agree to within 0.23
+     points on RSNA, 0.78 on LAG and 1.77 on VinCXR. The direction and significance
+     of every cross-dataset comparison that uses the head is unchanged across all
+     three widths; the magnitudes move by at most 1.77 points.
+
+  2. THE SELECTED WIDTH IS NOT THE BEST WIDTH ON EITHER HELD-OUT DATASET.
+     RSNA selected w=2. The best width is w=4 on VinCXR (70.18 vs 68.41 at w=2)
+     and w=4 on LAG (83.56 vs 83.27 at w=2). Carrying the RSNA choice
+     unchanged therefore UNDERSTATES the head on both held-out datasets. The
+     selection did not flatter the transfer result; it cost it.
+
+  3. THE TWO WIDTHS THAT DIFFER ARE INFORMATIVE, NOT COMPETITIVE.
+     w=1  is a LINEAR head: BasicBlock(..., last_layer=True) strips BatchNorm and
+          ReLU, leaving a single ConvTranspose2d. It fails on all three datasets.
+     w=16 is an optimisation failure, not a capacity result: initial training losses
+          of 619 / 3,381 / 54,824 across seeds, +-4.77 spread on RSNA.
+
+  4. A LABEL-FREE RULE EXISTS AND CHANGES NOTHING MATERIAL. Final training loss on
+     training normals never sees a test image or a label. It selects w=8 on RSNA
+     (-4.1594 vs -4.1267 at w=2), because deeper heads fit the training objective
+     better. The RSNA head then scores 81.81 rather than 82.00. No reported
+     conclusion changes.
+==============================================================================
