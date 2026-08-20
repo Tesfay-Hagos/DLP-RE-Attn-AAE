@@ -1,0 +1,145 @@
+================================================================================
+STATUS — ML4H 2026 paper.  Last updated 2026-08-19.
+Deadline 10 September, AoE. ~22 days.
+================================================================================
+
+THE PAPER IS COMPLETE AND VERIFIED.
+  paper/main.tex   main text exactly 8 of 8 pages; appendix + references excluded
+                   0 overfull boxes, 0 undefined references, 20 references cited
+  verify_paper_numbers.py   94 registered numbers + 61 appendix values, 0 failures
+                            RUN THIS AFTER EVERY EDIT
+  artifact/        anonymized supplemental, 5.7MB, clean on 7 identifying patterns
+                   rebuild with ./build_artifact.sh (it fails loudly if not clean)
+
+*** CORRECTION TO THE LINE ABOVE: the paper is NUMERICALLY verified and TEXTUALLY
+*** INCONSISTENT. The verification script checks registered numbers against the
+*** bundles; it cannot catch a sentence asserting significance the table denies.
+*** ELEVEN such sentences are listed below. FIX THEM FIRST.
+
+--------------------------------------------------------------------------------
+TOMORROW, ITEM 1: ELEVEN TEXTUAL INCONSISTENCIES  (found 2026-08-19, unverified)
+--------------------------------------------------------------------------------
+The DeLong fix (4 replicate -> 3) and the modality retraction landed in the TABLE,
+the ABSTRACT and the RESULTS TOPIC PARAGRAPH only. THE INTRODUCTION WAS NEVER
+TOUCHED. Verify each against the corrected numbers before editing.
+
+  1  intro ~159  "All three are Holm-significant, and they do not agree in sign"
+  2  intro ~162  "Nor is it a difference between imaging modalities... disagree in sign"
+                 -- the RETRACTED claim, verbatim, still in the Introduction
+  3  intro ~166  "Its direction is a property of the data" -- falsified by the
+                 bandwidth sweep
+  4  intro ~171  "four replicate in all three and three reverse" -> three
+  5  abstract    "four replicate and three reverse" -> three
+  6  results 428 "four replicate in sign with Holm significance everywhere" -> three,
+                 and it contradicts the table on the same page
+  7  results 401 "The disagreement is not between modalities" -- contradicts Limitation 2
+  8  results 420 "On VinDr the AUROC difference is Holm-significant while the
+                 operating-point difference is not" -- premise is now void; the AUROC
+                 difference is NOT Holm-significant (0.068). Both readings now agree.
+  9  limit  634  "p_Holm = 0.055" for LAG AE-U vs head -- that is the NAIVE value.
+                 The corrected contrast gives ~0.135. The table dropped its dagger;
+                 the prose did not.
+ 10  abstract    "release the score vectors that let a reader place a new score in the
+                 grid without retraining" -- contradicts the corrected Data
+                 Availability paragraph, which says weights are required
+ 11  results 429 defines "replicated" as clearing Holm on all three, then illustrates
+                 it with +1.19 on RSNA -- the one comparison that FAILS Holm on RSNA.
+                 SELF-REFUTING WITHIN TWO SENTENCES. A referee will quote this one.
+
+NOTE 3 replicate + 3 reverse = 6 of 7. The seventh needs a THIRD CATEGORY, not a
+decremented integer: "three replicate, three reverse, and one holds its sign on all
+three datasets without clearing Holm on RSNA."
+
+ALSO: "Measure it on labelled data from the SITE where it will run" is stronger than
+the panel supports, since modality is confounded. Change to "the SETTING where it
+will run", and add that the panel cannot say whether the relevant unit is the site,
+the dataset or the modality.
+
+--------------------------------------------------------------------------------
+RESOLVED — DO NOT ADD BraTS
+--------------------------------------------------------------------------------
+The DL scientist WITHDREW its earlier "necessary rather than nice to have", which it
+says was conditioned on keeping the modality claim; retracting the claim was the
+better and cheaper resolution. Its decisive argument: NO BraTS OUTCOME CAN FALSIFY
+THE MODALITY ACCOUNT -- positive reads as "helps on CXR and MRI, hurts on fundus",
+negative as "helps on CXR only". Only a WITHIN-modality dissociation could break the
+confound. BraTS also maximises two of the paper's own mechanisms (skull-stripped MRI
+is mostly exact-zero background, where the range-drift restoring force is weakest and
+SSIM is ~1 on flat regions), so it would add a fourth uncontrolled factor.
+
+Reviewer severity if we omit it: "the authors acknowledge this", NOT reject-level --
+but ONLY if no surviving sentence contradicts Limitation 2. Items 1, 2 and 7 above
+currently do, which would escalate it to a soundness concern.
+
+--------------------------------------------------------------------------------
+OPTIONAL, only because Limitation 2 must be edited anyway
+--------------------------------------------------------------------------------
+The bandwidth at which the substitution crosses zero, per dataset (unverified, from
+the DL scientist): RSNA 0.863, VinDr 1.530, LAG 2.337, seed sd <0.18. The two chest
+collections differ by 1.8x with tiny seed spread. This recovers a within-modality
+dissociation in the form the data supports -- not "the sign disagrees" but "the
+bandwidth at which the substitution becomes beneficial differs 1.8x within modality".
+VERIFY INDEPENDENTLY before use; needs a denser sigma grid and an image-level
+bootstrap, and it rests on ONE within-modality comparison.
+
+--------------------------------------------------------------------------------
+ONE OPEN QUESTION — this is where we stopped
+--------------------------------------------------------------------------------
+Should a FOURTH DATASET (BraTS2021, MRI, loader already written, ~45 min) be added?
+
+  WHY IT MIGHT BE NEEDED. VinDr-CXR is now a null at matched support, so the panel
+  reads CXR-positive / CXR-null / fundus-negative, which is consistent with a plain
+  modality account. "The disagreement is not a modality effect" has been RETRACTED
+  from the abstract and Results; Limitations states the confound plainly.
+
+  WHY WE MAY NOT WANT IT. The author's concern is SCOPE, not compute: a fourth
+  dataset changes what the paper claims, reopens a page budget that is exactly at
+  the limit, and every addition this week has cost several rounds to stabilise.
+
+  PARTIAL DEFENCE FROM EXISTING DATA (computed 2026-08-19, not yet in the paper):
+  signs are MIXED within every dataset. On LAG the SSIM-trained row is +21.07 while
+  the l2 row is -10.54 -- same dataset, opposite sign. This supports "modality is
+  not the whole story" but NOT "modality is not the story", because the SSIM row's
+  positive sign is the diagonal effect, and the headline l2 row still has one point
+  per dataset with two of three being chest radiographs.
+
+  A DL-scientist agent was asked four questions on this and had not replied when we
+  stopped: whether BraTS breaks the confound or adds a fourth uncontrolled factor;
+  what a reviewer actually says if we omit it; whether a cheaper move exists; and
+  its outright recommendation. RESUME THAT AGENT BEFORE DECIDING.
+
+--------------------------------------------------------------------------------
+STILL OUTSTANDING (mine)
+--------------------------------------------------------------------------------
+  1. The distance/support decomposition numbers have no significance test attached.
+     Run the corrected 6-predictor DeLong contrast on the padded scores before any
+     of them gets an asterisk. LAG -6.02 will clear easily; VinCXR +1.31 will not,
+     which is the point.
+  2. Re-read section 4.4's bridge sentence in context -- the variance-head material
+     moved to the appendix after that bridge was written.
+  3. The CLAIMS AUDIT, not yet done and the last real risk. Every error caught this
+     week was a SENTENCE, not a number; the numbers were right every time. Grep the
+     .tex for: all, every, always, never, only, replicates, because, explains,
+     therefore. ~40 hits, ~2 hours, check each against the evidence by hand.
+
+--------------------------------------------------------------------------------
+STILL OUTSTANDING (author)
+--------------------------------------------------------------------------------
+  1. RECIPROCAL REVIEWER registration or the exemption form. URGENT and not
+     retroactive -- this is the one item where a finished paper is still desk-rejected.
+  2. Verify the Lagogiannis Sec V-D and Bergmann quotes character-for-character
+     against the PDFs. The paper's spine is a correction to a named published claim.
+  3. Overleaf compile check; freeze title, author list, track and subject areas
+     before the deadline -- metadata cannot be edited afterwards.
+
+--------------------------------------------------------------------------------
+DECIDED AND CLOSED — do not reopen without new evidence
+--------------------------------------------------------------------------------
+  * Track: Proceedings (auto-considered for Findings if rejected). Area 2.
+  * 128x128 replication: DEFERRED. The bandwidth sweep supersedes it as a mechanism
+    test, and Limitation 1 now carries a falsifiable prediction (RSNA's gain should
+    VANISH at 128px, not shrink -- the earlier prediction was backwards).
+  * The failed LAG run: NOT to be rerun. It fails deterministically for a reason the
+    paper now reports; n=2 is explained, which beats repaired.
+  * m3_report's pooled SE: FIXED at source. The old sqrt(mean(se^2)/k) understated
+    the SE by ~sqrt(3) because the seeds share one test set.

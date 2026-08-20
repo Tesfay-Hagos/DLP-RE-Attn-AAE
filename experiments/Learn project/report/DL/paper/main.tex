@@ -1,14 +1,11 @@
 \documentclass[pmlr,twocolumn,10pt]{jmlr} % W&CP article
-
 % ML4H 2026 track. Proceedings = 8pp excl. references/appendices, PMLR, archival.
 % Unaccepted Proceedings submissions are automatically considered for Findings;
 % the reverse is not true, so Proceedings is strictly the better submission.
 \mlhtrack{proceedings}
-
 \newif\iffinal
 \finalfalse   % SUBMISSION: anonymous. \linenumbers is switched on below.
 % \finaltrue  % camera-ready only
-
 \iffinal
     \ifmlhneedspmlr
       \jmlrvolume{XXX}
@@ -21,54 +18,71 @@
     \jmlrproceedings{}{Submitted to ML4H 2026: \mlhtrackname}
     \jmlrworkshop{Machine Learning for Health (ML4H) 2026}
 \fi
-
 % amsmath, amssymb, natbib, graphicx, url, algorithm2e load automatically.
 \urlstyle{same}
 \usepackage{booktabs}
+% Default float parameters strand a lot of column space in a two-column layout.
+% Tighten the vertical space around floats and captions. These are the standard LaTeX
+% float-separation lengths; margins, font size and leading are left exactly as the class
+% sets them, since altering those would be a formatting violation.
+\setlength{\textfloatsep}{8pt plus 2pt minus 2pt}   % float <-> text, top/bottom of column
+\setlength{\intextsep}{8pt plus 2pt minus 2pt}      % float placed mid-column
+\setlength{\floatsep}{8pt plus 2pt minus 2pt}       % float <-> float
+\setlength{\abovecaptionskip}{4pt}
+\setlength{\belowcaptionskip}{2pt}
+\setlength{\dbltextfloatsep}{10pt plus 2pt minus 2pt}
+\setlength{\dblfloatsep}{8pt plus 2pt minus 2pt}
+\renewcommand{\topfraction}{0.9}
+\renewcommand{\bottomfraction}{0.8}
+\renewcommand{\textfraction}{0.07}
+\renewcommand{\floatpagefraction}{0.75}
 % siunitx is in the ML4H template for decimal-aligned table columns. It is not
 % installed in every TeX distribution (Overleaf has it). Re-enable if the results
 % tables need S columns.
 %\usepackage{siunitx}
 \usepackage[switch]{lineno}
-
 \title[A Free Rescore Is Not Free]{A Free Rescore Is Not Free: A
   Benchmark-Recommended Score Substitution Reverses Sign Across Medical
   Imaging Datasets}
-
-\author{Anonymous Author(s)}
-
+% Double-blind: the submission build MUST stay anonymous. Real author data lives
+% behind \iffinal so that flipping \finaltrue for camera-ready is the only step
+% needed, and no identifying string can reach the reviewed PDF by accident.
+\iffinal
+  \author{%
+    \Name{Tesfay Hagos Weldegebriel} \Email{tesfayhagos1421@studenti.univr.it}\\
+    \addr University of Verona, Verona, Italy
+    % \AND
+    % \Name{Second Author} \Email{second@example.edu}\\
+    % \addr Affiliation
+  }
+\else
+  \author{Anonymous Author(s)}
+\fi
 \begin{document}
-
 % Line numbers for review only. Loading `lineno` is not enough -- the template calls
 % \linenumbers explicitly, and reviewers quote line numbers back to authors.
 \iffinal\else\linenumbers\fi
-
 \maketitle
-
 \begin{abstract}
-Unsupervised anomaly detection on medical images is reported as a contest between
-named methods, but every reconstruction-based detector bundles two separable
-decisions: the objective the model is trained to reconstruct, and the rule that turns
-the residual into a score. The literature moves them together. The one exception ---
-substituting a structural similarity residual into models trained under pixel
-objectives --- is recommended in a current benchmark on the grounds that it improved
-every model it was applied to. We test that claim. Reproducing ten methods under one
-protocol and crossing four training objectives with five anomaly scores on three
-datasets (RSNA, VinDr-CXR, LAG; $64\times64$, three seeds), we find the substitution
-improves AUROC by 9.08 points on RSNA and harms it by 2.37 and 10.54 points on the
-other two; all three are Holm-significant under paired DeLong tests and they disagree
-in sign. The disagreement is not a modality effect: the two chest radiograph
-collections differ from each other in sign. On the fundus data the substitution costs
-two fifths of the cases the detector flags at a fixed false-positive rate, with
-sensitivity at 95\% specificity falling from 21.9\% to 12.6\%. Two further
-design-level comparisons reverse across datasets while four
-replicate three of three. A variance head fitted to a frozen autoencoder shows what an
-uncertainty score computes: residual relative to expected difficulty. A configuration
-selected on RSNA and applied unchanged elsewhere gains 1.33 AUROC over the strongest
-single method (95\% CI [0.41, 2.25]; six of six held-out seed measurements positive).
-We do not reach the benchmark's best reported accuracy; we report what it is made of.
+Reconstruction-based anomaly detectors bundle two separable decisions: the objective the
+model is trained under, and the rule that turns the residual into a score. The literature
+moves them together. A current benchmark recommends substituting a structural-similarity
+residual into pixel-trained models, reporting that it improved every model it was applied
+to. Crossing four training objectives with five anomaly scores across three datasets (RSNA,
+VinDr-CXR, LAG; $64\times64$, three seeds), we measure it against the pixel score on
+identical weights: $+9.08$ AUROC on RSNA and $-10.54$ on LAG, both
+$p_{\mathrm{Holm}}<10^{-30}$ under paired DeLong, and a non-significant $-2.37$ on
+VinDr-CXR. Turning that factorial on the result itself, the substitution is not one
+decision: it resolves into a change of distance and a loss of scored support --- the pixels
+the score averages over --- with support alone costing about 2 to 4 points on every
+dataset. At
+matched support VinDr-CXR is a null. The distance component's sign depends jointly on the
+dataset and on a Gaussian bandwidth we find no benchmark ablates. The effect is monotone in
+that bandwidth, and each dataset changes sign at a different one, with the library default
+inside that spread: below it the substitution hurts on all three, above it helps on all
+three. On LAG it removes 43\% of the cases flagged at 95\% specificity. We release per-image scores and trained weights so a
+new objective or score can be placed in the grid without retraining.
 \end{abstract}
-
 \begin{keywords}
 anomaly detection, medical imaging, evaluation, reproducibility, autoencoders
 \end{keywords}
@@ -77,204 +91,173 @@ anomaly detection, medical imaging, evaluation, reproducibility, autoencoders
 This study uses three public, de-identified benchmark datasets in the preprocessed form
 released with the MedIAnomaly benchmark \citep{cai2025medianomaly}: the RSNA Pneumonia
 Detection Challenge \citep{shih2019rsna}, VinDr-CXR \citep{nguyen2022vindr}, and LAG
-\citep{li2019lag}. No new data were collected. Anonymized code, per-run manifests, and
-the per-image anomaly score vectors for every reported cell are provided as supplemental
-material; the score vectors are sufficient to recompute every table in this paper, and to
-place a new anomaly score in the grid, without retraining any model.
+\citep{li2019lag}. No new data were collected. Anonymized code, per-run manifests, the
+per-image anomaly score vectors for every reported cell, and the trained weights are
+provided as supplemental material. The score vectors reproduce every reported comparison and
+significance test; placing a \emph{new} anomaly score in the grid additionally requires the
+released weights, since it needs the reconstructions, but no retraining. The variance-head
+diagnostics require a forward pass through the released head weights.
 
 \paragraph*{Institutional Review Board (IRB)}
-This research does not require IRB approval. It is a secondary analysis of three public,
-fully de-identified imaging benchmarks that were released for methodological research and
-contain no identifiable private information; no human subjects were recruited, no
-protected health information was accessed, and no clinical intervention or deployment was
-involved.
+This research does not require IRB approval. It reanalyses three public imaging benchmarks, all
+fully de-identified, all released for methodological research, and none carrying
+identifiable private information. We recruited no human subjects, accessed no protected
+health information, and ran no clinical intervention or deployment.
+
+\paragraph*{Use of AI Assistance}
+We used a large language model as a coding and writing assistant: to help implement and
+review the experiment harness, to draft and revise prose, and to cross-check claims against
+our experimental record. It was not part of the method under study and produced no
+experimental result. The authors verified every reported number against the stored per-run
+outputs, read and confirmed every cited work, and take full responsibility for the content.
 
 \section{Introduction}
 \label{sec:intro}
-
 Unsupervised anomaly detection promises something a supervised classifier cannot offer in
 medicine: a detector trained only on normal images, which does not require an annotated
-example of every pathology it must eventually flag. The dominant recipe is
-reconstruction. Train an autoencoder on healthy images, present it with a new image, and
-treat whatever the model fails to reproduce as evidence of abnormality. A decade of work
-has produced a long list of named methods built on that recipe, and benchmarks that rank
-them \citep{baur2021autoencoders, lagogiannis2024unsupervised, cai2025medianomaly}.
+example of every pathology it must eventually flag. The dominant recipe is reconstruction
+--- train an autoencoder on healthy images, and treat whatever it fails to reproduce as
+evidence of abnormality. A decade of work has produced a long list of named methods built on
+that recipe, and benchmarks that rank them \citep{baur2021autoencoders,
+lagogiannis2024unsupervised, cai2025medianomaly}.
 
-The setting is not incidental. Unsupervised detection is proposed for precisely the
-places where labels run out: triaging an imaging worklist that no reader can clear in
-full, or screening for a condition whose positive examples nobody has yet annotated.
-Health data supplies what the method needs, normal studies in quantity, and withholds
-what supervision needs, an annotated instance of every pathology that must eventually be
-flagged. More than half of prevalent glaucoma is undetected in every region studied
-\citep{soh2021undetected}, and a team building a screen for it has few defensible design
-choices and every reason to adopt a change a benchmark reports as free. On LAG, a fundus
-collection whose labels come from glaucoma specialists reading intra-ocular pressure,
-visual field and optic disc together, that change removes two fifths of the cases the
-detector had been flagging at a fixed false-positive rate: sensitivity at 95\%
-specificity falls from 21.9\% to 12.6\%. Neither figure is deployable, and we make no
-deployment claim; the point is the size and the direction of what a scoring rule
-silently decides. Sites differ in scanner, acquisition and case mix, and a rule
-validated at one is applied at the next.
+The setting is not incidental. Unsupervised detection is proposed where labels run out:
+triaging a worklist no reader can clear, or screening for a condition nobody has annotated
+examples of. More than half of prevalent glaucoma is undetected in every region studied
+\citep{soh2021undetected}, and a team building a screen for it has every reason to adopt a
+change a benchmark reports as free. On LAG --- a fundus collection labelled by specialists
+reading intra-ocular pressure, visual field and optic disc together --- one such change
+removes 43\% of the cases the detector had been flagging at a fixed false-positive rate. Sensitivity at 95\% specificity falls from 22.5\% to 12.8\%. Neither figure is
+deployable and we make no deployment claim; the point is what a scoring rule silently
+decides.
 
 The ranking hides a design decision. A reconstruction-based detector uses a distance
-function twice, in two different roles. It appears once as the training objective, where
-it determines what the model is rewarded for reproducing, and again as the anomaly score,
-where it determines how the residual is converted into a number. Nothing requires the two
-to be the same function. In published work they almost always are, and they are changed
-together. \citet{bergmann2019improving} state the design plainly --- their contribution is
-obtained ``by adapting the loss \emph{and} evaluation functions'' --- and then attribute
-the resulting improvement, from 0.688 to 0.966 AUC, to ``merely changing the loss
-function''. Two things moved; one was credited. The practice has not gone away:
-\citet{fan2025ssim} substitute SSIM for MSE in both roles at once in 2025.
+function twice: once as the training objective, where it determines what the model is
+rewarded for reproducing, and again as the anomaly score, where it determines how the
+residual becomes a number. Nothing requires the two to be the same function. In published
+work they almost always are, and they are changed together.
+\citet{bergmann2019improving} state the design plainly --- their contribution comes ``by
+adapting the loss \emph{and} evaluation functions'' --- and then attribute the resulting
+improvement, from 0.688 to 0.966 AUC, to ``merely changing the loss function''. Two things
+moved; one was credited. The practice has not gone away: \citet{fan2025ssim} substitute SSIM
+for MSE in both roles at once in 2025.
 
 If the two roles are never separated, no reported gain in this family can be assigned to
-either. \citet{cai2025medianomaly} come closest, tabulating the training loss and the
-anomaly score as separate columns, but every reconstruction method they evaluate
-instantiates the two with the same distance. The off-diagonal --- train under one
-distance, score under another --- has been entered once, and not as an experiment.
-\citet{lagogiannis2024unsupervised} substitute an SSIM residual into four models trained
-under pixel-space objectives, on the reasonable grounds that SSIM captures texture and
-structure that absolute error does not, and report that this ``increased the performance
-of all selected models it was applied to''. It is a sensible design decision, honestly
-described. It is also a universal claim about a score substitution, tested on the datasets
-that study used, and offered to readers as a default.
+either. \citet{cai2025medianomaly} come closest, tabulating the training loss and the anomaly
+score as separate columns, but every reconstruction method they evaluate instantiates the
+two with the same distance. The off-diagonal has been entered once, and not as an
+experiment: \citet{lagogiannis2024unsupervised} substitute an SSIM residual into four models
+trained under pixel-space objectives and report that this ``increased the performance of all
+selected models it was applied to''. It is a sensible design decision, honestly described,
+and offered to readers as a default.
 
-We test it. We reproduce ten methods from the MedIAnomaly benchmark under a single
-protocol, then cross four training objectives with five anomaly scores on one backbone,
-so that each decision can be varied while the other is held fixed. Rescoring costs no
-training: the model is already fitted, and only the function applied to its residual
-changes. We run the resulting grid on three datasets --- two chest radiograph collections
-and one retinal fundus collection --- and compare cells with paired DeLong tests, with
-Holm correction inside each dataset.
+We test it. Reproducing ten methods under one protocol, we cross four training objectives
+with five anomaly scores on one backbone, so that either decision can move while the other
+stays fixed. Rescoring costs no training: only the function applied to a fixed residual
+changes. On three datasets --- two chest radiograph collections and one retinal
+fundus collection --- the substitution improves AUROC by 9.08 points on RSNA and harms it by
+10.54 on LAG, both Holm-significant, with VinDr-CXR negative on every seed but not separable
+from noise.
 
-The substitution does not behave as reported. Rescoring a plain autoencoder with SSIM
-improves AUROC by 9.08 points on RSNA, and harms it by 2.37 points on VinDr-CXR and 10.54
-points on LAG. All three are Holm-significant, and they do not agree in sign. This is not
-a power failure and not seed noise: the effects are an order of magnitude larger than the
-seed-level spread, and the sign is consistent across all three seeds within each dataset.
-Nor is it a difference between imaging modalities. RSNA and VinDr-CXR are both chest
-radiograph collections, drawn through the same preprocessing pipeline, read by the same
-backbone at the same resolution with the same seeds, and they disagree with each other in
-sign. What separates the best from the worst outcome of one free substitution is 19.6
-AUROC points. A free rescore is not free. Its direction is a property of the data, and must be validated
-per dataset rather than inherited from a benchmark.
+Nor is it one decision. It changes the distance, the bandwidth at which that distance is
+evaluated, and --- because the standard implementation uses valid convolution --- the region
+scored. Unbundled on identical weights, the reported figures resolve into a distance change
+and a support loss, and VinDr-CXR's negative sign turns out to be the support change. The
+distance component's sign depends on the dataset and on a Gaussian bandwidth we find no
+benchmark ablates: each dataset crosses zero at a different bandwidth, the library default
+falls inside that spread, and outside it the substitution moves the same way everywhere. A
+free rescore is not free, and it is not one choice.
 
-That result generalises into the paper's organising question: which conclusions about
-these design decisions survive a change of dataset? Applying seven design-level
-comparisons unchanged to all three datasets, four replicate in all three and three
-reverse. We report both in one table. Among the reversals is a mechanism we proposed
-ourselves --- that the residual advantage of jointly trained uncertainty estimation over a
-post-hoc variance head reflects co-adaptation between reconstruction and variance during
-training. That account predicts a gap on every dataset. On LAG there is none.
-
-Alongside what fails to transfer, we establish what does. Fitting a variance head to a
-completely frozen autoencoder recovers a large part of the advantage of a jointly trained
-uncertainty model, on all three datasets, and lets us inspect what an uncertainty-weighted
-score computes: not error magnitude, but residual relative to expected difficulty. And a
-configuration chosen on RSNA --- head width and ensemble membership --- applied unchanged
-to the two datasets it was not chosen on, gains 1.33 AUROC over the strongest single
-method (95\% CI [0.41, 2.25]; six of six held-out seed measurements positive).
+That generalises into the paper's organising question: which conclusions about these design
+decisions survive a change of dataset? Applying seven design-level comparisons unchanged to
+all three, three replicate, three reverse, and one holds its sign everywhere without
+reaching significance on RSNA. Among the reversals is a mechanism we proposed ourselves ---
+that the advantage of jointly trained uncertainty estimation over a post-hoc head reflects
+co-adaptation during training --- which predicts a gap on every dataset, and LAG has none.
+Alongside what fails to transfer, a configuration chosen on RSNA and applied unchanged to
+the two datasets it was not chosen on gains 1.33 AUROC over the strongest single method
+(seed-level 95\% CI [0.41, 2.25]).
 
 \paragraph*{Contributions.}
+
 \begin{itemize}
-\item A correction to a published recommendation: a benchmark-endorsed, no-retraining
-  score substitution reverses sign across datasets, with all three directions significant
-  under paired tests (\sectionref{sec:results}).
-\item A design-decision replication table across three datasets in which four comparisons
-  replicate and three reverse, reported with equal prominence.
-\item The objective-by-score factorial as an attribution instrument, showing the two
-  decisions are not additive: their interaction exceeds both main effects.
-\item Evidence that mismatching objective and score is actively harmful rather than merely
-  suboptimal --- a perceptually trained model read in pixel space scores below chance.
-\item A frozen-backbone variance-head probe, and the reading of the uncertainty score it
-  supports; a held-out transfer result; and a released instrument that places a new
-  objective or score in the grid from stored score vectors, without a GPU.
+\item We correct a published recommendation. A benchmark-endorsed score substitution that
+  needs no retraining reverses sign across datasets, significantly in both directions, with
+  the third a null. Unbundled, it is a distance change plus a loss of scored support, and
+  the two sum to the reported figures exactly (\sectionref{sec:results}).
+\item A replication table for design decisions across three datasets: three comparisons
+  replicate, three reverse, and one holds its sign everywhere without reaching significance
+  on RSNA. We report all three outcomes with equal prominence.
+\item The objective-by-score factorial, used as an attribution instrument. The two
+  decisions do not add: changing both exceeds the sum of the single changes by 9.8 AUROC
+  points. Mismatching them does active harm --- a perceptually trained model read in pixel
+  space scores below chance.
+\item A measured mechanism for one axis: under an SSIM objective the inherited decoder
+  drifts outside the input range on all three datasets, with a confirmed spatial signature.
+\item A frozen-backbone variance-head probe, a held-out transfer result, and a released
+  instrument for placing a new objective or score in the grid.
 \end{itemize}
 
 \paragraph*{Scope.}
-Every comparison here is internal to image-reconstruction detectors at $64\times64$
-resolution with image-level labels, on one backbone whose architecture and
-hyperparameters we inherit unchanged from the benchmark so that the reproduction remains
-valid and the factorial stays free of confounds. The best accuracy reported on this
-RSNA split belongs to a feature-reconstruction method that uses ImageNet weights, and we
-do not reach it. That is the expected outcome for this study: a number and an explanation
-are different products, and the design that produces the best number --- changing the
-representation and the score in one step --- is precisely the design our results show
-cannot be attributed. Three datasets, two of them chest radiographs, support no general
-law of transfer. They are enough to exhibit one specific, quantified, twice-significant
-failure of it.
+Every comparison here is internal to image-reconstruction detectors at $64\times64$ with
+image-level labels, on one inherited backbone. The best accuracy on this RSNA split belongs
+to a feature-reconstruction method using ImageNet weights \citep{meissen2023fae}, and we do
+not reach it. That method changes the representation and the score in one step --- precisely
+the design our results show cannot be attributed.
 
 \section{Related Work}
 \label{sec:related}
-
-We group prior work by which design decision it varied, because that is the axis along
-which our contribution is defined.
+We group prior work by which design decision it varied, since that is the axis this paper
+adds to.
 
 \paragraph*{Varying the architecture, holding the residual fixed.}
 The comparative studies that established this field vary what the model is, not how its
-output is read. \citet{baur2021autoencoders} evaluate roughly a dozen autoencoder, VAE and
-GAN variants on four brain MRI datasets under a unified pipeline, and find architectural
-sophistication buys less than the literature implied. Their residual distance is $\ell_1$
-throughout. They do vary the anomaly-extraction procedure --- reconstruction against
-Monte-Carlo consensus, gradients and iterative restoration on fixed models --- but that
-changes how the residual is \emph{obtained}, not the distance function that measures it.
-\citet{lagogiannis2024unsupervised} extend this style of audit across modalities and
-resolutions, and argue preprocessing and resolution dominate method identity.
+output is read. \citet{baur2021autoencoders} evaluate a dozen autoencoder, VAE and GAN
+variants on four brain MRI datasets under a unified pipeline, with an $\ell_1$ residual
+throughout. They do vary the extraction procedure --- Monte-Carlo consensus, gradients,
+iterative restoration --- but that changes how the residual is \emph{obtained}, not the
+distance that measures it. \citet{lagogiannis2024unsupervised} extend the audit across
+modalities and resolutions, arguing preprocessing and resolution dominate method identity.
 
 \paragraph*{Varying the score, holding the objective fixed.}
 That a trained model admits more than one readout is not new, and we do not claim it.
-\citet{zimmerer2019unsupervised} keep a single variational autoencoder and derive several
-anomaly scores from different terms of its evidence lower bound: the reconstruction error,
-the KL term, and gradients of each with respect to the input. The objective never changes;
-what changes is which term of it is differentiated. This is a genuine decoupling of score
-from objective, and it establishes the score as a free variable. It is also a decoupling
-along a different axis from ours: the choice is which part of one fixed objective to read,
-not which distance function does the reading. \citet{meissen2022pitfalls} argue from the
-other direction that the pixel residual is a poor anomaly score in the first place, because
-it is dominated by reconstruction error on normal structure rather than by pathology. Their
-critique motivates our question without answering it: they show the residual is
-problematic, not which of its two roles is responsible.
+\citet{zimmerer2019unsupervised} keep one variational autoencoder and derive several scores
+from different terms of its evidence lower bound. That is a genuine decoupling, and it
+establishes the score as a free variable --- but along a different axis from ours: which
+part of one objective to read, not which distance does the reading. \citet{meissen2022pitfalls} argue from the other
+direction that the pixel residual is a poor score in the first place, being dominated by
+error on normal structure rather than pathology. That motivates our question without
+answering it: it shows the residual is problematic, not which of its two roles is
+responsible.
 
 \paragraph*{Varying the distance function --- on both axes at once.}
-The reconstruction metric itself has been varied, but almost always in both roles
-simultaneously. \citet{bergmann2019improving} are explicit about the design: their gain
-comes ``by adapting the loss \emph{and} evaluation functions'' to capture local
-inter-dependencies between image regions. The results sentence then reports that ``by
-merely changing the loss function, the achieved AUC improves from 0.688 to 0.966''. Both
-statements are in the same paper and both are accurate descriptions of what was done; only
-the second is an attribution, and it credits one of two simultaneous changes. This is not a
-historical artefact. \citet{fan2025ssim} substitute SSIM for mean squared error in both the
-training objective and the anomaly score in a 2025 video anomaly detection study.
-\citet{cai2025medianomaly} come closest to separating the two: their comparison tabulates
-the training loss and the anomaly score as distinct columns, and they state that earlier
-studies ``do not explicitly compare the effects of different distance functions''. But in
-every reconstruction method they evaluate the two columns hold the same distance, so their
-grid is populated only on its diagonal. They also report, at the level of the objective,
-that a perceptual loss beats $\ell_2$ on several datasets and loses to it on another ---
-dataset-dependence of the distance function, established for the training role.
+Prior work does vary the reconstruction metric, but almost always in both roles at once.
+\citet{bergmann2019improving} adapt ``the loss \emph{and} evaluation functions'' and then
+credit the loss alone; \citet{fan2025ssim} substitute SSIM for mean squared error in both
+roles in a 2025 video study. \citet{cai2025medianomaly} come closest, tabulating the
+training loss and the anomaly score as distinct columns and noting that earlier studies
+``do not explicitly compare the effects of different distance functions''. But every
+reconstruction method they evaluate holds the same distance in both columns, so their grid
+is populated only on its diagonal. For the objective alone they do report that a perceptual
+loss beats $\ell_2$ on several datasets and loses on another --- dataset-dependence,
+established for the training role.
 
 \paragraph*{The one off-diagonal cell in the literature.}
-\citet{lagogiannis2024unsupervised} enter the off-diagonal directly. For their
-residual-based methods --- several of which optimise pixel-space objectives --- they
-replace the pixel-wise absolute error with a structural similarity residual at scoring
-time, on the grounds that SSIM accounts for texture and structure and not only luminance,
-and they report that ``this change increased the performance of all selected models it was
-applied to''. The substitution is reported in a subsection on residual extraction and
-post-processing: a design decision, made once, described honestly, and offered as a
-default. It is, to our knowledge, the only published instance of training under one
-distance function and scoring under another in this literature, and it comes with a
-universal claim attached. It is that claim we test, on three datasets, with paired tests.
+\citet{lagogiannis2024unsupervised} enter the off-diagonal directly, replacing the
+pixel-wise absolute error with a structural similarity residual at scoring time for models
+that optimise pixel-space objectives, on the grounds that SSIM accounts for texture and
+structure and not only luminance. To our knowledge it is the only published instance in this
+literature of training under one distance and scoring under another. It is reported as a
+preprocessing decision rather than as a result, and it carries a universal claim.
 
 \paragraph*{What remains open.}
-Prior work varies the architecture with the residual fixed, the readout with the objective
-fixed, or the distance in both roles together; one study varies the distance in the scoring
-role alone. No study we could find, in medical, industrial or video anomaly detection,
-evaluates the two as a crossed design. \citet{behrouzi2023anomaly} come close --- industrial
-thermal autoencoders trained under both MSE and SSIM objectives, reported under three
-anomaly scores --- but their results are indexed by score alone, so no loss-by-score
-attribution can be recovered. Without the cross, a reported gain in this family cannot be
-assigned to the objective, to the score, or to their interaction; and, as we show, cannot be
-assumed to keep its sign on the next dataset.
+No study we could find, in medical, industrial or video anomaly detection, crosses the
+objective with the score. \citet{behrouzi2023anomaly} come close: industrial thermal
+autoencoders trained under both MSE and SSIM objectives, then read under three anomaly
+scores. But they index their results by score alone, so no loss-by-score attribution can be
+recovered. Without the cross, a reported gain in this family belongs to the objective, to
+the score or to their interaction, and nothing in the report says which --- nor, as we show,
+whether it keeps its sign on the next dataset.
 
 \section{Method}
 \label{sec:method}
@@ -283,43 +266,45 @@ assumed to keep its sign on the next dataset.
 A reconstruction-based detector is a map $f$ fitted on normal images and a scoring
 functional applied to its output. Fitting minimises a distance
 $d_{\mathrm{train}}(x, f(x))$ over normal data; scoring assigns
-$s(x) = d_{\mathrm{score}}(x, f(x))$, larger meaning more anomalous. Published methods set
-$d_{\mathrm{train}} = d_{\mathrm{score}}$ and report one number. We do not tie them.
+$s(x) = d_{\mathrm{score}}(x, f(x))$, larger meaning more anomalous. Published reconstruction-distance methods set $d_{\mathrm{train}} = d_{\mathrm{score}}$ and
+report one number; the gradient scores of \citet{zimmerer2019unsupervised} are the exception,
+and they vary which term of one objective is read rather than which distance reads it. We
+tie neither.
 
 \paragraph*{The grid.}
-We cross four objectives --- $\ell_2$, SSIM, a VGG-19 relative perceptual distance, and a
-heteroscedastic Gaussian likelihood --- with five scores: the same four, plus the
-gradient-based score of \citet{zimmerer2019unsupervised}. \figureref{fig:factorial} gives the
+We cross four objectives --- $\ell_2$, SSIM, a relative perceptual distance on VGG-19
+features up to \texttt{relu4\_2}, and a heteroscedastic Gaussian likelihood --- with five
+scores: the same four, plus the gradient-based score of \citet{zimmerer2019unsupervised}.
+SSIM uses the reference implementation's defaults throughout: an $11\times11$ Gaussian of
+$\sigma{=}1.5$, $C_1{=}0.01^2$ and $C_2{=}0.03^2$ on inputs rescaled to $[0,1]$, evaluated
+under valid convolution. Both conventions are inherited without examination, and \sectionref{sec:results} shows each
+carries part of the effect otherwise attributed to the distance. \figureref{fig:factorial} gives the
 design and names the published method each diagonal cell instantiates. Of $4\times5=20$
-cells, 17 are defined. The three that are not are the uncertainty score applied to the
-three objectives that produce no variance output; \sectionref{sec:probe} supplies them by
-another route.
+cells, 17 are defined. The three that are not are the uncertainty score applied to the three objectives that emit
+no variance; \sectionref{sec:probe} supplies a proxy by fitting a variance head to the
+frozen backbone, which consumes training data and is therefore not a rescore.
 
-Off-diagonal cells involve no training. The weights fitted under $d_{\mathrm{train}}$ are
-loaded frozen and only the scoring functional changes, so a row of the grid costs one
-training run and four evaluations. This is what makes the factorial affordable, and it
-means every off-diagonal cell is exactly reproducible from released weights.
+Off-diagonal cells need no training. We load the weights frozen and change only the
+scoring functional, so a row costs one training run and four evaluations, and every such
+cell is reproducible from the released weights.
 
 \paragraph*{A variance head on a frozen backbone.}
 \label{sec:probe}
 The uncertainty score $s(x) = \mathrm{mean}[\exp(-\log\sigma^2)\,(x-\hat{x})^2]$ requires a
-per-pixel variance that only a heteroscedastic model emits. To obtain that score for
-backbones that do not, we attach a small convolutional head to an
+per-pixel variance that only a heteroscedastic model emits. To obtain it for backbones that do not, we attach a small convolutional head to an
 \emph{already-trained, fully frozen} autoencoder and fit only the head, on normal training
 images, under the heteroscedastic Gaussian negative log-likelihood
-\citep{nix1994estimating,kendall2017uncertainties}. Every encoder and decoder weight is
-frozen and the module is re-asserted into evaluation mode at each epoch, so batch
-normalisation statistics cannot drift and the reconstruction is bit-identical to the parent
-run. At $w{=}2$ the head is 14{,}528 parameters, 0.62\% of the backbone.
+\citep{nix1994estimating,kendall2017uncertainties}. Every weight is frozen and the module
+re-asserted into evaluation mode each epoch, so the reconstruction is bit-identical to the
+parent run. At $w{=}2$ the head is 14{,}528 parameters, 0.62\% of the backbone.
 
-The probe carries three controls. A \emph{capacity} control sweeps
-$w\in\{1,2,4,8,16\}$ (\sectionref{sec:selection}); $w{=}1$ reduces to a single transposed
-convolution with normalisation and nonlinearity stripped, and fails everywhere, which makes
-the threshold one of nonlinearity rather than capacity. A \emph{backbone-transfer} control
-fits the same head to a perceptually trained backbone, where it fails by 30.6 AUROC ---
-bounding the claim to pixel-space objectives. Finally, the head is compared both against the
-parent it was fitted onto and against a jointly trained uncertainty model; these are
-different claims and we label every result with its parent backbone throughout.
+Three controls follow. A capacity sweep (\sectionref{sec:selection}), where $w{=}1$ --- a
+single transposed convolution with normalisation and nonlinearity stripped --- fails
+everywhere, making the threshold one of nonlinearity rather than capacity. A
+backbone-transfer control fits the same head to a perceptually trained backbone, where it
+fails by 30.6 AUROC, bounding the claim to pixel-space objectives. And the head is compared
+both against its parent and against a jointly trained model, so every result is labelled
+with its parent backbone.
 
 \section{Experimental Setup}
 \label{sec:setup}
@@ -327,148 +312,148 @@ different claims and we label every result with its parent backbone throughout.
 \paragraph*{Inherited protocol.}
 Splits, backbone, preprocessing and every hyperparameter come unchanged from
 \citet{cai2025medianomaly}: $64\times64$ inputs scaled to $[-1,1]$, a 16-dimensional latent,
-250 epochs, Adam at $10^{-3}$, batch size 64, three seeds (42, 43, 44). We inherit rather
-than tune because it is what makes the reproduction valid and the factorial free of
-confounds: within the grid, only the objective and the score differ.
+250 epochs, Adam at $10^{-3}$, batch size 64, three seeds. We inherit rather than tune: it is
+what makes the reproduction valid and the factorial confounder-free, since within the grid
+only the objective and the score differ.
 
 \paragraph*{Datasets.}
 RSNA \citep{shih2019rsna} and VinDr-CXR \citep{nguyen2022vindr} are chest radiograph
 collections; LAG \citep{li2019lag} is retinal fundus photography with glaucoma labels
 assigned by specialists from intra-ocular pressure, visual field and optic disc assessment.
-Training uses normal images only. Test sets are balanced by construction: 1000/1000 for
-RSNA and VinDr-CXR, 811/811 for LAG. That prevalence is a benchmark artifact, not a clinical
-one, and we return to it in \sectionref{sec:results}.
+Training uses normal images only: 3851, 4000 and 1500 images respectively. Test sets are
+balanced by construction --- 1000/1000 for RSNA and VinDr-CXR, 811/811 for LAG --- a
+benchmark artifact rather than a clinical one, to which we return in
+\sectionref{sec:results}. Splits are the benchmark's own, used unchanged: no image occurs in
+both halves and no preprocessing statistic is fitted on test data. The published split file
+does not record patient identity, so patient-level separation cannot be verified from it.
 
 \paragraph*{Reproduction as calibration.}
-Before crossing anything we reproduced ten published methods under this protocol. Nine of
-ten fall within one standard deviation of their published values on RSNA, four within 0.2
-AUROC, with matching parameter counts; the exception is a denoising autoencoder run at a
-single seed, which cannot separate an implementation gap from seed variation, and which we
-report rather than drop. The full table is in the appendix. The reproduction is not a
-contribution. It is the calibration that licenses the rest: cells of the grid are comparable
-to published numbers only if the diagonal reproduces them.
+Before crossing anything we reproduced ten published methods under this protocol
+(\sectionref{apd:repro}): plain, $\ell_1$, SSIM \citep{bergmann2019improving}, perceptual
+\citep{shvetsova2021anomaly}, variational \citep{kingma2014auto}, uncertainty
+\citep{mao2020abnormality} and denoising \citep{kascenas2023role} autoencoders, with the
+gradient scores of \citet{zimmerer2019unsupervised}. Nine of ten fall within the pooled standard deviation of our runs and the published
+values, the band appropriate to a difference that varies on both sides, and four are within
+0.2 AUROC. The exception is a denoising autoencoder run at a single seed, which we report
+rather than drop. Per-method values and the tighter within-published and within-ours counts
+are in \sectionref{apd:repro}. Reproducing is not itself a contribution. It is the calibration that licenses everything
+after it: a grid cell compares to a published number only if the diagonal reproduces it.
 
 \paragraph*{Held-out configuration.}
-Two choices in this paper are ours rather than inherited: the head width and the ensemble
-membership. Both were fixed on RSNA, written to a machine-readable selection card, and
-applied unchanged to VinDr-CXR and LAG, which were run afterwards. No entry was revised.
-Nothing else is chosen --- everything not on that card is inherited --- which bounds the
-selection surface to two integers. The card and the per-seed held-out records produced at
-run time are released with the code.
+Two choices are ours rather than inherited: the head width and the ensemble membership. Both
+were fixed on RSNA, written to a machine-readable selection card, and applied unchanged to
+VinDr-CXR and LAG, which were run afterwards; no entry was revised. Everything not on that
+card is inherited, so the selection surface is one width and one membership set. The card and
+the per-seed held-out records written at run time are released with the code.
 
 \paragraph*{Statistics.}
-We report the unit of analysis for every test, because the tests answer different questions.
-Paired DeLong tests \citep{delong1988comparing}, computed with the fast algorithm of
-\citet{sun2014fast}, treat the test \emph{images} as the sampling unit; they license
-statements about two scoring rules on these images given these trained weights, and carry no
-seed-variance component, so they say nothing about retraining. Seed-level paired $t$-tests
-treat the \emph{seed} as the unit and do speak to retraining, but with three seeds they are
-underpowered below roughly 1.5 AUROC: a null result there means unresolved, not equivalent.
-Holm correction \citep{holm1979simple} is applied within each dataset, each dataset being a
-separate replication. Sensitivity at fixed specificity uses a split-half protocol --- the
-threshold is estimated on one half of the test set and sensitivity measured on the other,
-over 500 stratified splits --- with paired image-level bootstrap intervals in which the
-threshold is recomputed inside every replicate. We do not compute $t$-intervals over three
-seeds; per-seed values are reported instead.
+We report the unit of analysis for every test. Paired DeLong tests
+\citep{delong1988comparing,sun2014fast} treat the test \emph{images} as the sampling unit;
+our three seeds are scored on one test set, so the mean difference over seeds uses a
+single covariance over all six score vectors with the contrast
+$(\mathbf{1},-\mathbf{1})/3$. Pooling seed by seed instead would assume an independence the
+design does not have. DeLong
+carries no seed-variance component, so it says nothing about retraining. Seed-level paired
+$t$-tests do, but at two degrees of freedom the 95\% multiplier is 4.30 against DeLong's
+1.96. They are therefore underpowered for the one- and two-point differences this paper
+reports, and a null there means unresolved rather than equivalent. Holm correction \citep{holm1979simple} is
+applied within each dataset, each being a separate replication; the family is the seven
+comparisons of \tableref{tab:replication}. Sensitivity at fixed specificity uses a split-half protocol --- threshold on one half of the
+test set, sensitivity on the other, over 500 stratified splits --- with paired image-level
+bootstrap intervals recomputing the threshold inside each replicate. We construct no
+$t$-intervals over three seeds; per-seed values are reported instead.
 
 \subsection{Selection discipline}
 \label{sec:selection}
-
-One quantity in this paper was fixed by looking at test performance. The variance head has a
-width parameter, and we set it to $w{=}2$ after inspecting RSNA test AUROC across
-$w\in\{1,2,4,8,16\}$. A paper arguing that design decisions are validated on the wrong data
-should state its own instance first, and then state what follows.
-
-Three things follow. First, the quantity inspected is flat. The RSNA sweep reads 66.9, 82.0,
-82.1, 81.8, 78.2; width 1 is below the useful range and width 16 carries one diverged seed,
-but $w\in\{2,4,8\}$ spans 0.24 AUROC. The inspection could not have discriminated inside
-that plateau, and $w{=}2$ is not the sweep's maximum even on the dataset it was chosen on.
-It is the smallest width at which the head works at all.
-
-Second, the inspection did not flatter the held-out results. On VinDr-CXR and LAG, $w{=}4$
-exceeds the inherited $w{=}2$ by 1.77 and 0.29 AUROC. Whatever the RSNA inspection bought,
-it cost on both datasets we report as held out.
-
-Third, a rule that never reads a test image chooses differently and does no worse. Selecting
-the width by the head's final training negative log-likelihood, computed on normal training
-images alone, ranks both failure widths last on all three datasets and selects $w{=}8$ on
-RSNA; $w{=}8$ carried unchanged to the held-out pair averages 0.57 AUROC above $w{=}2$. The
-criterion is a training-set quantity rather than a held-out one, since no validation split
-was retained, but with the backbone frozen it fits fewer than 15{,}000 parameters, and it
-ranks the widest head below the middle of the sweep on every dataset.
-
-The width does not enter the transfer result: that ensemble's members are the perceptual and
-uncertainty models, neither of which carries a head.
+One quantity here was fixed by looking at test performance: the variance head's width, set
+to $w{=}2$ after inspecting RSNA test AUROC. A paper arguing that design decisions are
+validated on the wrong data should state its own instance. The sweep
+(\sectionref{apd:sweeps}) shows the inspected quantity is flat, that $w{=}4$ beats the
+inherited $w{=}2$ on both held-out datasets so the choice cost rather than flattered them,
+and that a label-free rule selects $w{=}8$, which carried unchanged averages 0.57 AUROC
+above $w{=}2$. The width does not enter the transfer result.
 
 \section{Results}
 \label{sec:results}
 
 \subsection{The substitution reverses, and what that costs}
-
-Rescoring a trained autoencoder with SSIM changes nothing about the model. The weights are
+Rescoring a trained autoencoder with SSIM changes nothing about the model: the weights are
 the parent run's, the reconstruction is bit-identical, and only the function applied to the
-residual differs. On RSNA that change is worth $+9.08$ AUROC. On VinDr-CXR it is worth
-$-2.37$, and on LAG $-10.54$. All three are Holm-significant under paired DeLong
-(\tableref{tab:replication}), and 19.6 AUROC points separate the best outcome from the worst.
+residual differs. That change is worth $+9.08$ AUROC on RSNA and $-10.54$ on LAG, both
+Holm-significant at $p<10^{-30}$, and $-2.37$ on VinDr-CXR, negative on every seed but not
+separable from image-sampling noise ($p_{\mathrm{Holm}}=0.068$; \tableref{tab:replication}).
+A substitution reported to improve every model it was applied to improves one of our three
+datasets, does nothing measurable on a second, and significantly harms a third.
 
-The disagreement is not between imaging modalities. RSNA and VinDr-CXR are both chest
-radiograph collections, drawn through one preprocessing pipeline, read by one backbone at one
-resolution with the same three seeds, and they disagree in sign with each other. Nor is it
-seed noise: within each dataset all three seeds agree in sign, and the effects are an order
-of magnitude larger than the seed-level spread.
+It is not seed noise: within each dataset all three seeds agree in sign, and the RSNA and
+LAG effects dwarf the seed-level spread. It is also not one decision, and the instrument
+this paper is built on says so. Replacing a pixel residual with an SSIM residual changes the distance, the bandwidth at
+which that distance is evaluated, and --- because the standard implementation evaluates SSIM
+under valid convolution --- the region scored. The last matters because the discarded border
+is not empty: restricting the pixel score to the same central region costs 4.84, 3.24 and
+3.52 AUROC. We separate the two by rescoring through an
+intermediate. Writing $\mathcal{A}(s)$ for the AUROC of score $s$, with $s_{\ell_2}$ the
+pixel score, $s_{\mathrm{val}}$ the SSIM score as implemented and $s_{\mathrm{pad}}$ the same
+score replicate-padded to full support, $\mathcal{A}(s_{\mathrm{val}}) -
+\mathcal{A}(s_{\ell_2}) = [\mathcal{A}(s_{\mathrm{pad}}) - \mathcal{A}(s_{\ell_2})] +
+[\mathcal{A}(s_{\mathrm{val}}) - \mathcal{A}(s_{\mathrm{pad}})]$. The split is an identity, true of any
+intermediate; what earns the two terms their names is that $s_{\mathrm{pad}}$ changes the
+distance at fixed support. They are $+11.13$, $-0.19$ and $-6.50$, and $-2.06$, $-2.19$ and
+$-4.04$, re-adding to the headline up to two-decimal rounding. Components shift by up to
+1.3 points under reflect or zero padding, so we name the convention wherever we quote them;
+every convention gives the same total. The
+RSNA--LAG reversal belongs to the distance and survives. VinDr-CXR's does not: at matched
+support it is a null, and its reported figure is almost entirely support. We found this by
+turning our own instrument on our own headline.
 
-It is also not an artefact of the summary metric. Estimating a threshold at 95\% specificity
-on one half of the test set and measuring sensitivity on the other, over 500 stratified
-splits, the substitution moves sensitivity from 17.7\% to 31.2\% on RSNA, from 13.6\% to
-10.9\% on VinDr-CXR, and from 21.9\% to 12.6\% on LAG --- on the fundus data, two fifths of
-the cases the detector had been flagging. Neither LAG figure is deployable: published
-glaucoma screening operates near 85\% sensitivity at this specificity, and we make no
-deployment claim. What the operating point establishes is that a change described as free
-is not neutral at the point where a detector would actually be used.
+It is also not an artefact of the summary metric. Estimating the threshold at 95\%
+specificity on one half of the test set and measuring sensitivity on the other, over 500
+stratified splits, the substitution moves sensitivity from 17.9\% to 31.5\% on RSNA, 13.9\%
+to 11.0\% on VinDr-CXR and 22.5\% to 12.8\% on LAG. Neither LAG figure is deployable ---
+published glaucoma screening operates near 85\% sensitivity here --- and we make no
+deployment claim.
 
-One dataset separates the two readings. On VinDr-CXR the AUROC difference is
-Holm-significant while the operating-point difference is not, with two of three per-seed
-bootstrap intervals crossing zero. We report that rather than resolve it: a summary metric
-and a deployment-relevant operating point can disagree, which is itself a reason not to read
-AUROC alone.
+Nor is the reversal an artefact of the SSIM window's size relative to a $64\times64$ image.
+Recomputing the score on identical weights at smaller windows deepens the harm on LAG while
+eroding the gain on RSNA, and the sign disagreement survives to $5\times5$; varying the
+Gaussian bandwidth itself, the sign depends on it as much as on the dataset
+(\sectionref{sec:limitations}).
 
 \subsection{What replicates and what reverses}
+Applying seven design-level comparisons unchanged to all three datasets, three replicate in
+sign with Holm significance everywhere, three reverse, and one holds its sign on all three
+without clearing Holm on RSNA (\tableref{tab:replication}). We call a comparison replicated when it agrees in sign
+\emph{and} clears Holm on all three datasets. The third category is not a technicality: the
+head improves on frozen AE-SSIM by $+15.92$ on LAG and $+13.95$ on VinDr-CXR but only
+$+1.19$ on RSNA, where it misses significance. Sign is more portable than magnitude, and
+magnitude than significance.
 
-Applying seven design-level comparisons unchanged to all three datasets, four replicate in
-sign with Holm significance everywhere and three reverse (\tableref{tab:replication}). We
-call a comparison replicated when it agrees in sign \emph{and} clears Holm correction on all
-three datasets; magnitudes are not required to agree, and they do not. The head improves on
-frozen AE-SSIM by $+1.19$ on RSNA and $+15.92$ on LAG --- a thirteen-fold spread under one
-verdict. Sign is considerably more portable than magnitude.
+Grouping the rows by the decision under test shows the instability is not spread evenly:
+every comparison holding its sign on all three measures a construction against something it
+is built on top of, and every reversal compares arms where neither contains the other. We
+return to this in \sectionref{sec:discussion}.
 
-Grouping the rows by the decision under test shows the instability is not spread evenly.
-The four comparisons that replicate all measure a construction against something it is
-built on top of: a head against the frozen backbone it was fitted onto, an ensemble against
-a member it contains. The three that reverse all compare arms where neither contains the
-other --- a score substituted for another on identical weights, or a post-hoc construction
-against a jointly trained one. We return to this in \sectionref{sec:discussion}.
-
-\begin{table}[t]
+\begin{table}[tb]
 \centering\footnotesize
-\caption{Design-level comparisons applied unchanged to three datasets. Values are AUROC
-point differences; positive favours the first-named method. Paired DeLong tests on the test
-images, Holm-corrected within each dataset; \textsuperscript{*} significant at $0.05$;
-\textsuperscript{\dag} $p_{\mathrm{Holm}}=0.055$, underpowered at three seeds --- direction
-unresolved, not absent. DeLong conditions on these trained models and carries no
-seed-variance component; per-seed values are in the appendix. Four comparisons replicate in
-sign across all three datasets and three reverse.}
+\caption{Design-level comparisons applied unchanged to three datasets. Values are AUROC point differences; positive favours the first-named method; per-seed
+values are in \sectionref{apd:perseed}. Paired DeLong on the test images with the multi-seed contrast of \sectionref{sec:setup}, Holm-corrected within each dataset.
+\textsuperscript{*} $p_{\mathrm{Holm}}<0.05$; an unmarked cell is not evidence of absence,
+and all three unmarked here are sign-consistent across seeds. DeLong carries no
+seed-variance component; per-seed values are in the appendix. Three comparisons replicate
+with significance on all three datasets, three reverse, and one is sign-consistent without
+clearing Holm on RSNA.}
 \label{tab:replication}
 \begin{tabular}{@{}l@{\hspace{4pt}}r@{\hspace{5pt}}r@{\hspace{5pt}}r@{}}
 \toprule
 Comparison & RSNA & VinDr & LAG \\
 \midrule
 \multicolumn{4}{@{}l}{\emph{Score substitution}}\\
-\quad AE rescored w/ SSIM vs.\ AE & $+9.08^{*}$ & $-2.37^{*}$ & $-10.54^{*}$ \\[2pt]
+\quad AE rescored w/ SSIM vs.\ AE & $+9.08^{*}$ & $-2.37$ & $-10.54^{*}$ \\[2pt]
 \multicolumn{4}{@{}l}{\emph{Head vs.\ the backbone it is fitted onto}}\\
 \quad head vs.\ frozen AE & $+13.65^{*}$ & $+12.38^{*}$ & $+4.31^{*}$ \\
-\quad head vs.\ frozen AE-SSIM & $+1.19^{*}$ & $+13.95^{*}$ & $+15.92^{*}$ \\[2pt]
+\quad head vs.\ frozen AE-SSIM & $+1.19$ & $+13.95^{*}$ & $+15.92^{*}$ \\[2pt]
 \multicolumn{4}{@{}l}{\emph{Head vs.\ joint training}}\\
-\quad AE-U vs.\ head on AE & $+4.86^{*}$ & $+5.72^{*}$ & $-0.78^{\dag}$ \\
+\quad AE-U vs.\ head on AE & $+4.86^{*}$ & $+5.72^{*}$ & $-0.78$ \\
 \quad head on AE-SSIM vs.\ AE-U & $+0.13$ & $-1.03$ & $-4.35^{*}$ \\[2pt]
 \multicolumn{4}{@{}l}{\emph{Score ensembling}}\\
 \quad ensemble vs.\ AE-PL & $+1.16^{*}$ & $+1.57^{*}$ & $+1.08^{*}$ \\
@@ -478,196 +463,176 @@ Comparison & RSNA & VinDr & LAG \\
 \end{table}
 
 \subsection{Attribution: what the objective buys}
+\figureref{fig:factorial} gives the full grid on RSNA. The four boxed cells are the diagonal: methods
+whose anomaly score is the same \emph{distance between $x$ and $\hat{x}$} that trained them.
+Every reconstruction-distance method in this family sits there. The gradient scores are the published exception, and they are the decoupling of
+\citet{zimmerer2019unsupervised}: a different term of one fixed objective, not a different
+distance.
 
-\figureref{fig:factorial} gives the full grid on RSNA. The four boxed cells are the diagonal,
-where every published method in this family sits, because every one sets
-$d_{\mathrm{train}}=d_{\mathrm{score}}$. Everything else is off-diagonal.
-
-The two decisions are not additive. Taking the plain autoencoder as reference, changing only
-the score to SSIM is worth $+9.08$; changing only the objective to SSIM, while still scoring
-with $\ell_2$, is worth $-6.45$; doing both --- which is AE-SSIM --- is worth $+12.46$. The
-joint effect exceeds the sum of the single changes by 9.8 AUROC points. We report this as a
+The two decisions are not additive. Against the plain autoencoder, changing only the score
+to SSIM is worth $+9.08$, changing only the objective $-6.45$, and doing both --- which is
+AE-SSIM --- $+12.46$: the joint effect exceeds the sum of the single changes by 9.8 points. We report this as a
 descriptive additivity check in AUROC points relative to a fixed reference, not as an
 analysis of variance: it carries no error model, and AUROC is bounded and not additive. The
 same arithmetic for the perceptual pair gives 35.2 points, but that figure is inflated by a
 constituent cell sitting below chance, where AUROC's geometry differs, and we do not lean on
 it.
 
-An objective does not produce a better reconstruction that any score can read. It constrains
-some directions and leaves others free, and a score is informative only in the directions
-that were constrained. The perceptual row is the clearest case: read with $\ell_2$ it gives
-44.9 and read with SSIM 44.0, both below chance, and both replicate --- the same cells give
-38.7 and 34.7 on VinDr-CXR. Below chance is not the absence of signal but its inversion:
-44.9 carries as much information as 55.1 would, with the sign reversed. That is the practical
-point. A scoring rule inherited without validation may not merely underperform; it may rank
-the wrong images first, and nothing in the score itself reveals which.
+The perceptual row shows what this costs: read with $\ell_2$ it gives 44.9 and with SSIM
+44.0, both below chance, and both replicate (38.7 and 34.7 on VinDr-CXR). The reading is
+asymmetric. A score can be informative in directions the objective never constrained --- on
+RSNA the $\ell_2$-trained model is read best by SSIM --- yet an objective can leave a
+direction so unconstrained that reading it inverts the ranking. Mismatching is not uniformly
+costly but unpredictable in direction and magnitude, which is what makes an inherited
+scoring rule unsafe. Below chance is not the absence of signal but its inversion: 44.9 carries as much
+information as 55.1, with the sign reversed. A scoring rule inherited without validation may
+not merely underperform; it may rank the wrong images first, and nothing in the score itself
+reveals which.
 
-\begin{figure}[t]
+\begin{figure}[tb]
 \centering
 \includegraphics[width=\linewidth]{figures/factorial_rsna.pdf}
 \caption{The objective $\times$ score grid on RSNA, AUROC averaged over three seeds. Boxed
 cells are the diagonal and name the published method they instantiate. Red dashed cells are
 below chance. Hatched cells are undefined: the uncertainty score requires a per-pixel
 variance that only the heteroscedastic objective emits, and \sectionref{sec:probe} supplies
-them by fitting a variance head to a frozen backbone. The grid was run on all three datasets
-at three seeds; RSNA is shown here and the other two are in the appendix.}
+a proxy by fitting a variance head to a frozen backbone --- not a rescore, since it consumes
+training data. The grid was run on all three datasets at three seeds; RSNA is shown here and the other two
+are in \sectionref{apd:grids}.}
 \label{fig:factorial}
 \end{figure}
 
 \subsection{What the uncertainty score computes}
-
-The variance head lets us ask what an uncertainty-weighted score is measuring. It is not
-error magnitude. Across the test set the predicted log-variance correlates with the image's
-own mean residual at $\rho=0.51$, so harder images are discounted --- yet abnormal images
-receive a \emph{smaller} log-variance than normal ones ($-0.0997$), and are therefore
-discounted less than their residual alone would predict. The score is a residual relative to
-the difficulty the model expected, and the anomaly signal is the gap between the two.
-
-Four controls separate this from simpler explanations, on RSNA. The full head reaches 82.00.
-Reduced to a single scalar per image, discarding all spatial structure, it reaches 79.87 ---
-so most of the benefit is a per-image calibration rather than a spatial uncertainty map. A
-static map fixed to the training-set mean residual gives 69.10, and zero-parameter whitening
-by the mean residual gives 69.59, against the plain autoencoder's 68.35. The head is
-therefore neither an anatomical prior nor a trivial normalisation.
+One column of the grid cannot be filled by rescoring: the uncertainty score needs a
+per-pixel variance that only its own objective emits. A variance head fitted to the frozen
+backbone supplies a proxy, reaching 82.00 on RSNA against the plain autoencoder's 68.35, but
+it consumes training data and reads internal decoder features, so it is not a score
+substitution. Four controls in \sectionref{apd:head} show what it learns is a per-image
+calibration rather than a spatial uncertainty map; two readings of the score are consistent
+with our measurements and we have not separated them.
 
 \subsection{Held-out transfer, and its failed extension}
+If design decisions mostly fail to carry across datasets, the question is whether anything
+does. Answering it means fixing a configuration before seeing the datasets that will judge
+it.
+Two choices were fixed on RSNA and applied unchanged elsewhere. A rank-average of the perceptual and uncertainty scores gains 1.33 AUROC over the
+strongest single method on the two datasets it was not fixed on: six of six seed
+measurements positive, seed-level 95\% CI $[0.41, 2.25]$. With dataset as the unit of
+analysis $n=2$, which supports the agreement in sign and no $p$-value.
 
-Two choices were fixed on RSNA and applied unchanged elsewhere. A rank-average of the
-perceptual and uncertainty scores gains 1.33 AUROC over the strongest single method on the
-two datasets it was not fixed on (six of six seed measurements positive, seed-level 95\% CI
-$[0.41, 2.25]$) --- though with dataset as the unit of analysis $n=2$, which supports the
-observation that both held-out datasets agree in sign and supports no $p$-value.
-
-The same protocol refuses an extension. Adding a third member gains $+0.72$ on RSNA, where
-the combination was selected, and loses $1.26$ on held-out LAG. We report the extension
-because the contrast is the paper's own argument applied to its own results: a gain measured
-where a choice was made is not evidence that the choice transfers, and the only way to tell
-the two apart is to fix the configuration first and look afterwards.
+The same protocol refuses an extension: a third member gains $+0.72$ on RSNA, where it was
+selected, and loses $1.26$ on held-out LAG. A gain measured where a choice was made is not
+evidence that the choice transfers.
 
 \section{Discussion}
 \label{sec:discussion}
 
-\paragraph*{One distance function, two roles, one answer.}
-SSIM enters this study twice, and both entries move together. Measured against the plain
-autoencoder on each dataset, using SSIM as the score is worth $+9.08$, $-2.37$ and $-10.54$;
-using it as the objective is worth $+12.46$, $-1.56$ and $-11.61$. The signs agree on all
-three datasets and the magnitudes are within 3.4 points. Once the residual is read with
-SSIM, which objective produced it changes the answer by at most 3.4 AUROC and on two
-datasets by about one. What moves is the level of the whole SSIM column, and it moves by
-dataset. The reversal is therefore a property of what SSIM can read in these residuals
-rather than of the role SSIM is given, which is the paper's thesis in its sharpest form: two
-independent routes into the same column land within about a point of each other. We do not
-explain why SSIM reads chest radiograph residuals well and fundus residuals poorly. Spatial
-scale of the structures involved and the ratio of the SSIM window to the image are the
-obvious candidates, and we have not separated them.
+\paragraph*{SSIM training leaves the input range.}
+One mechanism here is measured rather than inferred. Inputs lie in $[-1,1]$, so an in-range
+reconstruction cannot give a squared residual above 4; under an SSIM objective the largest
+is 14.6, 12.1 and 274.6, with LAG reconstructions reaching $-17.2$. Two known properties of SSIM \citep{wang2004image,pambrun2015limitations,nilsson2020understanding}
+produce it. The structure term is offset-invariant and the luminance restoring force
+scales with local mean intensity, so dark regions are barely anchored. The implementation
+also clamps before evaluating, so the gradient outside the range is exactly zero and
+nothing pulls back a pixel that has left. Drift should therefore be downward and confined to dark regions, and it is: on every
+dataset and every seed, between 95.7\% and 99.6\% of out-of-range pixels lie in the darkest
+quintile of local input intensity, and reconstructions run below the range, never above. An $\ell_2$ objective stays in range everywhere (1.7, 1.6, 0.7; \sectionref{apd:range}),
+which is why a pixel score on an SSIM-trained model reads the drift rather than the
+pathology. That the same code reproduces AE-SSIM's published RSNA AUROC to within 0.1 points
+while exhibiting the violation argues against an implementation fault. The properties are known; what appears unreported is that they make the divergence invisible
+to every number the benchmark records, loss and score alike being clamped.
+
+\paragraph*{A parallel we decline to explain.}
+SSIM enters this study twice and both entries move together: as a score it is worth $+9.08$,
+$-2.37$ and $-10.54$ against the plain autoencoder, and as an objective $+12.46$, $-1.56$ and
+$-11.61$ --- agreeing in sign on all three and within 3.4 points. We decline to call these one phenomenon. The range mechanism belongs to the objective axis
+alone, since the score-axis comparison runs on the in-range $\ell_2$ backbone. Nor does
+range explain the pattern even there: RSNA and VinDr-CXR diverge by similar amounts (14.6
+and 12.1), yet the objective is worth $+12.46$ on the first and $-1.56$ on the second, and
+the second is not separable from noise ($p=0.16$). A numerical parallel across three datasets is the
+evidence this paper argues is insufficient for attribution.
 
 \paragraph*{Where the instability lives.}
 The partition in \tableref{tab:replication} aligns exactly with whether one arm is built on
-top of the other: four additive comparisons replicate, three substitutive or cross-family
-comparisons reverse. We noticed this after the fact, on seven comparisons chosen for other
-reasons, so it is a hypothesis rather than a result. We state it because it is checkable. It
-predicts that a further additive comparison should hold its sign on a fourth dataset, and
-that a further substitution should not.
+top of the other: all four comparisons that hold their sign on every dataset are additive,
+and all three that reverse compare arms where neither contains the other. We noticed this
+after the fact, on seven comparisons chosen for other reasons, so we state it as a checkable
+hypothesis rather than a result (\sectionref{apd:perseed}).
 
 \paragraph*{What follows for practice.}
-A scoring rule is not a property of a method that travels with it. Before adopting a rescore
-reported as free, measure it on labelled data from the site where it will run; and where no
-labelled data exists, do not adopt it, because the two chest radiograph collections here
-disagree with each other and there is no cheaper way to learn which case you are in. The
-converse is worth as much: additive constructions held their sign on every dataset we tried,
-and that is the one class of change this evidence supports carrying across sites unvalidated.
-
-\paragraph*{What we do not explain.}
-Why the SSIM column's level depends on the dataset; whether any of this survives a change of
-resolution, which we address below; whether the additive/substitutive partition is real or
-an artefact of seven comparisons; and anything about localisation or deployment. The
-operating-point analysis says what a scoring choice costs at a fixed false-positive rate. It
-does not say that either configuration should be used.
+A scoring rule is not a property of a method that travels with it, and a rescore reported as
+free is a bundle of decisions. Revalidate it on labelled data from the target distribution;
+where none exists, do not adopt it. The converse is worth as much: additive constructions
+held their sign everywhere we tried, and are the one class of change this evidence supports
+carrying unvalidated. We do not explain why the distance's sign depends on the dataset.
 
 \section{Limitations}
 \label{sec:limitations}
+\textbf{1. Resolution, and a windowed score.} All comparisons are at $64\times64$, inherited from the benchmark, which reports this
+``achieves comparable performance to using a larger input size'' \citep{cai2025medianomaly}
+--- but that ablation varies resolution under pixel objectives and pixel scores, and we find
+no published ablation covering a \emph{windowed} score. Tested at fixed resolution
+(\sectionref{apd:sweeps}), the effect is monotone in the SSIM bandwidth on all three
+datasets, losing everywhere at $\sigma{=}0.5$ and helping everywhere by $\sigma{=}3$. Each
+dataset changes sign at a different bandwidth --- between $0.85$ and $1.0$ on RSNA, $1.5$ and
+$2.0$ on VinDr-CXR, $2.0$ and $3.0$ on LAG --- and the library default falls inside that
+spread. The $128\times128$ equivalent of that default,
+$\sigma{=}0.75$, is negative on all three ($-3.31$, $-8.77$, $-18.39$), so we predict the
+RSNA gain vanishes rather than merely shrinks. Resolution also changes image content, so the
+replication remains the first item of further work.
 
-\textbf{1. Resolution, and a windowed score.} All comparisons are at $64\times64$, inherited
-from the benchmark, which reports that this resolution ``achieves comparable performance to
-using a larger input size, such as $128\times128$'' \citep{cai2025medianomaly}. That ablation
-varies resolution under pixel-space objectives and pixel-space scores. SSIM is computed over
-an $11\times11$ window, which at $64\times64$ spans roughly a sixth of the image, and no
-published ablation covers whether a windowed score behaves the same way at both resolutions.
-This is the sharpest alternative reading of our central result, so we tested it directly at
-fixed resolution by recomputing the SSIM score on identical weights and reconstructions with
-smaller windows. Shrinking the window does not attenuate the reversal; it amplifies it.
-Against the $\ell_2$ baseline, the rescore is worth $+9.03$, $+7.87$ and $+3.86$ on RSNA at
-windows of 11, 7 and 5, and $-10.66$, $-11.12$ and $-14.41$ on LAG. The sign disagreement
-between RSNA and the other two datasets survives at all three, and only disappears at a
-$3\times3$ window, where SSIM is worse than plain $\ell_2$ everywhere. An $11\times11$ window
-at $128\times128$ would span 8.6\% of the image, between our $5\times5$ and $7\times7$
-settings, where the disagreement is still present; we therefore expect the reversal to
-persist at higher resolution with a smaller positive side. That remains a prediction ---
-raising the resolution also changes the image content, not only the window ratio --- and the
-replication is the first item of further work.
+\textbf{2. Three datasets, and modality is confounded with the sign.} We claim no general law of transfer, only one specific failure of it: a significant gain on
+one dataset and a significant loss on another. But once VinDr-CXR is read as a null at
+matched support, the panel is one positive and one null chest radiograph collection and one
+negative fundus collection --- equally consistent with the distance simply suiting
+radiographs and not fundus images. A null is weak evidence against a strong modality effect
+and none against a weak one; separating them requires a dataset that is neither, and the
+panel does not contain one.
 
-\textbf{2. Three datasets.} We claim no general law of transfer. We exhibit one specific,
-quantified failure of it, significant in both directions. The panel's two most similar
-members disagree with each other, so the result is not reducible to imaging modality, but
-three datasets cannot establish how often such reversals occur.
+\textbf{3. Three seeds.} DeLong tests condition on these trained models and carry no
+seed-variance component, so claims below roughly two AUROC points rest on the seed-level
+column, where three seeds are underpowered. A non-significant seed-level result is
+unresolved, not null: the LAG comparison of AE-U against the head ($-0.78$,
+$p_{\mathrm{Holm}}=0.13$) is reported as direction unresolved.
 
-\textbf{3. Three seeds, and the unit of analysis.} DeLong tests condition on these trained
-models and carry no seed-variance component; claims below roughly two AUROC points rest on
-the seed-level column, where three seeds are underpowered. A non-significant seed-level
-result is unresolved, not null: the LAG comparison of AE-U against the post-hoc head
-($-0.78$, $p_{\mathrm{Holm}}=0.055$) is reported as direction unresolved.
+\textbf{4. One backbone, image-level labels.} Inheriting the architecture and
+hyperparameters is what makes the reproduction valid and the factorial free of confounders.
+But we have not tested whether the decomposition holds under a different backbone, and we
+make no localisation claim.
 
-\textbf{4. One backbone, untuned.} Architecture and hyperparameters are inherited and never
-tuned. This is what makes the reproduction valid and the factorial free of confounds, but the
-decomposition's stability under a different backbone is untested.
-
-\textbf{5. Image-level labels only.} No localisation claim is made or supported, which suits
-the triage and screening settings named in \sectionref{sec:intro} and no others.
-
-\textbf{6. Balanced test sets.} 50\% prevalence is a benchmark construction. AUROC is
-prevalence-invariant, so the headline is unaffected, but the operating points are read on a
-balanced set and their sensitivities are not transportable to a screening cohort. LAG in
-particular is a tertiary referral collection, whose case mix is more severe than a screening
+\textbf{5. Balanced test sets.} AUROC is prevalence-invariant, so the headline is
+unaffected. But we read the operating points on a 50\% test set
+(\sectionref{apd:oppoint}), and those sensitivities do not transport to a screening cohort.
+LAG is a tertiary referral collection, whose case mix is more severe than a screening
 population's.
 
-\textbf{7. Selection.} One quantity was fixed by inspecting test performance; see
-\sectionref{sec:selection}.
-
-\textbf{8. One incomplete cell.} A single post-hoc head run on LAG failed a non-finite-loss
-guard, so that comparison uses two seeds rather than three; it is marked wherever it appears.
+\textbf{6. Selection, and one incomplete cell.} One quantity was fixed by inspecting test
+performance (\sectionref{sec:selection}). On LAG the head fitted to a frozen AE-SSIM backbone
+overflowed on one seed, so that comparison uses two seeds, marked wherever it appears. Since all
+three LAG AE-SSIM backbones leave the input range, every AE-SSIM-on-LAG number is measured on
+a diverged reconstruction --- unevenly, since the SSIM score is evaluated on the clamped
+reconstruction and cannot see the drift while the pixel score reads it directly.
 
 \section{Conclusion}
-
 Two decisions inside a reconstruction-based detector have been moving together, and the
-literature has been crediting one of them. Separating them shows that the anomaly score
-carries much of the reported gain and that its direction is not a property of the method: a
-substitution a current benchmark recommends as free gains 9.08 AUROC points on one dataset
-and loses 10.54 on another, and the two chest radiograph collections in our panel disagree
-with each other. We do not offer a better detector. We offer the instrument that says which
-part of one to believe, and we release the per-image score vectors so a reader can place a
-new objective or a new score in the grid without a GPU.
-
-\paragraph*{Use of AI Assistance}
-We used a large language model as a coding and writing assistant: to help implement and
-review the experiment harness, to draft and revise prose, and to cross-check claims
-against our experimental record. It was not part of the method under study, and no
-experimental result was produced by it. All experiments were executed by the authors on
-the datasets described above. The authors verified every reported number against the
-stored per-run outputs, and read and confirmed every cited work; the authors take full
-responsibility for the content of this paper.
+literature has been crediting one of them. Separating them shows that a substitution a
+current benchmark recommends as free gains 9.08 AUROC points on one dataset and loses 10.54
+on another --- and that unbundled, into a distance, a bandwidth and a region scored, it was
+never one decision either. We offer not a better detector but the instrument that says which
+part of one to believe.
 
 \appendix
 
 \section{Per-seed differences}
 \label{apd:perseed}
-Every comparison in \tableref{tab:replication} as three individual seed measurements,
-AUROC points, paired DeLong on identical images. The main text reports means; these are
-the values behind them. Note the exceptions the means conceal: one RSNA seed for the head
-against frozen AE-SSIM is negative, and the two comparisons of a post-hoc construction
-against a jointly trained model disagree in sign \emph{within} a dataset --- which is why
-the LAG row of the former is reported as direction unresolved rather than as no
-difference. Across the four comparisons that replicate, 35 of 36 seed measurements agree
-in sign.
+Every comparison in \tableref{tab:replication}, broken out into its three individual seed
+measurements: AUROC points, paired DeLong on identical images. The main text reports the
+means; these are the values behind them. Two exceptions the means conceal are worth
+naming. One RSNA seed for the head against frozen AE-SSIM is negative. And the two
+comparisons of a post-hoc construction against a jointly trained model disagree in sign
+\emph{within} a dataset, which is why the LAG row of the former reads direction unresolved
+rather than no difference. Across the four comparisons that hold their sign on all three
+datasets, 35 of 36 seed measurements agree in sign.
 
 \begin{table}[h]
 \centering\footnotesize
@@ -708,6 +673,17 @@ head run on LAG that failed a non-finite-loss guard and was not recorded.}
 \bottomrule
 \end{tabular}
 \end{table}
+
+\paragraph*{The additive/substitutive partition.}
+\sectionref{sec:discussion} names this partition: every comparison that holds its sign is
+additive, every reversal compares arms where neither contains the other. Two details belong
+here rather than there. First, the counts differ because the criteria do --- one additive
+comparison, the head against a frozen AE-SSIM, holds its sign on all three datasets but
+misses Holm on RSNA, so four hold their sign where three replicate. Second, the hypothesis
+is checkable, which is why we state it: it predicts that a further additive comparison
+should hold its sign on a fourth dataset, and that a further substitution should not. The
+co-adaptation account we proposed for the joint-versus-post-hoc gap is a casualty of the
+same partition --- it predicts a gap on every dataset, and LAG has none.
 
 \section{The factorial on the held-out datasets}
 \label{apd:grids}
@@ -793,40 +769,95 @@ LAG       & 74.04 & 83.27 & 83.56 & 82.78 & 81.23 \\
 \end{tabular}
 \end{table}
 
-\paragraph*{SSIM window sweep.} The rescore recomputed on identical frozen weights and
-reconstructions at four window sizes, at fixed $64\times64$. Values are AUROC differences
-against the $\ell_2$ baseline on the same weights.
+\paragraph*{Bandwidth and window.} Varying the window at fixed $\sigma$ changes the
+truncation, not the scale: a $\sigma{=}1.5$ kernel truncated at $\pm3$ retains about 95\% of
+its mass. Shrinking it deepens the harm on LAG while eroding the gain on RSNA, and the sign
+disagreement survives to $5\times5$. Varying the bandwidth itself is the operative
+manipulation. Values are AUROC differences against the pixel score on the same weights;
+the bandwidth rows use replicate-padded SSIM at full support.
 
 \begin{table}[h]
 \centering\footnotesize
-\caption{Effect of the SSIM rescore by window size. The sign disagreement between RSNA and
-the other two datasets survives at windows 11, 7 and 5, and disappears at 3, where SSIM is
-worse than $\ell_2$ everywhere.}
+\caption{Effect of the SSIM rescore by window size at fixed $\sigma{=}1.5$ (upper) and by
+Gaussian bandwidth (lower). $\sigma{=}0.75$ is the $128\times128$ scale-equivalent of the
+library default.}
 \begin{tabular}{@{}lrrr@{}}
 \toprule
-window (\% of image) & RSNA & VinDr-CXR & LAG \\
+ & RSNA & VinDr-CXR & LAG \\
 \midrule
-$11\times11$ (17.2\%) & $+9.03$ & $-2.59$ & $-10.66$ \\
-$7\times7$   (10.9\%) & $+7.87$ & $-3.52$ & $-11.12$ \\
-$5\times5$   (7.8\%)  & $+3.86$ & $-5.78$ & $-14.41$ \\
-$3\times3$   (4.7\%)  & $-5.49$ & $-10.82$ & $-22.36$ \\
+\multicolumn{4}{@{}l}{\emph{window, $\sigma$ fixed at 1.5}}\\
+\quad $11\times11$ & $+9.08$ & $-2.37$ & $-10.54$ \\
+\quad $7\times7$   & $+7.99$ & $-3.12$ & $-10.48$ \\
+\quad $5\times5$   & $+4.07$ & $-5.20$ & $-13.11$ \\
+\quad $3\times3$   & $-5.08$ & $-9.88$ & $-19.49$ \\
+\midrule
+\multicolumn{4}{@{}l}{\emph{bandwidth $\sigma$, full support}}\\
+\quad $0.50$ & $-10.03$ & $-11.90$ & $-21.72$ \\
+\quad $0.75$ & $-3.31$ & $-8.77$ & $-18.39$ \\
+\quad $1.00$ & $+2.72$ & $-5.55$ & $-14.07$ \\
+\quad $1.50$ & $+11.13$ & $-0.19$ & $-6.50$ \\
+\quad $2.00$ & $+15.20$ & $+3.28$ & $-1.52$ \\
+\quad $3.00$ & $+18.13$ & $+7.17$ & $+3.55$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
+\section{Reconstruction range by objective}
+\label{apd:range}
+Largest squared residual on 256 normal training images, averaged over three seeds. Inputs
+lie in $[-1,1]$, so an in-range reconstruction cannot exceed 4; values above it measure how
+far the decoder has left the input range. The reference decoder we inherit ends in a
+transposed convolution with no output activation, so nothing bounds it but the objective.
+
+\begin{table}[h]
+\centering\footnotesize
+\caption{Maximum squared residual by training objective. The $\ell_2$ row is the control:
+its reconstructions stay in range everywhere, which is what makes the score-axis
+comparisons in \tableref{tab:replication} clean.}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+objective & RSNA & VinDr-CXR & LAG \\
+\midrule
+$\ell_2$ (plain AE) & 1.7 & 1.6 & 0.7 \\
+SSIM                & 14.6 & 12.1 & 274.6 \\
+perceptual          & 3.8 & 2.8 & 2.3 \\
+\midrule
+\emph{in-range maximum} & \multicolumn{3}{c}{4.0} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The perceptual row is worth noting: AE-PL stays in range on all three datasets, so its
+below-chance pixel-space cell is not a gross intensity violation. That cell is consistent
+with contrast compression rather than a global offset, which we do not test further here.
+
+\section{The variance head}
+\label{apd:head}
+What it learns is not error magnitude. On RSNA the full head reaches 82.00 against the plain
+autoencoder's 68.35; reduced to one scalar per image, discarding all spatial structure, it
+still reaches 79.87 --- so the benefit is per-image calibration, not a spatial uncertainty
+map. That scalar cannot be a monotone function of the image's own mean residual, or the
+score would collapse back to 68.35. A static map fixed to the training-set mean residual
+gives 69.10 and zero-parameter whitening 69.59, so the head is neither an anatomical prior
+nor a trivial normalisation. Its log-variance rises with an image's own residual
+($\rho=0.51$) while abnormal images receive a \emph{smaller} log-variance than normal ones,
+weighting them 10.5\% higher. One reading is a residual measured relative to expected
+difficulty; another --- a normaliser fitted on normal features, extrapolating downward off
+that manifold --- predicts the same signs, and we have not separated them.
+
 \section{Operating-point protocol}
 \label{apd:oppoint}
-Sensitivity at fixed specificity is reported under a split-half protocol: the test set is
-split in half, stratified by label; the threshold achieving 95\% specificity is estimated
-on the first half; sensitivity for both scoring rules is measured on the second; this is
-repeated over 500 stratified splits and averaged, per seed. The threshold is therefore
-never estimated on the data it is evaluated on. Confidence intervals come from a paired
-image-level bootstrap in which the threshold is recomputed inside every replicate, since
-fixing it at its point estimate would omit threshold-estimation uncertainty --- the
-dominant term when estimating a far-tail quantile. We do not construct intervals over
-three seeds; per-seed values are reported instead.
+We report sensitivity at fixed specificity under a split-half protocol. We split the test
+set in half, stratified by label, fix the threshold achieving 95\% specificity on the first
+half, and measure sensitivity for both scoring rules on the second, repeating over 500
+stratified splits and averaging per seed. The threshold is therefore never estimated on the
+data it is evaluated on. Confidence intervals come from a paired image-level bootstrap that
+recomputes the threshold inside every replicate. Holding it at its point estimate would
+drop threshold-estimation uncertainty, which dominates when the quantile sits far into the
+tail. We construct no intervals over three seeds, and report per-seed values instead.
 
-Balanced test sets mean these sensitivities are not transportable to a screening cohort.
+These sensitivities do not transport to a screening cohort, because the test sets are
+balanced.
 LAG in particular is drawn from a tertiary referral population whose case mix is more
 severe than a screening population's, and its labels come from specialists reading
 intra-ocular pressure, visual field and optic disc together.

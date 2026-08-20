@@ -1,0 +1,29 @@
+{
+  "RSNA": {
+    "darkest_quintile_share_pct": [
+      95.7,
+      96.0,
+      97.3
+    ],
+    "mean": 96.3,
+    "min": 95.7
+  },
+  "VinCXR": {
+    "darkest_quintile_share_pct": [
+      99.4,
+      99.2,
+      99.6
+    ],
+    "mean": 99.4,
+    "min": 99.2
+  },
+  "LAG": {
+    "darkest_quintile_share_pct": [
+      99.5,
+      98.0,
+      97.7
+    ],
+    "mean": 98.4,
+    "min": 97.7
+  }
+}

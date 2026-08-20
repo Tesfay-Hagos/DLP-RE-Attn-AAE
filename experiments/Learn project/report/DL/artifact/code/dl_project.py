@@ -3269,11 +3269,35 @@ def m3_delong(comparisons=None, seeds=None):
             if sa is None or sb is None:
                 continue
             r = delong_test(sa, sb, Y_TEST)
-            rows.append({'comparison': label, 'seed': s, **r})
+            # keep the score vectors (or their ids) so m3_report can compute the exact
+            # multi-seed contrast rather than pooling as if the seeds were independent
+            rows.append({'comparison': label, 'seed': s, 'run_a': a, 'run_b': b, **r})
     return pd.DataFrame(rows)
 
 
 M3 = m3_delong()
+
+def _pooled_delong_se(g):
+    """Exact standard error for the MEAN of k paired AUC differences measured on ONE test
+    set. Stacks all 2k score vectors, takes a single DeLong covariance, and applies the
+    contrast c = (1..1, -1..-1)/k. Falls back to the naive pooling only if the underlying
+    score vectors are unavailable, and says so."""
+    a_ids = g['run_a'].tolist() if 'run_a' in g else None
+    b_ids = g['run_b'].tolist() if 'run_b' in g else None
+    if not a_ids or not b_ids:
+        print('    !! score vectors not recorded for this comparison; falling back to the'
+              ' independence-assuming pool, which UNDERSTATES the SE by ~sqrt(k)')
+        return float(np.sqrt((g['se'].values ** 2).mean() / len(g)))
+    A = [_scores_for(r, quiet=True) if isinstance(r, str) else r for r in a_ids]
+    B = [_scores_for(r, quiet=True) if isinstance(r, str) else r for r in b_ids]
+    keep = [(x, y) for x, y in zip(A, B) if x is not None and y is not None]
+    k = len(keep)
+    if k == 0:
+        return float('nan')
+    _, cov = delong_variance(np.vstack([x for x, _ in keep] + [y for _, y in keep]), Y_TEST)
+    c = np.r_[np.ones(k), -np.ones(k)] / k
+    return float(np.sqrt(max(c @ cov @ c, 0.0)))
+
 
 def m3_report(M3, alpha=0.05):
     """Two DIFFERENT tests, reported side by side, because they answer different questions.
@@ -3302,7 +3326,17 @@ def m3_report(M3, alpha=0.05):
         d_i = g['diff'].values
         k   = len(d_i)
         d   = float(d_i.mean())
-        se_pool = float(np.sqrt((g['se'].values ** 2).mean() / k)) if 'se' in g else float('nan')
+        # WRONG, and it was here: se_pool = sqrt(mean(se_i^2)/k). That divisor assumes the
+        # k per-seed differences are independent draws. They are not -- every seed is
+        # evaluated on the SAME test images, so the image-sampling variance that DeLong
+        # measures is very nearly common to all k. Dividing by k understated the standard
+        # error by a factor of ~sqrt(k) on all three datasets and turned two null results
+        # into significant ones.
+        #
+        # The exact statistic uses one covariance over all 2k predictors and the contrast
+        # c = (1..1, -1..-1)/k, which keeps every cross-seed covariance term. Computed in
+        # `m3_pooled_se` below from the stored score vectors.
+        se_pool = _pooled_delong_se(g) if 'se' in g else float('nan')
         z   = d / se_pool if se_pool > 0 else 0.0
         p_dl = float(2 * stats.norm.sf(abs(z)))
         half = stats.norm.ppf(1 - alpha / 2) * se_pool
@@ -3630,6 +3664,154 @@ _ = qualitative_panel()
 print('\n  READ THE INTENSITY STATISTICS ABOVE, not just the pictures:')
 print('  if ae-pl\'s reconstruction mean/std depart from the input while ae\'s do not,')
 print('  that IS the mechanism behind the 44.9 cell and the -30.56, made measurable.')
+
+
+# %% [markdown]
+# ---
+# ## **Cell 5.10** — Why one LAG head run never completes
+# `ae-ssim-posthoc-u_ds-LAG_w-2_s43` aborts on the non-finite-loss guard, so LAG stores 99
+# runs rather than 100 and one comparison is reported at n=2. Re-running does not help:
+# the seed fixes the initialisation and the batch order, so the run takes the identical
+# trajectory every time and fails at the identical point. It is deterministic, not flaky.
+#
+# This cell finds out *where* and *why*, without changing anything. The heteroscedastic
+# objective is
+#
+# $$\mathcal{L} = \mathrm{mean}\left[\exp(-\log\sigma^2)\,(x-\hat{x})^2 + \log\sigma^2\right]$$
+#
+# which is unbounded below in $\log\sigma^2$: as the head drives the log-variance down on
+# a pixel whose residual is near zero, $\exp(-\log\sigma^2)$ grows without limit and one
+# bad batch overflows. That is a known fragility of the objective, not a bug in the port.
+#
+# **Read the output before deciding anything.** If the run diverges in the first few epochs
+# it is an initialisation problem; if it survives 200 epochs and then dies it is a late
+# instability, and the two have different fixes.
+#
+# ### On "fixing" it
+# Any mitigation — gradient clipping, clamping $\log\sigma^2$, a lower learning rate —
+# produces a **different training protocol**. Storing one mitigated run beside two
+# unmitigated ones would give an n=3 mean over three models that were not trained the same
+# way, which is worse than an honest n=2. So the mitigation below is written to run **all
+# three seeds** under the same variant and to store them under a **different run id**, where
+# they cannot be confused with the originals. Leave `RUN_MITIGATION = False` unless you
+# intend to report the variant as a variant.
+
+# %% [CELL 5.10]  Diagnose the failing LAG head run
+
+DIAG_BASE   = 'ae-ssim'      # the frozen backbone the head sits on
+DIAG_SEED   = 43             # the seed that fails
+DIAG_WIDTH  = 2
+RUN_MITIGATION = False       # see the markdown above before setting this True
+
+
+def diagnose_posthoc(base_method=DIAG_BASE, seed=DIAG_SEED, width=DIAG_WIDTH,
+                     max_epochs=None, clip=None, lv_clamp=None, lr=None, store_as=None):
+    """Re-run one post-hoc head with per-batch instrumentation.
+
+    Returns a dict describing the first non-finite step, or the completed run. Nothing is
+    saved unless `store_as` is given, so the default call cannot alter the record."""
+    n_epochs = max_epochs if max_epochs is not None else EPOCHS
+    base_rid = run_id(base_method, seed)
+    if not (run_exists(base_rid) or (USE_WANDB and fetch_run(base_rid))):
+        print(f'  backbone {base_rid} not available'); return None
+    ae = build_net(METHODS[base_method]['net'])
+    load_run(base_rid, models={'net': ae})
+    for prm in ae.parameters():
+        prm.requires_grad = False
+    ae.eval()
+
+    random.seed(seed); np.random.seed(seed); torch.manual_seed(seed)
+    if device.type == 'cuda':
+        torch.cuda.manual_seed_all(seed)
+    head = PostHocVarHead(width=width).to(device)
+    opt = Adam(head.parameters(), lr=lr if lr is not None else LR,
+               weight_decay=WEIGHT_DECAY)
+    g = torch.Generator().manual_seed(seed)
+    loader = DataLoader(TensorDataset(X_TRAIN), batch_size=BATCH_SIZE, shuffle=True,
+                        generator=g)
+
+    print(f'  diagnosing {base_method} w={width} seed={seed} on {DATASET}'
+          f'{"" if clip is None else f", grad-clip {clip}"}'
+          f'{"" if lv_clamp is None else f", log_var clamped to {lv_clamp}"}'
+          f'{"" if lr is None else f", lr {lr}"}')
+    print(f"  {'ep':>5}{'loss':>12}{'log_var min':>13}{'log_var max':>13}"
+          f"{'exp(-lv) max':>14}{'grad norm':>11}")
+    epoch_loss = []
+    for ep in range(1, n_epochs + 1):
+        head.train(); ae.eval()
+        tot, n = 0.0, 0
+        lv_lo, lv_hi, gmax = float('inf'), -float('inf'), 0.0
+        for bi, (xb,) in enumerate(loader):
+            xb = xb.to(device, non_blocking=True)
+            with torch.no_grad():
+                out = ae(xb); x_hat, de1 = out['x_hat'], out['de_features'][0]
+            log_var = head(de1)
+            if lv_clamp is not None:
+                log_var = log_var.clamp(min=lv_clamp[0], max=lv_clamp[1])
+            recon = (xb - x_hat) ** 2
+            loss = (torch.exp(-log_var) * recon + log_var).mean()
+            lv_lo = min(lv_lo, float(log_var.min())); lv_hi = max(lv_hi, float(log_var.max()))
+            if not torch.isfinite(loss):
+                # THE POINT OF THIS CELL: report the state at the moment it breaks.
+                print(f'\n  *** NON-FINITE LOSS at epoch {ep}, batch {bi} ***')
+                print(f'      loss                     {float(loss)}')
+                print(f'      log_var  min / max       {float(log_var.min()):.4f} / '
+                      f'{float(log_var.max()):.4f}')
+                print(f'      exp(-log_var) max        {float(torch.exp(-log_var).max()):.4g}')
+                print(f'      residual max             {float(recon.max()):.4g}')
+                print(f'      non-finite in log_var?   {not bool(torch.isfinite(log_var).all())}')
+                print(f'      non-finite in recon?     {not bool(torch.isfinite(recon).all())}')
+                print(f'\n      DIAGNOSIS: {"the head output itself went non-finite" if not bool(torch.isfinite(log_var).all()) else "log_var drifted low enough that exp(-log_var) overflowed"}')
+                print(f'      epochs survived: {ep - 1} of {n_epochs}')
+                return {'ok': False, 'epoch': ep, 'batch': bi,
+                        'lv_min': float(log_var.min()), 'lv_max': float(log_var.max()),
+                        'epoch_loss': epoch_loss}
+            opt.zero_grad(); loss.backward()
+            gn = torch.nn.utils.clip_grad_norm_(head.parameters(),
+                                                clip if clip is not None else float('inf'))
+            gmax = max(gmax, float(gn))
+            opt.step()
+            tot += loss.item() * xb.size(0); n += xb.size(0)
+        epoch_loss.append(tot / n)
+        if ep == 1 or ep % max(1, n_epochs // 12) == 0 or ep == n_epochs:
+            print(f'  {ep:>5}{epoch_loss[-1]:>12.5f}{lv_lo:>13.3f}{lv_hi:>13.3f}'
+                  f'{np.exp(-lv_lo):>14.4g}{gmax:>11.2f}')
+    print(f'\n  COMPLETED {n_epochs} epochs, final loss {epoch_loss[-1]:.5f}')
+    return {'ok': True, 'epoch_loss': epoch_loss, 'head': head, 'ae': ae}
+
+
+_diag = diagnose_posthoc()
+
+if _diag is not None and not _diag['ok']:
+    print(f"""
+  WHAT TO DO WITH THIS
+  --------------------
+  The run is deterministic, so re-running the notebook will reproduce this exactly and
+  LAG will keep storing 99 runs. There are two defensible options and one indefensible
+  one.
+
+  (1) REPORT n=2, which is what the paper currently does. The comparison using this run
+      is marked n=2 wherever it appears, and this cell's output is the explanation.
+      Costs nothing, hides nothing.
+
+  (2) RE-RUN ALL THREE SEEDS under a documented variant (gradient clipping, or clamping
+      log_var) and report that variant as a variant, under its own run id. Set
+      RUN_MITIGATION = True below. This gives a clean n=3 for a protocol that differs
+      from the rest of the paper, so it belongs in the appendix, not in Table 1.
+
+  (3) Re-run ONLY seed {DIAG_SEED} with a mitigation and store it beside the two
+      unmitigated seeds. DO NOT DO THIS. The resulting n=3 mean would average three
+      models that were not trained the same way, which is worse than an honest n=2.
+""")
+
+if RUN_MITIGATION:
+    print('\n  MITIGATED VARIANT — all three seeds, gradient clipping at 1.0,'
+          ' stored under a separate run id\n')
+    for _s in SEEDS:
+        _r = diagnose_posthoc(seed=_s, clip=1.0)
+        print(f"    seed {_s}: {'completed' if _r and _r['ok'] else 'still diverged'}")
+    print('\n  If all three completed, report this as an appendix variant. It is NOT'
+          '\n  interchangeable with the main-protocol runs.')
 
 
 # %% [markdown]

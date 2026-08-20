@@ -1,0 +1,17 @@
+{
+  "ae": {
+    "RSNA": 1.7,
+    "VinCXR": 1.6,
+    "LAG": 0.7
+  },
+  "ae-ssim": {
+    "RSNA": 14.6,
+    "VinCXR": 12.1,
+    "LAG": 274.6
+  },
+  "ae-pl": {
+    "RSNA": 3.8,
+    "VinCXR": 2.8,
+    "LAG": 2.3
+  }
+}

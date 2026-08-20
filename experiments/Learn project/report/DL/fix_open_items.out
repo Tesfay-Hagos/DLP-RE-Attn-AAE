@@ -1,0 +1,14 @@
+(1) WINDOW SWEEP, WITH THE CLAMP  (win-11 must now match Table 1's +9.08)
+
+  RSNA     base  68.35   w11:  +9.08  w7:  +7.99  w5:  +4.07  w3:  -5.08
+  VinCXR   base  56.03   w11:  -2.37  w7:  -3.12  w5:  -5.20  w3:  -9.88
+  LAG      base  78.96   w11: -10.54  w7: -10.48  w5: -13.11  w3: -19.49
+
+(2) DARK-REGION CHECK, ALL THREE SEEDS
+
+  RSNA     share of out-of-range pixels in the darkest quintile, per seed: 95.7%, 96.0%, 97.3%
+  VinCXR   share of out-of-range pixels in the darkest quintile, per seed: 99.4%, 99.2%, 99.6%
+  LAG      share of out-of-range pixels in the darkest quintile, per seed: 99.5%, 98.0%, 97.7%
+
+  minimum across all 9 (dataset, seed) pairs: 95.7%
+  -> the paper may say '95% to 99.5%' across all three datasets AND all three seeds

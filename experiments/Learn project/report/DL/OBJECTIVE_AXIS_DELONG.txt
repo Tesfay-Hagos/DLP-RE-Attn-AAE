@@ -1,0 +1,16 @@
+============================================================================
+OBJECTIVE AXIS: AE-SSIM vs plain AE, exact 6-predictor DeLong contrast
+The paper quotes p=0.16 for VinDr-CXR. That number came from an agent and was
+never independently computed. This computes it.
+============================================================================
+
+  dataset       diff      SE           p
+  RSNA        +12.46    0.74    6.27e-63
+  VinCXR       -1.56    1.12       0.161
+  LAG         -11.61    0.86    2.38e-41
+
+  The paper says VinDr-CXR is -1.56, "not separable from noise (p=0.16)".
+  Computed here: p = 0.161.  -> MATCHES
+  RSNA +12.46 (p=6.3e-63) and LAG -11.61 (p=2.4e-41) are both significant,
+  so "similar divergence, effects an order of magnitude apart" is supported.
+============================================================================

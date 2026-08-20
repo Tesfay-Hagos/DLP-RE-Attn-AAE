@@ -1,0 +1,25 @@
+============================================================================
+DO SSIM-TRAINED RECONSTRUCTIONS LEAVE THE INPUT RANGE?
+Inputs are in [-1,1]. A reconstruction outside it means the objective placed no
+constraint on absolute intensity. 256 normal training images per cell.
+============================================================================
+
+plain AE (L2-trained)
+  dataset    recon min  recon max  max resid^2  % pixels |x_hat|>1
+  RSNA           -1.27       1.08          1.7                0.8%
+  VinCXR         -1.18       1.01          1.6                1.2%
+  LAG            -1.32       1.30          0.7                1.8%
+
+AE-SSIM
+  dataset    recon min  recon max  max resid^2  % pixels |x_hat|>1
+  RSNA           -4.01       0.95         14.6                2.9%
+  VinCXR         -3.94       1.13         12.1                2.8%
+  LAG           -17.16       3.82        274.6                2.7%
+
+AE-PL
+  dataset    recon min  recon max  max resid^2  % pixels |x_hat|>1
+  RSNA           -1.73       1.10          3.8                0.8%
+  VinCXR         -1.52       1.11          2.8                0.7%
+  LAG            -1.40       1.65          2.3                0.4%
+
+============================================================================

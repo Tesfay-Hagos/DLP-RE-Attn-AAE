@@ -1,0 +1,26 @@
+================================================================================
+DECOMPOSING THE HEADLINE: how much is the SCORING FUNCTION, how much is the CROP?
+SSIM uses valid convolution, so it is evaluated on a smaller region than the l2
+score it replaces. At sigma=1.5 the window is 11px and the crop is 54x54 of 64x64.
+================================================================================
+
+  dataset    l2 full  l2 crop    SSIM   CROP part   SCORE part    total    paper
+  RSNA         68.35    63.51   77.38       -4.84       +13.87    +9.03    +9.08
+  VinCXR       56.03    52.79   53.43       -3.24        +0.64    -2.60    -2.37
+  LAG          78.96    75.44   68.30       -3.52        -7.14   -10.66   -10.54
+
+  READING.
+  * RSNA  : the crop COSTS 4.84 and the scoring function GAINS 13.87. The reported +9.08
+            understates what changing the score does.
+  * LAG   : the crop costs 3.52 and the scoring function loses 7.14. The reported -10.54
+            OVERSTATES the scoring function's contribution by about a third.
+  * VinCXR: the crop costs 3.24 and the scoring function GAINS 0.64. The reported -2.37 is
+            almost entirely the crop, and the scoring function's own effect is positive.
+            This is the leg that carries the same-modality argument.
+
+  WHAT SURVIVES EITHER WAY: RSNA positive, LAG negative, both large.
+      uncropped    +9.08 / -2.37 / -10.54
+      crop-matched +13.87 / +0.64 / -7.14
+  The RSNA-vs-LAG reversal is robust to the choice. VinCXR is not.
+
+================================================================================

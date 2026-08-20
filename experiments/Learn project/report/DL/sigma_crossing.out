@@ -1,0 +1,17 @@
+RSNA done
+VinCXR done
+LAG done
+
+==========================================================================
+SSIM-minus-l2, full support, by Gaussian bandwidth
+==========================================================================
+  dataset       s=0.5    s=0.65    s=0.75    s=0.85     s=1.0     s=1.5
+  RSNA         -10.03     -5.97     -3.31     -0.73     +2.72    +11.13
+  VinCXR       -11.90    -10.06     -8.77     -7.46     -5.55     -0.19
+  LAG          -21.72    -20.01    -18.39    -16.66    -14.07     -6.50
+
+  RSNA at sigma=0.75, the 128px scale-equivalent of the default: -3.31
+  -> the 'RSNA gain vanishes at 128px' prediction is SUPPORTED
+  RSNA      crossing in sigma = 0.85-1.0
+  VinCXR    crossing in sigma = none in [0.5,1.5]
+  LAG       crossing in sigma = none in [0.5,1.5]

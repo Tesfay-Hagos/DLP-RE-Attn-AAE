@@ -6,6 +6,8 @@ that produced them, the derived tables, and the code.
     code/dl_project.py          the full experiment, one self-contained file
     code/verify_paper_numbers.py  regenerates every number in the paper and diffs it
     code/ssim_window_sweep.py   the fixed-resolution SSIM window analysis
+    code/sigma_crossing.py      the SSIM bandwidth sweep behind Limitation 1
+    code/support_decomposition.py  rebuilds the distance/support split and checks it
     scores/<dataset>/<run_id>/  scores.npy, labels.npy, manifest.json
     tables/                     derived CSVs, the selection card, the analysis outputs
 

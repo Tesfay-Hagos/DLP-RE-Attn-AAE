@@ -48,10 +48,17 @@ LAG   n=1622, 811 abnormal
     AUROC 78.96 -> 68.43  (-10.54)
 
 ==============================================================================
-THE SPREAD — the quantity the claim is actually about
+THE SPREAD — the quantity the claim is about
   same substitution, same benchmark, same backbone, same preprocessing, same seeds:
-    RSNA    +9.08     VinCXR   -2.37     LAG   -10.54
+    RSNA    +9.08*    VinCXR   -2.37     LAG   -10.54*
+    (* Holm-significant under the multi-seed DeLong contrast; VinCXR is p_Holm = 0.068,
+     i.e. negative on every seed but not separable from image-sampling noise)
   best-to-worst spread: 19.62 AUROC points
-  RSNA and VinCXR are BOTH CHEST RADIOGRAPHS and disagree in sign.
-  => the reversal is NOT a modality effect.
-==============================================================================
+
+  NOTE ON MODALITY. An earlier version of this file concluded that the reversal is "NOT a
+  modality effect" because RSNA and VinCXR are both chest radiographs and disagreed in
+  sign. That conclusion is RETRACTED. Under the corrected contrast VinCXR is a null, and
+  at matched support its distance component is -0.19, so the panel is one positive chest
+  collection, one null chest collection and one negative fundus collection -- a pattern
+  equally consistent with a modality account. The paper states this in its Limitations
+  and does not claim otherwise.

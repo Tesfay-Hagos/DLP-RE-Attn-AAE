@@ -1,0 +1,480 @@
+====================================================================================================
+CLAIMS AUDIT — every main-text sentence carrying a word that can hide an unsupported claim.
+NOTHING EDITED. Judge each against M3_CORRECTED.txt / RESULTS_FINAL.txt / the bundles.
+====================================================================================================
+
+[ 1] L21   COMP
+     75} \usepackage[switch]{lineno} \title[A Free Rescore Is Not Free]{A Free Rescore Is Not Free:
+      A Benchmark-Recommended Score Substitution Reverses Sign Across Medical Imaging Datasets} \au
+     thor{Anonymous Author(s)} \begin{document} \iffinal\else\linenumbers\fi \maketitle \begin{abst
+     ract} Reconstruction-based anomaly detectors bundle two separable decisions: the objective the
+      model is trained under, and the rule that turns the residual into a score.
+
+[ 2] L33   QUANT
+     A current benchmark recommends substituting a structural-similarity residual into pixel-traine
+     d models, reporting that it improved every model it was applied to.
+
+[ 3] L54   QUANT
+     0 points on every dataset.
+
+[ 4] L55   QUANT+NOV
+     The distance component's sign depends jointly on the dataset and on a Gaussian bandwidth we fi
+     nd no benchmark ablates: the effect is monotone in it, and the library default sits in the nar
+     row band where the sign disagrees --- below it the substitution hurts everywhere, above it hel
+     ps everywhere.
+
+[ 5] L66   QUANT
+     Anonymized code, per-run manifests, the per-image anomaly score vectors for every reported cel
+     l, and the trained weights are provided as supplemental material.
+
+[ 6] L67   SIG+QUANT
+     The score vectors reproduce every reported comparison and significance test; placing a \emph{n
+     ew} anomaly score in the grid additionally requires the released weights, since it needs the r
+     econstructions, but no retraining.
+
+[ 7] L81   QUANT
+     \section{Introduction} \label{sec:intro} Unsupervised anomaly detection promises something a s
+     upervised classifier cannot offer in medicine: a detector trained only on normal images, which
+      does not require an annotated example of every pathology it must eventually flag.
+
+[ 8] L98   QUANT
+     More than half of prevalent glaucoma is undetected in every region studied \citep{soh2021undet
+     ected}, and a team building a screen for it has every reason to adopt a change a benchmark rep
+     orts as free.
+
+[ 9] L111  QUANT
+     In published work they almost always are, and they are changed together.
+
+[10] L115  QUANT
+     The practice has not gone away: \citet{fan2025ssim} substitute SSIM for MSE in both roles at o
+     nce in 2025.
+
+[11] L118  QUANT
+     If the two roles are never separated, no reported gain in this family can be assigned to eithe
+     r.
+
+[12] L119  QUANT
+     \citet{cai2025medianomaly} come closest, tabulating the training loss and the anomaly score as
+      separate columns, but every reconstruction method they evaluate instantiates the two with the
+      same distance.
+
+[13] L123  QUANT
+     \citet{lagogiannis2024unsupervised} substitute an SSIM residual into four models trained under
+      pixel-space objectives, on the reasonable grounds that SSIM captures texture and structure th
+     at absolute error does not, and report that this ``increased the performance of all selected m
+     odels it was applied to''.
+
+[14] L133  QUANT
+     Rescoring costs no training: the model is already fitted, and only the function applied to its
+      residual changes.
+
+[15] L134  SIG
+     We run the resulting grid on three datasets --- two chest radiograph collections and one retin
+     al fundus collection --- and compare cells with paired DeLong tests, with Holm correction insi
+     de each dataset.
+
+[16] L139  QUANT
+     37$, negative on every seed but not separable from noise.
+
+[17] L143  ATTR
+     It changes the distance, the bandwidth at which that distance is evaluated, and --- because th
+     e standard implementation uses valid convolution --- the region scored.
+
+[18] L149  QUANT+NOV
+     The distance component's sign depends jointly on the dataset and on a Gaussian bandwidth we fi
+     nd no benchmark ablates: the library default sits in the narrow band where our panel disagrees
+     , and outside it the substitution moves the same way everywhere.
+
+[19] L153  COMP
+     That result generalises into the paper's organising question: which conclusions about these de
+     sign decisions survive a change of dataset?
+
+[20] L156  SIG+QUANT+COMP
+     Applying seven design-level comparisons unchanged to all three datasets, three replicate in al
+     l three, three reverse, and one holds its sign everywhere without reaching significance on RSN
+     A.
+
+[21] L158  QUANT
+     We report all three outcomes in one table.
+
+[22] L158  COMP
+     Among the reversals is a mechanism we proposed ourselves --- that the residual advantage of jo
+     intly trained uncertainty estimation over a post-hoc variance head reflects co-adaptation betw
+     een reconstruction and variance during training.
+
+[23] L161  QUANT
+     That account predicts a gap on every dataset.
+
+[24] L162  QUANT
+     On LAG there is none.
+
+[25] L162  QUANT
+     Fitting a variance head to a completely frozen autoencoder recovers a large part of the advant
+     age of a jointly trained uncertainty model, on all three datasets, and lets us inspect what an
+      uncertainty-weighted score computes: not error magnitude, but residual relative to expected d
+     ifficulty.
+
+[26] L171  SIG+QUANT+COMP
+     } \begin{itemize} \item A correction to a published recommendation: a benchmark-endorsed, no-r
+     etraining score substitution reverses sign across datasets, with all three directions signific
+     ant under paired tests (\sectionref{sec:results}).
+
+[27] L174  COMP
+     \item A design-decision replication table across three datasets in which four comparisons repl
+     icate and three reverse, reported with equal prominence.
+
+[28] L178  QUANT
+     \item Evidence that mismatching objective and score is actively harmful rather than merely sub
+     optimal --- a perceptually trained model read in pixel space scores below chance --- and, for 
+     one objective, the measured mechanism: under an SSIM objective the inherited decoder drifts ou
+     tside the input range on all three datasets.
+
+[29] L188  QUANT
+     } Every comparison here is internal to image-reconstruction detectors at $64\times64$ with ima
+     ge-level labels, on one backbone whose architecture and hyperparameters we inherit unchanged s
+     o that the reproduction stays valid and the factorial free of confounds.
+
+[30] L195  ATTR
+     \section{Related Work} \label{sec:related} We group prior work by which design decision it var
+     ied, because that is the axis along which our contribution is defined.
+
+[31] L217  QUANT
+     The objective never changes; what changes is which term is differentiated.
+
+[32] L220  NOV
+     \citet{meissen2022pitfalls} argue from the other direction that the pixel residual is a poor s
+     core in the first place, being dominated by error on normal structure rather than pathology.
+
+[33] L225  QUANT
+     } The reconstruction metric itself has been varied, but almost always in both roles simultaneo
+     usly.
+
+[34] L230  QUANT
+     Both statements are in the same paper and both are accurate descriptions of what was done; onl
+     y the second is an attribution, and it credits one of two simultaneous changes.
+
+[35] L232  QUANT
+     \citet{fan2025ssim} substitute SSIM for mean squared error in both the training objective and 
+     the anomaly score in a 2025 video anomaly detection study.
+
+[36] L239  QUANT
+     But every reconstruction method they evaluate holds the same distance in both columns, so thei
+     r grid is populated only on its diagonal.
+
+[37] L241  COMP
+     They also report, for the objective alone, that a perceptual loss beats $\ell_2$ on several da
+     tasets and loses on another --- dataset-dependence, established for the training role.
+
+[38] L244  QUANT+ATTR
+     For their residual-based methods --- several of which optimise pixel-space objectives --- they
+      replace the pixel-wise absolute error with a structural similarity residual at scoring time, 
+     on the grounds that SSIM accounts for texture and structure and not only luminance, and they r
+     eport that ``this change increased the performance of all selected models it was applied to''.
+
+[39] L250  QUANT+NOV
+     It is, to our knowledge, the only published instance of training under one distance function a
+     nd scoring under another in this literature, and it comes with a universal claim attached.
+
+[40] L255  QUANT
+     } Prior work varies the architecture with the residual fixed, the readout with the objective f
+     ixed, or the distance in both roles together; one study varies the distance in the scoring rol
+     e alone.
+
+[41] L258  QUANT
+     \citet{behrouzi2023anomaly} come close --- industrial thermal autoencoders trained under both 
+     MSE and SSIM objectives, reported under three anomaly scores --- but their results are indexed
+      by score alone, so no loss-by-score attribution can be recovered.
+
+[42] L282  QUANT
+     Off-diagonal cells involve no training: the weights fitted under $d_{\mathrm{train}}$ are load
+     ed frozen and only the scoring functional changes, so a row costs one training run and four ev
+     aluations, and every off-diagonal cell is exactly reproducible from released weights.
+
+[43] L287  QUANT
+     } \label{sec:probe} The uncertainty score $s(x) = \mathrm{mean}[\exp(-\log\sigma^2)\,(x-\hat{x
+     })^2]$ requires a per-pixel variance that only a heteroscedastic model emits.
+
+[44] L289  QUANT
+     To obtain that score for backbones that do not, we attach a small convolutional head to an \em
+     ph{already-trained, fully frozen} autoencoder and fit only the head, on normal training images
+     , under the heteroscedastic Gaussian negative log-likelihood \citep{nix1994estimating,kendall2
+     017uncertainties}.
+
+[45] L293  QUANT
+     Every weight is frozen and the module re-asserted into evaluation mode each epoch, so batch no
+     rmalisation statistics cannot drift and the reconstruction is bit-identical to the parent run.
+
+[46] L299  QUANT
+     A capacity sweep over $w\in\{1,2,4,8,16\}$ (\sectionref{sec:selection}), where $w{=}1$ --- a s
+     ingle transposed convolution with normalisation and nonlinearity stripped --- fails everywhere
+     , making the threshold one of nonlinearity rather than capacity.
+
+[47] L305  QUANT
+     And the head is compared both against its parent and against a jointly trained uncertainty mod
+     el; these are different claims, so every result is labelled with its parent backbone.
+
+[48] L307  QUANT
+     } Splits, backbone, preprocessing and every hyperparameter come unchanged from \citet{cai2025m
+     edianomaly}: $64\times64$ inputs scaled to $[-1,1]$, a 16-dimensional latent, 250 epochs, Adam
+      at $10^{-3}$, batch size 64, three seeds (42, 43, 44).
+
+[49] L311  QUANT
+     We inherit rather than tune: it is what makes the reproduction valid and the factorial free of
+      confounds, since within the grid only the objective and the score differ.
+
+[50] L317  QUANT
+     Training uses normal images only.
+
+[51] L331  QUANT
+     The reproduction is not a contribution but the calibration that licenses the rest: grid cells 
+     are comparable to published numbers only if the diagonal reproduces them.
+
+[52] L334  QUANT
+     Both were fixed on RSNA, written to a machine-readable selection card, and applied unchanged t
+     o VinDr-CXR and LAG, which were run afterwards.
+
+[53] L340  QUANT
+     } We report the unit of analysis for every test.
+
+[54] L341  QUANT+ATTR
+     Paired DeLong tests \citep{delong1988comparing,sun2014fast} treat the test \emph{images} as th
+     e sampling unit; because our three seeds are scored on one test set, the mean difference over 
+     seeds uses a single covariance over all six score vectors with the contrast $(\mathbf{1},-\mat
+     hbf{1})/3$, not a per-seed pooling, which would assume independence the design does not have.
+
+[55] L350  SIG+COMP
+     Holm correction \citep{holm1979simple} is applied within each dataset, each being a separate r
+     eplication.
+
+[56] L351  QUANT+COMP
+     Sensitivity at fixed specificity uses a split-half protocol --- threshold estimated on one hal
+     f of the test set, sensitivity measured on the other, over 500 stratified splits --- with pair
+     ed image-level bootstrap intervals recomputing the threshold inside every replicate.
+
+[57] L374  COMP
+     \section{Results} \label{sec:results} \subsection{The substitution reverses, and what that cos
+     ts} Rescoring a trained autoencoder with SSIM changes nothing about the model.
+
+[58] L376  QUANT
+     The weights are the parent run's, the reconstruction is bit-identical, and only the function a
+     pplied to the residual differs.
+
+[59] L380  SIG+QUANT
+     A substitution reported to improve every model it was applied to improves one of our three dat
+     asets, does nothing measurable on a second, and significantly harms a third.
+
+[60] L382  QUANT
+     It is not seed noise: within each dataset all three seeds agree in sign, and the RSNA and LAG 
+     effects dwarf the seed-level spread.
+
+[61] L389  ATTR
+     Replacing a pixel residual with an SSIM residual changes the distance, the bandwidth at which 
+     that distance is evaluated, and --- because the implementation uses valid convolution --- the 
+     region of the image scored.
+
+[62] L395  QUANT
+     3 points under reflect or zero padding, so we name the convention wherever we quote them; ever
+     y convention sums to the same total.
+
+[63] L398  COMP
+     The RSNA--LAG reversal belongs to the distance and survives.
+
+[64] L405  QUANT
+     Neither LAG figure is deployable --- published glaucoma screening operates near 85\% sensitivi
+     ty at this specificity --- and we make no deployment claim: the operating point shows only tha
+     t a change described as free is not neutral where a detector would be used.
+
+[65] L408  SIG
+     On VinDr-CXR neither reading is significant, so the two agree.
+
+[66] L408  COMP
+     Nor is the reversal an artefact of the SSIM window's size relative to a $64\times64$ image: re
+     computing the score on identical weights at smaller bandwidths amplifies the disagreement rath
+     er than attenuating it, and the sign depends on that bandwidth as much as on the dataset (\sec
+     tionref{sec:limitations}).
+
+[67] L413  SIG+QUANT+COMP
+     \subsection{What replicates and what reverses} Applying seven design-level comparisons unchang
+     ed to all three datasets, three replicate in sign with Holm significance everywhere, three rev
+     erse, and one holds its sign on all three without clearing Holm on RSNA (\tableref{tab:replica
+     tion}).
+
+[68] L416  SIG+QUANT+COMP
+     We call a comparison replicated when it agrees in sign \emph{and} clears Holm on all three dat
+     asets.
+
+[69] L420  SIG
+     19$ on RSNA, where it misses significance.
+
+[70] L420  SIG+COMP
+     Sign is more portable than magnitude, and magnitude than significance.
+
+[71] L422  QUANT
+     Every comparison that holds its sign across all three datasets measures a construction against
+      something it is built on top of: a head against the frozen backbone it was fitted onto, an en
+     semble against a member it contains.
+
+[72] L428  QUANT+COMP
+     The three that reverse all compare arms where neither contains the other --- a score substitut
+     ed for another on identical weights, or a post-hoc construction against a jointly trained one.
+
+[73] L431  NOV
+     Values are AUROC point differences; positive favours the first-named method.
+
+[74] L432  SIG+QUANT
+     Paired DeLong on the test images, using a single covariance over all six per-seed score vector
+     s and the contrast $(\mathbf{1},-\mathbf{1})/3$, since the seeds share one test set; Holm-corr
+     ected within each dataset.
+
+[75] L437  QUANT
+     05$; an unmarked cell is not evidence of absence, and all three unmarked here are sign-consist
+     ent across seeds.
+
+[76] L459  QUANT+ATTR
+     The four boxed cells are the diagonal, where every published method in this family sits, becau
+     se every one sets $d_{\mathrm{train}}=d_{\mathrm{score}}$.
+
+[77] L480  QUANT
+     The reading we take from this is that an objective does not produce a better reconstruction th
+     at any score can read: it constrains some directions and leaves others free, and a score is in
+     formative only in the directions that were constrained.
+
+[78] L484  COMP
+     1 would, with the sign reversed.
+
+[79] L484  NOV
+     A scoring rule inherited without validation may not merely underperform; it may rank the wrong
+      images first, and nothing in the score itself reveals which.
+
+[80] L491  QUANT
+     Hatched cells are undefined: the uncertainty score requires a per-pixel variance that only the
+      heteroscedastic objective emits, and \sectionref{sec:probe} supplies them by fitting a varian
+     ce head to a frozen backbone.
+
+[81] L494  QUANT
+     } \label{fig:factorial} \end{figure} \subsection{What the uncertainty score computes} One colu
+     mn of the grid cannot be filled by rescoring: the uncertainty score needs a per-pixel variance
+      that only its own objective emits.
+
+[82] L501  QUANT
+     35 --- but unlike every other cell this one consumes training data and reads internal decoder 
+     features, so it measures an objective plus a fitted variance model rather than a score substit
+     ution, and is not comparable to its neighbours as a rescore.
+
+[83] L518  QUANT
+     25]$) --- though with dataset as the unit of analysis $n=2$, which supports the observation th
+     at both held-out datasets agree in sign and supports no $p$-value.
+
+[84] L525  QUANT+NOV
+     A gain measured where a choice was made is not evidence that the choice transfers, and fixing 
+     the configuration first is the only way to tell them apart.
+
+[85] L537  QUANT
+     The implementation then clamps the reconstruction to the input range before evaluating SSIM, s
+     o the gradient with respect to any pixel already outside it is exactly zero: once a pixel leav
+     es, nothing returns it while shared decoder weights keep moving it.
+
+[86] L545  QUANT+ATTR
+     Drift should therefore be one-sided and confined to dark regions, and it is --- over 95\% of o
+     ut-of-range pixels lie in the darkest quintile of local input intensity on all three datasets,
+      and reconstructions run below the range, never above.
+
+[87] L550  QUANT+NOV
+     The properties are known; what appears unreported is that they make the divergence invisible t
+     o every number the benchmark records, the loss being clamped and the model scored with the sam
+     e clamped metric.
+
+[88] L556  QUANT
+     } SSIM enters this study twice and both entries move together.
+
+[89] L560  ATTR
+     The range mechanism belongs to the objective axis alone --- the score-axis comparison runs on 
+     the $\ell_2$-trained backbone, which stays in range --- and range does not explain the sign pa
+     ttern even within the objective axis, since RSNA and VinDr-CXR diverge by similar amounts and 
+     disagree.
+
+[90] L568  COMP
+     } The partition in \tableref{tab:replication} aligns exactly with whether one arm is built on 
+     top of the other: four additive comparisons replicate, three substitutive or cross-family comp
+     arisons reverse.
+
+[91] L572  ATTR
+     We state it because it is checkable.
+
+[92] L574  QUANT
+     The co-adaptation account we proposed for the joint-versus-post-hoc gap is a casualty of the s
+     ame partition: it predicts a gap on every dataset, and LAG has none.
+
+[93] L576  ATTR
+     } A scoring rule is not a property of a method that travels with it, and a rescore reported as
+      free is a bundle of decisions.
+
+[94] L580  QUANT
+     Measure it on labelled data from the site where it will run; where none exists, do not adopt i
+     t.
+
+[95] L581  QUANT
+     The converse is worth as much: additive constructions held their sign on every dataset we trie
+     d, and are the one class of change this evidence supports carrying unvalidated.
+
+[96] L583  ATTR
+     We do not explain why the distance's sign depends on the dataset, and the operating-point anal
+     ysis says what a scoring choice costs, not that either configuration should be used.
+
+[97] L586  QUANT
+     } All comparisons are at $64\times64$, inherited from the benchmark, which reports this ``achi
+     eves comparable performance to using a larger input size, such as $128\times128$'' \citep{cai2
+     025medianomaly}.
+
+[98] L590  QUANT
+     That ablation varies resolution under pixel objectives and pixel scores; SSIM is computed over
+      an $11\times11$ window, spanning roughly a sixth of the image here, and no published ablation
+      covers whether a windowed score behaves the same at both resolutions.
+
+[99] L593  ATTR
+     We therefore tested it at fixed resolution, recomputing the score on identical weights with sm
+     aller windows.
+
+[100] L601  QUANT+COMP
+     The sign disagreement survives all three, disappearing only at $3\times3$, where SSIM is worse
+      than $\ell_2$ everywhere.
+
+[101] L605  QUANT
+     3$ it helps everywhere.
+
+[102] L608  QUANT
+     75$ here, which lies in the all-negative region, so we predict the RSNA gain vanishes at highe
+     r resolution rather than merely shrinking.
+
+[103] L609  QUANT+COMP+NOV
+     That is a falsifiable prediction --- resolution also changes image content, not only the bandw
+     idth --- and the replication is the first item of further work.
+
+[104] L612  SIG+QUANT
+     } We claim no general law of transfer, only one specific failure of it, significant in both di
+     rections.
+
+[105] L616  QUANT
+     A null on VinDr-CXR is weak evidence against a strong modality effect and none against a weak 
+     one.
+
+[106] L635  NOV
+     } On LAG the head fitted to a frozen AE-SSIM backbone overflowed at the second batch of the fi
+     rst epoch on one seed, the backbone's residuals reaching 771.
+
+[107] L639  QUANT+ATTR
+     More broadly, since all three LAG AE-SSIM backbones leave the input range, every AE-SSIM-on-LA
+     G number here is measured on a diverged reconstruction --- a property of the objective on this
+      data rather than an error, for the reasons in \sectionref{sec:discussion}.
+
+[108] L662  QUANT
+     All experiments were executed by the authors on the datasets described above.
+
+[109] L663  QUANT
+     The authors verified every reported number against the stored per-run outputs, and read and co
+     nfirmed every cited work; the authors take full responsibility for the content of this paper.
+
+====================================================================================================
+109 sentences flagged across 104 lines.
+  by trigger: QUANT=82  COMP=20  SIG=13  ATTR=13  NOV=10
+====================================================================================================

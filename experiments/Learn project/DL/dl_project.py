@@ -3269,11 +3269,35 @@ def m3_delong(comparisons=None, seeds=None):
             if sa is None or sb is None:
                 continue
             r = delong_test(sa, sb, Y_TEST)
-            rows.append({'comparison': label, 'seed': s, **r})
+            # keep the score vectors (or their ids) so m3_report can compute the exact
+            # multi-seed contrast rather than pooling as if the seeds were independent
+            rows.append({'comparison': label, 'seed': s, 'run_a': a, 'run_b': b, **r})
     return pd.DataFrame(rows)
 
 
 M3 = m3_delong()
+
+def _pooled_delong_se(g):
+    """Exact standard error for the MEAN of k paired AUC differences measured on ONE test
+    set. Stacks all 2k score vectors, takes a single DeLong covariance, and applies the
+    contrast c = (1..1, -1..-1)/k. Falls back to the naive pooling only if the underlying
+    score vectors are unavailable, and says so."""
+    a_ids = g['run_a'].tolist() if 'run_a' in g else None
+    b_ids = g['run_b'].tolist() if 'run_b' in g else None
+    if not a_ids or not b_ids:
+        print('    !! score vectors not recorded for this comparison; falling back to the'
+              ' independence-assuming pool, which UNDERSTATES the SE by ~sqrt(k)')
+        return float(np.sqrt((g['se'].values ** 2).mean() / len(g)))
+    A = [_scores_for(r, quiet=True) if isinstance(r, str) else r for r in a_ids]
+    B = [_scores_for(r, quiet=True) if isinstance(r, str) else r for r in b_ids]
+    keep = [(x, y) for x, y in zip(A, B) if x is not None and y is not None]
+    k = len(keep)
+    if k == 0:
+        return float('nan')
+    _, cov = delong_variance(np.vstack([x for x, _ in keep] + [y for _, y in keep]), Y_TEST)
+    c = np.r_[np.ones(k), -np.ones(k)] / k
+    return float(np.sqrt(max(c @ cov @ c, 0.0)))
+
 
 def m3_report(M3, alpha=0.05):
     """Two DIFFERENT tests, reported side by side, because they answer different questions.
@@ -3302,7 +3326,17 @@ def m3_report(M3, alpha=0.05):
         d_i = g['diff'].values
         k   = len(d_i)
         d   = float(d_i.mean())
-        se_pool = float(np.sqrt((g['se'].values ** 2).mean() / k)) if 'se' in g else float('nan')
+        # WRONG, and it was here: se_pool = sqrt(mean(se_i^2)/k). That divisor assumes the
+        # k per-seed differences are independent draws. They are not -- every seed is
+        # evaluated on the SAME test images, so the image-sampling variance that DeLong
+        # measures is very nearly common to all k. Dividing by k understated the standard
+        # error by a factor of ~sqrt(k) on all three datasets and turned two null results
+        # into significant ones.
+        #
+        # The exact statistic uses one covariance over all 2k predictors and the contrast
+        # c = (1..1, -1..-1)/k, which keeps every cross-seed covariance term. Computed in
+        # `m3_pooled_se` below from the stored score vectors.
+        se_pool = _pooled_delong_se(g) if 'se' in g else float('nan')
         z   = d / se_pool if se_pool > 0 else 0.0
         p_dl = float(2 * stats.norm.sf(abs(z)))
         half = stats.norm.ppf(1 - alpha / 2) * se_pool

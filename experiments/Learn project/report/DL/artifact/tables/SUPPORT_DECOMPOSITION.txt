@@ -1,0 +1,29 @@
+====================================================================================
+DISTANCE vs SUPPORT — after fixing a double-padding bug in the separable blur.
+Components are convention-dependent, so all three are reported and the paper
+must name the one it uses. Reconstructions computed once per (dataset, seed).
+====================================================================================
+
+RSNA
+  convention    l2 full  SSIM pad  SSIM valid   DISTANCE   SUPPORT      sum
+  replicate       68.35     79.48       77.42     +11.13     -2.06    +9.08
+  reflect         68.35     79.37       77.42     +11.03     -1.95    +9.08
+  constant        68.35     78.25       77.42      +9.90     -0.83    +9.08
+
+VinCXR
+  convention    l2 full  SSIM pad  SSIM valid   DISTANCE   SUPPORT      sum
+  replicate       56.03     55.84       53.65      -0.19     -2.19    -2.37
+  reflect         56.03     55.71       53.65      -0.31     -2.06    -2.37
+  constant        56.03     55.77       53.65      -0.26     -2.11    -2.37
+
+LAG
+  convention    l2 full  SSIM pad  SSIM valid   DISTANCE   SUPPORT      sum
+  replicate       78.96     72.47       68.43      -6.50     -4.04   -10.54
+  reflect         78.96     72.31       68.43      -6.66     -3.88   -10.54
+  constant        78.96     71.80       68.43      -7.16     -3.38   -10.54
+
+====================================================================================
+  All conventions sum to the same headline, so the sum cannot arbitrate between
+  them. REPLICATE is the conservative default: it extends the image by its own
+  border rather than inventing content (reflect) or intensity (constant zero).
+====================================================================================

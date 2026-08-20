@@ -10,7 +10,8 @@ rm -rf "$OUT"; mkdir -p "$OUT"/{code,scores,tables}
 # --- code: the single self-contained notebook source, with the project name neutralised
 sed -e "s/WANDB_PROJECT  = 'MedIAnomaly-DL'/WANDB_PROJECT  = os.environ.get('WANDB_PROJECT', 'anon-project')/" \
     "$HERE/../../DL/dl_project.py" > "$OUT/code/dl_project.py"
-cp "$HERE/verify_paper_numbers.py" "$HERE/ssim_window_sweep.py" "$OUT/code/"
+cp "$HERE/verify_paper_numbers.py" "$HERE/ssim_window_sweep.py" \
+   "$HERE/sigma_crossing.py" "$HERE/support_decomposition.py" "$OUT/code/"
 
 # --- per-image score vectors + manifests, per dataset. NO weights (size), NO raw logs.
 for B in dl_results_RSNA_dl-v1_20260818-1013 \
@@ -32,8 +33,16 @@ PY
   cp "$HERE/$B/results_dl"/*.csv "$OUT/tables/" 2>/dev/null || true
   cp "$HERE/$B/results_dl"/selection_card.json "$OUT/tables/" 2>/dev/null || true
 done
-cp "$HERE"/{FACTORIAL_GRID.txt,WIDTH_SWEEP.txt,CLINICAL_OPERATING_POINTS.txt,ssim_window_sweep.json,m0_ladder.json} \
-   "$OUT/tables/" 2>/dev/null || true
+# ALLOWLIST. Working narrative documents (07_*, 10_*, 12_*, RESULTS_FINAL, STATUS, the
+# audit files) must never ship: they contain superseded framings and retracted claims, and
+# a reader who finds them concludes the corrections were cosmetic.
+for F in FACTORIAL_GRID.txt WIDTH_SWEEP.txt CLINICAL_OPERATING_POINTS.txt \
+         SUPPORT_DECOMPOSITION.txt M3_CORRECTED.txt DARK_REGION_CHECK.txt \
+         ssim_window_sweep.json ssim_bandwidth_sweep.json sigma_crossing.json \
+         recon_range.json dark_region_check.json support_decomposition.json \
+         objective_axis_delong.json m0_ladder.json; do
+  [ -f "$HERE/$F" ] && cp "$HERE/$F" "$OUT/tables/"
+done
 
 cat > "$OUT/README.md" <<'MDEOF'
 # Supplemental artifact (anonymized for review)
@@ -44,6 +53,8 @@ that produced them, the derived tables, and the code.
     code/dl_project.py          the full experiment, one self-contained file
     code/verify_paper_numbers.py  regenerates every number in the paper and diffs it
     code/ssim_window_sweep.py   the fixed-resolution SSIM window analysis
+    code/sigma_crossing.py      the SSIM bandwidth sweep behind Limitation 1
+    code/support_decomposition.py  rebuilds the distance/support split and checks it
     scores/<dataset>/<run_id>/  scores.npy, labels.npy, manifest.json
     tables/                     derived CSVs, the selection card, the analysis outputs
 
@@ -62,9 +73,14 @@ MDEOF
 echo "=== ANONYMITY CHECK ==="
 FAIL=0
 set +e
-for P in univr tesfayh weldegebriel Hagos "/home/" MedIAnomaly-DL .git; do
+# identity, and then claims the paper has retracted -- a released file asserting the
+# opposite of the paper is worse than any defect in the paper
+for P in univr tesfayh weldegebriel Hagos "/home/" MedIAnomaly-DL \
+         "NOT a modality" "REPLICATES 4" "four replicate" "not a modality effect"; do
   N=$(grep -rIl "$P" "$OUT" 2>/dev/null | wc -l || true)
-  printf "  %-16s %s\n" "$P" "$([ "$N" -eq 0 ] && echo CLEAN || { echo "FOUND in $N files"; FAIL=1; })"
+  if [ "$N" -eq 0 ]; then printf "  %-22s CLEAN\n" "$P"
+  else printf "  %-22s FOUND in %s files\n" "$P" "$N"; FAIL=1
+       grep -rl "$P" "$OUT" | sed "s|^|                         |"; fi
 done
 set -e
 echo

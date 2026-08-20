@@ -1,0 +1,46 @@
+==========================================================================================
+M3 RECOMPUTED — exact multi-seed DeLong contrast (seeds share the test set)
+Previous pooling divided the variance by k, treating seeds as independent draws of
+the IMAGE sample. They are not: all seeds are scored on the same images.
+==========================================================================================
+
+RSNA
+  comparison                        diff      SE      p_raw     p_Holm  verdict
+  AE rescored with SSIM vs AE      +9.08    0.66    3.8e-43    2.3e-42  ***
+  head vs frozen plain AE         +13.65    0.68    6.6e-91    4.6e-90  ***
+  head vs frozen AE-SSIM           +1.19    0.61      0.052        0.1  n.s.
+  AE-U vs head on frozen AE        +4.86    0.56    2.4e-18    1.2e-17  ***
+  head on AE-SSIM vs AE-U          +0.13    0.51        0.8        0.8  n.s.
+  ensemble vs AE-PL                +1.16    0.27    1.5e-05    4.6e-05  ***
+  ensemble vs AE-U                 +1.88    0.27    8.7e-12    3.5e-11  ***
+
+VinCXR
+  comparison                        diff      SE      p_raw     p_Holm  verdict
+  AE rescored with SSIM vs AE      -2.37    1.12      0.034      0.068  n.s.
+  head vs frozen plain AE         +12.38    0.61    2.5e-91    1.7e-90  ***
+  head vs frozen AE-SSIM          +13.95    1.16    2.4e-33    1.4e-32  ***
+  AE-U vs head on frozen AE        +5.72    0.68    2.6e-17    1.3e-16  ***
+  head on AE-SSIM vs AE-U          -1.03    0.90       0.25       0.25  n.s.
+  ensemble vs AE-PL                +1.57    0.44    0.00036     0.0011  **
+  ensemble vs AE-U                 +2.95    0.46    2.2e-10    8.6e-10  ***
+
+LAG
+  comparison                        diff      SE      p_raw     p_Holm  verdict
+  AE rescored with SSIM vs AE     -10.54    0.78      6e-42    3.6e-41  ***
+  head vs frozen plain AE          +4.31    0.54    1.2e-15    4.6e-15  ***
+  head vs frozen AE-SSIM          +15.92    0.91    2.7e-68    1.9e-67  ***
+  AE-U vs head on frozen AE        -0.78    0.52       0.13       0.13  n.s.
+  head on AE-SSIM vs AE-U          -4.35    0.77    1.3e-08    3.9e-08  ***  (n=2)
+  ensemble vs AE-PL                +1.08    0.42     0.0094      0.019  *
+  ensemble vs AE-U                 +4.49    0.46    1.7e-22    8.7e-22  ***
+
+==========================================================================================
+WHAT CHANGES vs THE PAPER
+==========================================================================================
+  AE rescored with SSIM vs AE     +9.08*   -2.37   -10.54*   REVERSES
+  head vs frozen plain AE        +13.65*  +12.38*   +4.31*   replicates 3/3
+  head vs frozen AE-SSIM          +1.19   +13.95*  +15.92*   sign-consistent, 2/3 sig
+  AE-U vs head on frozen AE       +4.86*   +5.72*   -0.78    REVERSES
+  head on AE-SSIM vs AE-U         +0.13    -1.03    -4.35*   REVERSES
+  ensemble vs AE-PL               +1.16*   +1.57*   +1.08*   replicates 3/3
+  ensemble vs AE-U                +1.88*   +2.95*   +4.49*   replicates 3/3
