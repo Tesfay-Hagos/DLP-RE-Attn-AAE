@@ -1069,8 +1069,12 @@ def dataset_isolation_selftest(verbose=True):
         check(f"{DATASET} id is tagged           {run_id('ae', 42)}",
               run_id('ae', 42) == f'ae_ds-{_slug(DATASET)}_s42')
         check(f"{DATASET} id differs from RSNA's", run_id('ae', 42) != 'ae_s42')
+        # INVERTED, as in the RSNA branch above: these runs are at a different
+        # resolution and must not share dl-v1's namespace.
         check(f"{DATASET} RUN_VERSION namespaced {RUN_VERSION}",
-              RUN_VERSION == f'dl-v1-{DATASET.lower()}')
+              RUN_VERSION == f'res128-v1-{DATASET.lower()}')
+        check(f"{DATASET} namespace is NOT dl-v1",
+              not RUN_VERSION.startswith('dl-v1'))
         check(f"{DATASET} CKPT_DIR namespaced", RUN_VERSION in CKPT_DIR)
         # an RSNA manifest loaded under this dataset MUST raise, not return
         rsna_rid = 'ae_s42'
@@ -1183,12 +1187,47 @@ def _looks_like(root, name):
     return os.path.isdir(os.path.join(d, 'images')) and os.path.isfile(os.path.join(d, 'data.json'))
 
 
-def find_data_root(required):
-    """Return the first candidate root that contains every dataset in `required`."""
-    for root in DATA_ROOT_CANDIDATES:
-        if root and os.path.isdir(root) and all(_looks_like(root, n) for n in required):
-            return root
-    return None
+def _root_image_size(root, required):
+    """Smallest on-disk image dimension across `required` in `root`, or None."""
+    from PIL import Image as _I
+    import glob as _g
+    best = None
+    for n in required:
+        if n == 'BraTS2021':
+            continue
+        fs = sorted(_g.glob(os.path.join(root, n, 'images', '*')))[:1]
+        if not fs:
+            return None
+        try:
+            w, h = _I.open(fs[0]).size
+        except Exception:
+            return None
+        best = min(w, h) if best is None else min(best, min(w, h))
+    return best
+
+
+def find_data_root(required, min_size=None):
+    """Return the first candidate root containing every dataset in `required`.
+
+    RESOLUTION-AWARE, and that matters here. A Kaggle session with both
+    MedIAnomaly-Data-64 and MedIAnomaly-Data-128 attached offers two valid roots, and
+    the walk order that picks between them is not something we control. Since this
+    notebook trains at 128px and the loader resizes UP without complaint, choosing the
+    64px root would silently measure interpolation. So when `min_size` is given, roots
+    whose images are too small are passed over rather than accepted. If none qualifies
+    we still return a match, so Cell R.0 can fail with a specific message about what
+    was found instead of a bare 'not found'."""
+    ok = [r for r in DATA_ROOT_CANDIDATES
+          if r and os.path.isdir(r) and all(_looks_like(r, n) for n in required)]
+    if min_size:
+        big = [r for r in ok if (_root_image_size(r, required) or 0) >= min_size]
+        skipped = [r for r in ok if r not in big]
+        for r in skipped:
+            print(f'  skipping {r}: images are '
+                  f'{_root_image_size(r, required)}px, below the {min_size}px target')
+        if big:
+            return big[0]
+    return ok[0] if ok else None
 
 
 def download_datasets(names, root=None, force=False):
@@ -1214,7 +1253,7 @@ def download_datasets(names, root=None, force=False):
 def verify_datasets(required, root=None):
     """Print a per-dataset report and RAISE if anything required is missing, so the
     notebook fails here with an actionable message instead of deep inside training."""
-    root = root or find_data_root(required)
+    root = root or find_data_root(required, min_size=IMAGE_SIZE)
     print(f'DATA_ROOT: {root}')
     if root is None:
         print('  searched:', [c for c in DATA_ROOT_CANDIDATES if c])
@@ -2066,7 +2105,12 @@ assert min(_w, _h) >= IMAGE_SIZE, (
     f'MedIAnomaly-Data (512px), not MedIAnomaly-Data-64.')
 assert X_TRAIN.shape[-1] == IMAGE_SIZE, \
     f'X_TRAIN is {X_TRAIN.shape[-1]}px but IMAGE_SIZE is {IMAGE_SIZE} — rerun Cell 2.2'
-print(f'OK: downsampling {_w}px -> {IMAGE_SIZE}px, same direction as the 64px runs.')
+if (_w, _h) == (IMAGE_SIZE, IMAGE_SIZE):
+    print(f'OK: source is already {IMAGE_SIZE}px, so the loader resize is the identity. '
+          f'(MedIAnomaly-Data-128 was produced from the 512px release by exactly the '
+          f'resize the loader applies, and verified array-equal to it.)')
+else:
+    print(f'OK: downsampling {_w}px -> {IMAGE_SIZE}px, same direction as the 64px runs.')
 
 # %% [CELL R.1]  Train at 128px and rescore with SSIM — three seeds
 SEEDS = [42, 43, 44] if not SAMPLE_MODE else [42]
