@@ -1182,9 +1182,6 @@ except Exception as _e:
     USE_WANDB = False
     print(f'WandB unavailable ({_e}) — continuing without.')
 
-# Datasets this project needs: BraTS2021 carries the pixel ground truth (positive anchor); RSNA is the CXR contrast.
-# Add 'VinCXR' once you want the second CXR dataset.
-REQUIRED_DATASETS = ['BraTS2021', 'RSNA']
 
 
 # %% [markdown]
@@ -1204,6 +1201,15 @@ REQUIRED_DATASETS = ['BraTS2021', 'RSNA']
 # under /kaggle/input) and locally, and only downloads if nothing is found.
 
 # %% [CELL 2.0]  Locate / download / verify datasets
+
+# Datasets this project needs. BraTS2021 is the only one MedIAnomaly computes pixel
+# metrics on (ae_worker.py:18), so for a segmentation study it is the only requirement.
+#
+# This lived at the tail of the wandb cell until a run that skipped wandb setup died here
+# with a bare NameError. Dataset requirements are not a logging concern; they belong in
+# the dataset cell, so that Cell 2.0 is runnable on its own.
+REQUIRED_DATASETS = ['BraTS2021']
+
 
 import glob as _glob, tarfile, urllib.request
 
@@ -1382,21 +1388,41 @@ def load_split_brats(root, size=IMAGE_SIZE):
     x_test  = np.concatenate([_load(os.path.join(d, 'test/normal'), no_names, 'brats-normal'),
                                _load(os.path.join(d, 'test/tumor'),  tu_names, 'brats-tumor')])
     y_test  = np.array([0] * len(no_names) + [1] * len(tu_names), dtype=np.int32)
-    masks   = np.concatenate([np.zeros((len(no_names), 1, size, size), np.float32),
-                               _load(os.path.join(d, 'test/annotation'), mk_names, 'brats-masks',
-                                     nearest=True)])
-    # MedIAnomaly's BraTSAD binarises the RAW mask with `(mask > 0)`, i.e. any non-zero
-    # byte is lesion. Our _load has already mapped raw 0..255 to [-1,1], so the faithful
-    # port of their threshold is `> -1.0`, NOT `> 0.0` (which would be raw > 127 and would
-    # silently drop any mask byte in 1..127). On clean 0/255 masks the two agree; the
-    # assert below is what guarantees they are in fact clean, so they cannot diverge
-    # unnoticed if the annotation folder is ever regenerated differently.
-    raw = (masks + 1.0) * 127.5
-    stray = np.unique(raw[(raw > 0.5) & (raw < 254.5)])
+    # Masks are loaded RAW (0..255) and never pass through the image normalisation.
+    #
+    # This is not a style choice. An earlier version pushed masks through `_load`, which
+    # maps 0..255 -> [-1,1], while building the normal images' all-zero masks with
+    # `np.zeros` -- i.e. normalised 0.0, which on that scale is raw 127.5, not raw 0. The
+    # threshold in use was `> 0.0`, so the normals came out correctly empty and the two
+    # errors cancelled. Correcting the threshold to MedIAnomaly's `> 0` (normalised
+    # `> -1.0`) removed the compensation and every one of the 828 normal images became
+    # 100% lesion -- which inflates prevalence, destroys PixAP, and does so uniformly
+    # enough across methods that the ranking could still look plausible.
+    #
+    # Keeping masks in their native 0/255 space removes the whole class of error: `np.zeros`
+    # now means raw 0, which IS no-lesion, and the threshold is `> 0`, literally theirs
+    # (dataload.py:152).
+    def _load_mask(dirpath, names, tag):
+        out = []
+        for i, nm in enumerate(names):
+            if i % 500 == 0:
+                print(f'  {tag}: {i}/{len(names)}')
+            im = Image.open(os.path.join(dirpath, nm)).convert('L').resize(
+                (size, size), Image.NEAREST)
+            out.append(np.asarray(im, dtype=np.float32))          # RAW 0..255
+        return np.stack(out)[:, None] if out else np.zeros((0, 1, size, size), np.float32)
+
+    masks_raw = np.concatenate([
+        np.zeros((len(no_names), 1, size, size), np.float32),     # raw 0 == no lesion
+        _load_mask(os.path.join(d, 'test/annotation'), mk_names, 'brats-masks')])
+
+    # NEAREST resampling of a 0/255 mask must stay 0/255. If it ever does not, `> 0` and a
+    # mid-grey threshold would disagree and Dice would quietly change meaning.
+    stray = np.unique(masks_raw[(masks_raw > 0.5) & (masks_raw < 254.5)])
     assert stray.size == 0, (
         f"annotation masks are not binary 0/255 -- found intermediate values {stray[:8]}. "
         "NEAREST resampling should preserve 0/255; investigate before trusting Dice.")
-    masks = (masks > -1.0).astype(np.float32)
+    masks = (masks_raw > 0).astype(np.float32)          # BraTSAD dataload.py:152
     print(f'BraTS2021: train {x_train.shape}  test {x_test.shape}  '
           f'masks {masks.shape}  positive pixels {masks.mean()*100:.2f}%')
     return x_train, x_test, y_test, masks
@@ -2895,6 +2921,18 @@ def evaluate_by_stratum(maps, y, masks, n_strata=3, n_thresh=200):
 # `noise_res` is swept; everything else is held fixed. Blob width is `input_size /
 # noise_res` pixels, i.e. `1/noise_res` of the image — a RELATIVE scale, which is what
 # makes the sweep resolution-independent and lets us run it cheaply.
+#
+# **The scales, measured on the real data (not assumed).** BraTS2021 lesion areas at 64px
+# fall in terciles of 12-112, 113-226 and 227-616 px^2 -- equivalent square widths of
+# roughly 3.5-10.6, 15 and 24.8 px. DAE's default corruption is noise_res=16 at 128px
+# input, a blob 8px wide, which is 4px in these 64px-equivalent units.
+#
+# So their default blob sits at the SMALL end of the lesion distribution -- narrower than
+# the median lesion in every tercile. That sharpens H1 into a directional prediction:
+# LOWERING noise_res (bigger blobs) should help, and should help MOST on the large-lesion
+# tercile. If instead performance is flat, or peaks at their default, H1 is wrong and DAE's
+# win is not a scale match. The sweep values below bracket the lesion range: at 64px,
+# noise_res 4/8/16/32 gives blobs of 16/8/4/2 px against lesion widths of ~3.5-25 px.
 #
 # **Deliberate protocol deviation, stated up front.** The sweep runs at
 # `SWEEP_INPUT_SIZE` (64px), not the 128px their `train_eval.sh` uses for DAE. That makes
