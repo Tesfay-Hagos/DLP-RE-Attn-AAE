@@ -19,7 +19,12 @@ Provenance of each term:
     ssim_pad    sigma_crossing.json     l2 + ["1.5"]    replicate-padded, sigma=1.5
     ssim_valid  ssim_window_sweep.json  ["11"]          valid convolution, 11x11
 
-Both sweeps clamp to [0,1] and use sigma=1.5, so the three are commensurable.
+Both sweeps use sigma=1.5. They differ in one respect that turns out not to matter:
+sigma_crossing.py clamps to [0,1] before scoring, ssim_window_sweep.py does not. The
+plain l2 autoencoder puts 0.8-1.8% of pixels outside the range (RECON_RANGE_DIAGNOSTIC),
+so this is not vacuous -- but the main pipeline's own clamped run, a1-l2-ssim, gives
+77.4215 on RSNA, matching the unclamped window sweep to four decimals. Two independent
+paths, same number, so the support term is a padding contrast and not a clamping one.
 NOTE ssim_bandwidth_sweep.json is a DIFFERENT series -- valid convolution against a
 CROPPED l2 baseline, unclamped -- and must not be mixed in. The two disagree by 2.7
 AUROC at their one shared bandwidth.

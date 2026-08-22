@@ -2151,20 +2151,31 @@ print(f'  paper predicted for 128px  : {PAPER_PREDICTED[DATASET]:+.2f}')
 _signs_agree = bool((_per_seed > 0).all() or (_per_seed < 0).all())
 print(f'  all three seeds agree in sign: {_signs_agree}')
 print()
-if _delta * PAPER_64PX[DATASET] < 0:
-    print('  -> SIGN FLIPPED relative to 64px. The prediction holds for this dataset.')
-elif abs(_delta) < abs(PAPER_64PX[DATASET]):
-    print('  -> Same sign, smaller magnitude: the effect SHRANK but did not vanish.')
-    print('     The paper predicted vanishing; this is a partial miss and must be reported.')
+# The test is measured-vs-PREDICTED. An earlier version of this cell compared against
+# the 64px value instead, which is not the hypothesis: on VinDr-CXR and LAG the paper
+# predicts the negative DEEPENS, so "same sign, larger magnitude" is a confirmation
+# there and only a refutation on RSNA. Judge against the prediction, per dataset.
+_err = _delta - PAPER_PREDICTED[DATASET]
+_band = max(1.5, 2.0 * _per_seed.std() / max(len(SEEDS) ** 0.5, 1))
+print(f'  |measured - predicted|     : {abs(_err):.2f}   (agreement band ~{_band:.2f})')
+if abs(_err) <= _band:
+    print('  -> PREDICTION CONFIRMED for this dataset.')
+elif _delta * PAPER_PREDICTED[DATASET] > 0:
+    print('  -> Direction predicted correctly, magnitude off. Report both numbers.')
 else:
-    print('  -> Same sign, not smaller. The prediction FAILS for this dataset.')
-    print('     Report it: Limitation 1 must be rewritten, not quietly dropped.')
+    print('  -> PREDICTION REFUTED: wrong direction.')
+    print('     Report it. Limitation 1 must be rewritten, not quietly dropped.')
+_flip = _delta * PAPER_64PX[DATASET] < 0
+print(f'  sign vs the 64px result    : {"FLIPPED" if _flip else "unchanged"} '
+      f'({PAPER_64PX[DATASET]:+.2f} -> {_delta:+.2f})')
 
 _out = {'dataset': DATASET, 'image_size': IMAGE_SIZE, 'epochs': EPOCHS,
         'seeds': list(SEEDS), 'auc_l2': _l2.tolist(), 'auc_ssim': _ssim.tolist(),
         'per_seed_delta': _per_seed.tolist(), 'mean_delta': _delta,
         'seeds_agree_in_sign': _signs_agree,
         'paper_64px': PAPER_64PX[DATASET], 'paper_predicted_128px': PAPER_PREDICTED[DATASET],
+        'error_vs_prediction': float(_err), 'agreement_band': float(_band),
+        'sign_flipped_vs_64px': bool(_flip),
         'run_version': RUN_VERSION}
 with open(f'{OUTPUT_DIR}/res128_{DATASET}.json', 'w') as _f:
     _json.dump(_out, _f, indent=2)

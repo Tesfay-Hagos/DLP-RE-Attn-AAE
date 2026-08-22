@@ -21,29 +21,17 @@
 % amsmath, amssymb, natbib, graphicx, url, algorithm2e load automatically.
 \urlstyle{same}
 \usepackage{booktabs}
-% Default float parameters strand a lot of column space in a two-column layout.
-% Tighten the vertical space around floats and captions. These are the standard LaTeX
-% float-separation lengths; margins, font size and leading are left exactly as the class
-% sets them, since altering those would be a formatting violation.
-\setlength{\textfloatsep}{8pt plus 2pt minus 2pt}   % float <-> text, top/bottom of column
-\setlength{\intextsep}{8pt plus 2pt minus 2pt}      % float placed mid-column
-\setlength{\floatsep}{8pt plus 2pt minus 2pt}       % float <-> float
-\setlength{\abovecaptionskip}{4pt}
-\setlength{\belowcaptionskip}{2pt}
-\setlength{\dbltextfloatsep}{10pt plus 2pt minus 2pt}
-\setlength{\dblfloatsep}{8pt plus 2pt minus 2pt}
-\renewcommand{\topfraction}{0.9}
-\renewcommand{\bottomfraction}{0.8}
-\renewcommand{\textfraction}{0.07}
-\renewcommand{\floatpagefraction}{0.75}
+% Layout is left exactly as the ML4H template sets it. An earlier draft tightened the
+% float-separation lengths to win back a page; after trimming the text those lengths
+% were no longer needed, so they are gone and nothing here departs from the class.
 % siunitx is in the ML4H template for decimal-aligned table columns. It is not
 % installed in every TeX distribution (Overleaf has it). Re-enable if the results
 % tables need S columns.
 %\usepackage{siunitx}
 \usepackage[switch]{lineno}
 \title[A Free Rescore Is Not Free]{A Free Rescore Is Not Free: A
-  Benchmark-Recommended Score Substitution Reverses Sign Across Medical
-  Imaging Datasets}
+  Benchmark-Recommended Score Substitution Changes Sign With Dataset and
+  Bandwidth in Medical Image Anomaly Detection}
 % Double-blind: the submission build MUST stay anonymous. Real author data lives
 % behind \iffinal so that flipping \finaltrue for camera-ready is the only step
 % needed, and no identifying string can reach the reviewed PDF by accident.
@@ -64,24 +52,25 @@
 \iffinal\else\linenumbers\fi
 \maketitle
 \begin{abstract}
-Reconstruction-based anomaly detectors bundle two separable decisions: the objective the
-model is trained under, and the rule that turns the residual into a score. The literature
+Reconstruction-based anomaly detectors bundle two separable decisions: the training
+objective, and the rule that turns the residual into a score. The literature
 moves them together. A current benchmark recommends substituting a structural-similarity
 residual into pixel-trained models, reporting that it improved every model it was applied
-to. Crossing four training objectives with five anomaly scores across three datasets (RSNA,
+to. Crossing four training objectives with five anomaly scores on three datasets (RSNA,
 VinDr-CXR, LAG; $64\times64$, three seeds), we measure it against the pixel score on
 identical weights: $+9.08$ AUROC on RSNA and $-10.54$ on LAG, both
 $p_{\mathrm{Holm}}<10^{-30}$ under paired DeLong, and a non-significant $-2.37$ on
-VinDr-CXR. Turning that factorial on the result itself, the substitution is not one
-decision: it resolves into a change of distance and a loss of scored support --- the pixels
-the score averages over --- with support alone costing about 2 to 4 points on every
-dataset. At
-matched support VinDr-CXR is a null. The distance component's sign depends jointly on the
-dataset and on a Gaussian bandwidth we find no benchmark ablates. The effect is monotone in
-that bandwidth, and each dataset changes sign at a different one, with the library default
-inside that spread: below it the substitution hurts on all three, above it helps on all
-three. On LAG it removes 43\% of the cases flagged at 95\% specificity. We release per-image scores and trained weights so a
-new objective or score can be placed in the grid without retraining.
+VinDr-CXR. The same factorial, turned on that result, shows the substitution is not one
+decision. It changes the distance, and it also shrinks the region the score averages over,
+because the standard implementation discards a border. That lost region alone costs 2 to 4
+points everywhere, and at matched support VinDr-CXR is a null. The distance change that
+remains has a sign depending on the dataset and on a Gaussian bandwidth we find no
+benchmark ablates. Each dataset crosses zero at a different bandwidth, and the library
+default sits inside that spread: below it the substitution hurts on all three, above it
+helps on all three. Retrained at $128\times128$, where the window covers a quarter of the
+relative area, it is negative on all three. On LAG it removes 43\% of the cases flagged
+at 95\% specificity. We release per-image scores for every cell, so every comparison we report
+recomputes without rerunning anything.
 \end{abstract}
 \begin{keywords}
 anomaly detection, medical imaging, evaluation, reproducibility, autoencoders
@@ -91,18 +80,18 @@ anomaly detection, medical imaging, evaluation, reproducibility, autoencoders
 This study uses three public, de-identified benchmark datasets in the preprocessed form
 released with the MedIAnomaly benchmark \citep{cai2025medianomaly}: the RSNA Pneumonia
 Detection Challenge \citep{shih2019rsna}, VinDr-CXR \citep{nguyen2022vindr}, and LAG
-\citep{li2019lag}. No new data were collected. Anonymized code, per-run manifests, the
-per-image anomaly score vectors for every reported cell, and the trained weights are
-provided as supplemental material. The score vectors reproduce every reported comparison and
-significance test; placing a \emph{new} anomaly score in the grid additionally requires the
-released weights, since it needs the reconstructions, but no retraining. The variance-head
-diagnostics require a forward pass through the released head weights.
+\citep{li2019lag}. No new data were collected. Anonymized code, per-run manifests and the per-image score vectors for
+every reported cell are supplied as supplemental material, and reproduce every comparison
+and test we report. Trained weights are not included: the full set is far larger than a
+supplementary bundle allows. Placing a \emph{new} score in the grid needs the
+reconstructions and therefore the weights, which the released code and configurations
+regenerate.
 
 \paragraph*{Institutional Review Board (IRB)}
-This research does not require IRB approval. It reanalyses three public imaging benchmarks, all
-fully de-identified, all released for methodological research, and none carrying
-identifiable private information. We recruited no human subjects, accessed no protected
-health information, and ran no clinical intervention or deployment.
+This research does not require IRB approval. It reanalyses three public imaging benchmarks, all fully
+de-identified, released for methodological research, and free of identifiable private
+information. We recruited no human subjects, accessed no protected health information, and
+ran no clinical intervention or deployment.
 
 \paragraph*{Use of AI Assistance}
 We used a large language model as a coding and writing assistant: to help implement and
@@ -127,7 +116,7 @@ examples of. More than half of prevalent glaucoma is undetected in every region 
 \citep{soh2021undetected}, and a team building a screen for it has every reason to adopt a
 change a benchmark reports as free. On LAG --- a fundus collection labelled by specialists
 reading intra-ocular pressure, visual field and optic disc together --- one such change
-removes 43\% of the cases the detector had been flagging at a fixed false-positive rate. Sensitivity at 95\% specificity falls from 22.5\% to 12.8\%. Neither figure is
+removes 43\% of the cases the detector had been flagging at a fixed false-positive rate. Neither figure is
 deployable and we make no deployment claim; the point is what a scoring rule silently
 decides.
 
@@ -161,12 +150,9 @@ from noise.
 
 Nor is it one decision. It changes the distance, the bandwidth at which that distance is
 evaluated, and --- because the standard implementation uses valid convolution --- the region
-scored. Unbundled on identical weights, the reported figures resolve into a distance change
-and a support loss, and VinDr-CXR's negative sign turns out to be the support change. The
-distance component's sign depends on the dataset and on a Gaussian bandwidth we find no
-benchmark ablates: each dataset crosses zero at a different bandwidth, the library default
-falls inside that spread, and outside it the substitution moves the same way everywhere. A
-free rescore is not free, and it is not one choice.
+scored. Unbundled on identical weights, VinDr-CXR's negative sign turns out to be the
+support change, and what remains has a sign depending on the dataset and on a bandwidth we
+find no benchmark ablates. A free rescore is not free, and it is not one choice.
 
 That generalises into the paper's organising question: which conclusions about these design
 decisions survive a change of dataset? Applying seven design-level comparisons unchanged to
@@ -199,11 +185,11 @@ the two datasets it was not chosen on gains 1.33 AUROC over the strongest single
 \end{itemize}
 
 \paragraph*{Scope.}
-Every comparison here is internal to image-reconstruction detectors at $64\times64$ with
-image-level labels, on one inherited backbone. The best accuracy on this RSNA split belongs
-to a feature-reconstruction method using ImageNet weights \citep{meissen2023fae}, and we do
-not reach it. That method changes the representation and the score in one step --- precisely
-the design our results show cannot be attributed.
+Every comparison here is internal to image-reconstruction detectors with image-level labels,
+on one inherited backbone. The best accuracy on this RSNA split belongs to a
+feature-reconstruction method using ImageNet weights \citep{meissen2023fae}, and we do not
+reach it: it changes the representation and the score in one step, precisely the design our
+results show cannot be attributed.
 
 \section{Related Work}
 \label{sec:related}
@@ -278,11 +264,10 @@ scores: the same four, plus the gradient-based score of \citet{zimmerer2019unsup
 SSIM uses the reference implementation's defaults throughout: an $11\times11$ Gaussian of
 $\sigma{=}1.5$, $C_1{=}0.01^2$ and $C_2{=}0.03^2$ on inputs rescaled to $[0,1]$, evaluated
 under valid convolution. Both conventions are inherited without examination, and \sectionref{sec:results} shows each
-carries part of the effect otherwise attributed to the distance. \figureref{fig:factorial} gives the
-design and names the published method each diagonal cell instantiates. Of $4\times5=20$
-cells, 17 are defined. The three that are not are the uncertainty score applied to the three objectives that emit
-no variance; \sectionref{sec:probe} supplies a proxy by fitting a variance head to the
-frozen backbone, which consumes training data and is therefore not a rescore.
+carries part of the effect otherwise attributed to the distance. \figureref{fig:factorial} gives the design and names the published method each diagonal
+cell instantiates. Of $4\times5=20$ cells, 17 are defined; the three that are not apply the
+uncertainty score to objectives emitting no variance, for which \sectionref{sec:probe}
+supplies a proxy.
 
 Off-diagonal cells need no training. We load the weights frozen and change only the
 scoring functional, so a row costs one training run and four evaluations, and every such
@@ -368,10 +353,10 @@ $t$-intervals over three seeds; per-seed values are reported instead.
 One quantity here was fixed by looking at test performance: the variance head's width, set
 to $w{=}2$ after inspecting RSNA test AUROC. A paper arguing that design decisions are
 validated on the wrong data should state its own instance. The sweep
-(\sectionref{apd:sweeps}) shows the inspected quantity is flat, that $w{=}4$ beats the
-inherited $w{=}2$ on both held-out datasets so the choice cost rather than flattered them,
-and that a label-free rule selects $w{=}8$, which carried unchanged averages 0.57 AUROC
-above $w{=}2$. The width does not enter the transfer result.
+(\sectionref{apd:sweeps}) shows the inspected quantity is flat, that $w{=}4$ beats $w{=}2$ on
+both held-out datasets, and that a label-free rule selects $w{=}8$, which carried unchanged
+averages 0.57 AUROC above $w{=}2$: the choice cost rather than flattered us. The width does
+not enter the transfer result.
 
 \section{Results}
 \label{sec:results}
@@ -415,9 +400,29 @@ deployment claim.
 
 Nor is the reversal an artefact of the SSIM window's size relative to a $64\times64$ image.
 Recomputing the score on identical weights at smaller windows deepens the harm on LAG while
-eroding the gain on RSNA, and the sign disagreement survives to $5\times5$; varying the
-Gaussian bandwidth itself, the sign depends on it as much as on the dataset
-(\sectionref{sec:limitations}).
+eroding the gain on RSNA, and the sign disagreement survives to $5\times5$. Varying the
+bandwidth itself, each dataset changes sign at a different one --- between $0.85$ and $1.0$
+on RSNA, $1.5$ and $2.0$ on VinDr-CXR, $2.0$ and $3.0$ on LAG --- with the library default
+inside that spread (\sectionref{apd:sweeps}).
+
+\paragraph*{The account predicts a resolution effect, and half of it holds.}
+\label{sec:res128}
+SSIM's window is a fixed $11\times11$ Gaussian, so at $128\times128$ it spans a quarter of
+the relative area; the scale-equivalent bandwidth is $\sigma{\approx}0.75$, where the sweep
+gives $-3.31$, $-8.77$ and $-18.39$. Retraining the pixel objective there, three seeds per
+dataset, the distance component moves from $+11.13$, $-0.19$ and $-6.50$ to $+0.18$, $-7.62$
+and $-21.46$: the predicted direction on all three, the predicted value within 1.15 on
+VinDr-CXR but 3.49 and 3.07 out on the others. Reported figures are $-3.00$, $-9.49$ and
+$-24.87$, negative throughout, so RSNA flips from $+9.08$ on every seed --- but with support
+contributing $-3.18$, $-1.87$ and $-3.41$, the decomposition attributes that flip to lost
+support, not to the distance change the argument concerns. Three cautions. All-negative is one predicted
+pattern rather than three confirmations. LAG's rescored 52.07 sits near chance, where a
+monotone account cannot be tested. And two things moved with resolution: image content, and
+capacity, since the bottleneck scales with input size and parameters rise from 2{,}351{,}184
+to 8{,}645{,}712. Within a resolution both arms share weights, so capacity reaches the
+difference between them only through an interaction with the score; a latent-matched run
+would separate the two and we did not run one. We note the parallel with the practice we
+criticise: two things moved, and we credit one.
 
 \subsection{What replicates and what reverses}
 Applying seven design-level comparisons unchanged to all three datasets, three replicate in
@@ -435,13 +440,14 @@ return to this in \sectionref{sec:discussion}.
 
 \begin{table}[tb]
 \centering\footnotesize
-\caption{Design-level comparisons applied unchanged to three datasets. Values are AUROC point differences; positive favours the first-named method; per-seed
-values are in \sectionref{apd:perseed}. Paired DeLong on the test images with the multi-seed contrast of \sectionref{sec:setup}, Holm-corrected within each dataset.
+\caption{Design-level comparisons applied unchanged to three datasets. AUROC point
+differences, positive favouring the first-named method; paired DeLong on the test images
+with the multi-seed contrast of \sectionref{sec:setup}, Holm-corrected within each dataset.
 \textsuperscript{*} $p_{\mathrm{Holm}}<0.05$; an unmarked cell is not evidence of absence,
 and all three unmarked here are sign-consistent across seeds. DeLong carries no
-seed-variance component; per-seed values are in the appendix. Three comparisons replicate
-with significance on all three datasets, three reverse, and one is sign-consistent without
-clearing Holm on RSNA.}
+seed-variance component; per-seed values are in \sectionref{apd:perseed}. Three comparisons
+replicate on all three datasets, three reverse, and one is sign-consistent without clearing
+Holm on RSNA.}
 \label{tab:replication}
 \begin{tabular}{@{}l@{\hspace{4pt}}r@{\hspace{5pt}}r@{\hspace{5pt}}r@{}}
 \toprule
@@ -492,13 +498,11 @@ reveals which.
 \begin{figure}[tb]
 \centering
 \includegraphics[width=\linewidth]{figures/factorial_rsna.pdf}
-\caption{The objective $\times$ score grid on RSNA, AUROC averaged over three seeds. Boxed
-cells are the diagonal and name the published method they instantiate. Red dashed cells are
-below chance. Hatched cells are undefined: the uncertainty score requires a per-pixel
-variance that only the heteroscedastic objective emits, and \sectionref{sec:probe} supplies
-a proxy by fitting a variance head to a frozen backbone --- not a rescore, since it consumes
-training data. The grid was run on all three datasets at three seeds; RSNA is shown here and the other two
-are in \sectionref{apd:grids}.}
+\caption{The objective $\times$ score grid on RSNA, AUROC over three seeds. Boxed cells are
+the diagonal and name the published method they instantiate; red dashed cells are below
+chance; hatched cells are undefined, the uncertainty score needing a variance only the
+heteroscedastic objective emits (\sectionref{sec:probe} supplies a proxy). The other two
+datasets are in \sectionref{apd:grids}.}
 \label{fig:factorial}
 \end{figure}
 
@@ -534,71 +538,61 @@ is 14.6, 12.1 and 274.6, with LAG reconstructions reaching $-17.2$. Two known pr
 produce it. The structure term is offset-invariant and the luminance restoring force
 scales with local mean intensity, so dark regions are barely anchored. The implementation
 also clamps before evaluating, so the gradient outside the range is exactly zero and
-nothing pulls back a pixel that has left. Drift should therefore be downward and confined to dark regions, and it is: on every
-dataset and every seed, between 95.7\% and 99.6\% of out-of-range pixels lie in the darkest
-quintile of local input intensity, and reconstructions run below the range, never above. An $\ell_2$ objective stays in range everywhere (1.7, 1.6, 0.7; \sectionref{apd:range}),
-which is why a pixel score on an SSIM-trained model reads the drift rather than the
-pathology. That the same code reproduces AE-SSIM's published RSNA AUROC to within 0.1 points
-while exhibiting the violation argues against an implementation fault. The properties are known; what appears unreported is that they make the divergence invisible
-to every number the benchmark records, loss and score alike being clamped.
+nothing pulls back a pixel that has left. Drift should therefore be downward and confined to dark regions, and it is: on every dataset
+and every seed, between 95.7\% and 99.6\% of out-of-range pixels lie in the darkest quintile
+of local input intensity, and reconstructions run below the range, never above. An $\ell_2$
+objective stays in range everywhere (1.7, 1.6, 0.7; \sectionref{apd:range}), which is why a
+pixel score on an SSIM-trained model reads the drift rather than the pathology. The same code
+reproduces AE-SSIM's published RSNA AUROC to within 0.1 points while exhibiting the
+violation, which argues against an implementation fault. The properties are known; what
+appears unreported is that they make the divergence invisible to every number the benchmark
+records, loss and score alike being clamped.
 
 \paragraph*{A parallel we decline to explain.}
 SSIM enters this study twice and both entries move together: as a score it is worth $+9.08$,
 $-2.37$ and $-10.54$ against the plain autoencoder, and as an objective $+12.46$, $-1.56$ and
-$-11.61$ --- agreeing in sign on all three and within 3.4 points. We decline to call these one phenomenon. The range mechanism belongs to the objective axis
-alone, since the score-axis comparison runs on the in-range $\ell_2$ backbone. Nor does
-range explain the pattern even there: RSNA and VinDr-CXR diverge by similar amounts (14.6
-and 12.1), yet the objective is worth $+12.46$ on the first and $-1.56$ on the second, and
-the second is not separable from noise ($p=0.16$). A numerical parallel across three datasets is the
-evidence this paper argues is insufficient for attribution.
+$-11.61$. We decline to call these one phenomenon, since range does not explain the pattern
+even on the objective axis: RSNA and VinDr-CXR diverge by similar amounts (14.6 and 12.1)
+yet the objective is worth $+12.46$ on one and $-1.56$ on the other ($p=0.16$).
 
 \paragraph*{Where the instability lives.}
-The partition in \tableref{tab:replication} aligns exactly with whether one arm is built on
-top of the other: all four comparisons that hold their sign on every dataset are additive,
-and all three that reverse compare arms where neither contains the other. We noticed this
-after the fact, on seven comparisons chosen for other reasons, so we state it as a checkable
-hypothesis rather than a result (\sectionref{apd:perseed}).
+The partition in \tableref{tab:replication} aligns with whether one arm is built on top of
+the other: the four comparisons holding their sign everywhere are additive, the three that
+reverse are not. Noticed after the fact on seven comparisons chosen for other reasons, so a
+checkable hypothesis rather than a result (\sectionref{apd:perseed}).
 
 \paragraph*{What follows for practice.}
 A scoring rule is not a property of a method that travels with it, and a rescore reported as
 free is a bundle of decisions. Revalidate it on labelled data from the target distribution;
-where none exists, do not adopt it. The converse is worth as much: additive constructions
-held their sign everywhere we tried, and are the one class of change this evidence supports
-carrying unvalidated. We do not explain why the distance's sign depends on the dataset.
+where none exists, do not adopt it. Additive constructions held their sign everywhere we
+tried. We do not explain why the distance's sign depends on the dataset.
 
 \section{Limitations}
 \label{sec:limitations}
-\textbf{1. Resolution, and a windowed score.} All comparisons are at $64\times64$, inherited from the benchmark, which reports this
-``achieves comparable performance to using a larger input size'' \citep{cai2025medianomaly}
---- but that ablation varies resolution under pixel objectives and pixel scores, and we find
-no published ablation covering a \emph{windowed} score. Tested at fixed resolution
-(\sectionref{apd:sweeps}), the effect is monotone in the SSIM bandwidth on all three
-datasets, losing everywhere at $\sigma{=}0.5$ and helping everywhere by $\sigma{=}3$. Each
-dataset changes sign at a different bandwidth --- between $0.85$ and $1.0$ on RSNA, $1.5$ and
-$2.0$ on VinDr-CXR, $2.0$ and $3.0$ on LAG --- and the library default falls inside that
-spread. The $128\times128$ equivalent of that default,
-$\sigma{=}0.75$, is negative on all three ($-3.31$, $-8.77$, $-18.39$), so we predict the
-RSNA gain vanishes rather than merely shrinks. Resolution also changes image content, so the
-replication remains the first item of further work.
+\textbf{1. Resolution.} We inherit $64\times64$ from the benchmark, which reports it
+``achieves comparable performance to using a larger input size''
+\citep{cai2025medianomaly}. But that ablation holds the score in pixel space, and we find no
+published one that varies resolution under a \emph{windowed} score.
+\sectionref{sec:res128} supplies that, at one further resolution, for the pixel objective
+only, with the confounds named there.
 
-\textbf{2. Three datasets, and modality is confounded with the sign.} We claim no general law of transfer, only one specific failure of it: a significant gain on
-one dataset and a significant loss on another. But once VinDr-CXR is read as a null at
-matched support, the panel is one positive and one null chest radiograph collection and one
-negative fundus collection --- equally consistent with the distance simply suiting
-radiographs and not fundus images. A null is weak evidence against a strong modality effect
-and none against a weak one; separating them requires a dataset that is neither, and the
-panel does not contain one.
+\textbf{2. Three datasets, and modality is confounded with the sign.} We claim no general law of transfer, only one failure of it: a significant gain on one
+dataset and a significant loss on another. But read at matched support the panel is one
+positive and one null chest radiograph collection and one negative fundus collection ---
+equally consistent with the distance suiting radiographs and not fundus images. A null is
+weak evidence against a strong modality effect and none against a weak one. Separating them
+needs a dataset that is neither, and the panel has none.
 
-\textbf{3. Three seeds.} DeLong tests condition on these trained models and carry no
+\textbf{3. Three seeds.} DeLong conditions on these trained models and carries no
 seed-variance component, so claims below roughly two AUROC points rest on the seed-level
 column, where three seeds are underpowered. A non-significant seed-level result is
 unresolved, not null: the LAG comparison of AE-U against the head ($-0.78$,
-$p_{\mathrm{Holm}}=0.13$) is reported as direction unresolved.
+$p_{\mathrm{Holm}}=0.13$) reads direction unresolved.
 
 \textbf{4. One backbone, image-level labels.} Inheriting the architecture and
-hyperparameters is what makes the reproduction valid and the factorial free of confounders.
-But we have not tested whether the decomposition holds under a different backbone, and we
-make no localisation claim.
+hyperparameters is what makes the reproduction valid and the factorial free of confounders,
+but we have not tested the decomposition under a different backbone, and we make no
+localisation claim.
 
 \textbf{5. Balanced test sets.} AUROC is prevalence-invariant, so the headline is
 unaffected. But we read the operating points on a 50\% test set
@@ -608,18 +602,17 @@ population's.
 
 \textbf{6. Selection, and one incomplete cell.} One quantity was fixed by inspecting test
 performance (\sectionref{sec:selection}). On LAG the head fitted to a frozen AE-SSIM backbone
-overflowed on one seed, so that comparison uses two seeds, marked wherever it appears. Since all
-three LAG AE-SSIM backbones leave the input range, every AE-SSIM-on-LAG number is measured on
-a diverged reconstruction --- unevenly, since the SSIM score is evaluated on the clamped
-reconstruction and cannot see the drift while the pixel score reads it directly.
+overflowed on one seed, so that comparison uses two seeds, marked wherever it appears. All
+three LAG AE-SSIM backbones leave the input range, so every AE-SSIM-on-LAG number is measured
+on a diverged reconstruction, and unevenly: the SSIM score reads the clamped reconstruction
+and cannot see the drift, while the pixel score reads it directly.
 
 \section{Conclusion}
 Two decisions inside a reconstruction-based detector have been moving together, and the
-literature has been crediting one of them. Separating them shows that a substitution a
-current benchmark recommends as free gains 9.08 AUROC points on one dataset and loses 10.54
-on another --- and that unbundled, into a distance, a bandwidth and a region scored, it was
-never one decision either. We offer not a better detector but the instrument that says which
-part of one to believe.
+literature has been crediting one. Separated, a substitution a benchmark recommends as free
+gains 9.08 AUROC on one dataset and loses 10.54 on another; unbundled into a distance, a
+bandwidth and a region scored, it was never one decision either. We offer not a better
+detector but the instrument that says which part of one to believe.
 
 \appendix
 

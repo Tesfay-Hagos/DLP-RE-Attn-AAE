@@ -149,13 +149,7 @@ paper:
 	    echo "BUILD FAILED:"; grep -E "^[^ ]+:[0-9]+:|^!" build.log | head -15; exit 1; fi
 	@cp "$(PAPER_BUILD)/main.pdf" "$(PAPER_DIR)/$(PDFNAME)"
 	@echo "Built: $(PAPER_DIR)/$(PDFNAME)"
-	@cd "$(PAPER_BUILD)" && python3 -c "\
-import subprocess; \
-n=int([l for l in subprocess.run(['pdfinfo','main.pdf'],capture_output=True,text=True).stdout.splitlines() if l.startswith('Pages')][0].split()[-1]); \
-tx=lambda p: subprocess.run(['pdftotext','-f',str(p),'-l',str(p),'main.pdf','-'],capture_output=True,text=True).stdout; \
-last=max([p for p in range(1,n+1) if 'Use of AI Assistance' in tx(p) or 'Conclusion' in tx(p)] or [n]); \
-print('  main text ends on page %d  ->  %d of 8  %s' % (last,last,'OK' if last<=8 else 'OVER LIMIT BY %d'%(last-8))); \
-print('  total     : %d pages (appendix and references excluded)' % n)"
+	@python3 $(SKILLS)/ml4h-desk-reject/scripts/pagecount.py "$(PAPER_BUILD)/main.pdf" || true
 	@cd "$(PAPER_BUILD)" && \
 	  echo "  overfull  : $$(grep -c Overfull build.log)"; \
 	  echo "  undefined : $$(grep -ci 'reference.*undefined' build.log)"; \
@@ -207,6 +201,7 @@ push: notebook-all
 # Prose passes over the paper. Each is presentation-only; the guard proves it.
 # ---------------------------------------------------------------------------
 SKILLS   := .claude/skills
+REPORT_DIR := experiments/Learn project/report/DL
 PAPER_TEX := $(PAPER_DIR)/main.tex
 
 ## Snapshot the paper's numbers, citations and headings before an editing pass
@@ -225,9 +220,15 @@ paper-prose:
 paper-flow:
 	@python3 $(SKILLS)/paper-flow/scripts/flow_map.py "$(PAPER_TEX)" --audit
 
+## Screen the submission for ML4H desk-reject conditions
+paper-deskcheck:
+	@python3 $(SKILLS)/ml4h-desk-reject/scripts/deskcheck.py "$(PAPER_TEX)" \
+	  --template "$(REPORT_DIR)/Machine_Learning_for_Health__ML4H__2026_Template" \
+	  --supp "$(REPORT_DIR)/ml4h2026_supplementary.zip"
+
 ## Report source spacing inconsistencies (add FIX=1 to apply the safe ones)
 paper-spacing:
 	@python3 $(SKILLS)/paper-formatter/scripts/spacing.py "$(PAPER_TEX)" \
 	  $(if $(FIX),--fix --backup,)
 
-.PHONY: paper-snapshot paper-guard paper-prose paper-flow paper-spacing
+.PHONY: paper-snapshot paper-guard paper-prose paper-flow paper-spacing paper-deskcheck

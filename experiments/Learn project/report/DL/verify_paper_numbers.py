@@ -219,6 +219,49 @@ CLAIMS += [
  ("limit1: sigma=3 RSNA",   18.13, lambda: sigx("RSNA",3.0), 0.03),
  ("limit1: sigma=3 VinCXR",  7.17, lambda: sigx("VinCXR",3.0), 0.03),
  ("limit1: sigma=3 LAG",     3.55, lambda: sigx("LAG",3.0), 0.03),
+]
+
+# ---------------------------------------------------------------------------
+# The 128px replication. Limitation 1 predicted these in print from the sigma
+# sweep BEFORE the runs existed; res128.json is recomputed from the stored
+# per-image score vectors of the res128-v1-* bundles, not transcribed.
+# ---------------------------------------------------------------------------
+def r128(ds, k):
+    return json.load(open(os.path.join(ROOT, "res128.json")))[ds][k]
+
+
+def rfs(ds, k):
+    return json.load(open(os.path.join(ROOT, "res128_fullsupport.json")))[ds][k]
+
+
+def rdec(ds, k):
+    return json.load(open(os.path.join(ROOT, "res128_decomposition.json")))[ds][k]
+
+CLAIMS += [
+ ("res128: delta RSNA",       -3.00, lambda: r128("RSNA","delta_mean"), 0.02),
+ ("res128: delta VinCXR",     -9.49, lambda: r128("VinCXR","delta_mean"), 0.02),
+ ("res128: delta LAG",       -24.87, lambda: r128("LAG","delta_mean"), 0.02),
+ ("res128: l2 RSNA",          66.48, lambda: r128("RSNA","l2_mean"), 0.02),
+ ("res128: l2 VinCXR",        54.62, lambda: r128("VinCXR","l2_mean"), 0.02),
+ ("res128: l2 LAG",           76.94, lambda: r128("LAG","l2_mean"), 0.02),
+ ("res128: ssim LAG",         52.07, lambda: r128("LAG","ssim_mean"), 0.02),
+ # the capacity confound that travels with the resolution change
+ ("res128: n_params",       8645712, lambda: r128("RSNA","n_params"), 1),
+ # The full-support arm, measured so the sigma=0.75 prediction is compared like for
+ # like. Without it the paper would be checking a full-support prediction against a
+ # valid-convolution measurement -- the same convention mixture that made an earlier
+ # draft quote sigma=3 from the wrong series.
+ ("res128fs: distance RSNA",    0.18, lambda: rfs("RSNA","distance_delta"), 0.02),
+ ("res128fs: distance VinCXR", -7.62, lambda: rfs("VinCXR","distance_delta"), 0.02),
+ ("res128fs: distance LAG",   -21.46, lambda: rfs("LAG","distance_delta"), 0.02),
+ ("res128fs: support RSNA",    -3.18, lambda: rdec("RSNA","support_128"), 0.02),
+ ("res128fs: support VinCXR",  -1.87, lambda: rdec("VinCXR","support_128"), 0.02),
+ ("res128fs: support LAG",     -3.41, lambda: rdec("LAG","support_128"), 0.02),
+ # the like-for-like errors quoted in the text, recomputed rather than transcribed
+ ("res128fs: err RSNA",   3.49, lambda: abs(rdec("RSNA","distance_error_vs_prediction")), 0.02),
+ ("res128fs: err VinCXR", 1.15, lambda: abs(rdec("VinCXR","distance_error_vs_prediction")), 0.02),
+ ("res128fs: err LAG",    3.07, lambda: abs(rdec("LAG","distance_error_vs_prediction")), 0.02),
+
  # the border the SSIM crop discards is not empty -- this is why support costs anything
  ("4.1: crop cost RSNA", 4.84, lambda: 68.35-json.load(open(os.path.join(ROOT,"ssim_bandwidth_sweep.json")))["RSNA"]["1.5"]["l2c"], 0.03),
  ("4.1: crop cost VinCXR",3.24, lambda: 56.03-json.load(open(os.path.join(ROOT,"ssim_bandwidth_sweep.json")))["VinCXR"]["1.5"]["l2c"], 0.03),

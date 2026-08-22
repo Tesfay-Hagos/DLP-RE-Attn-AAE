@@ -1,0 +1,86 @@
+==============================================================================
+THE 128px REPLICATION — a prediction made in print, then tested
+==============================================================================
+
+SUPERSEDES the first version of this file, which compared the VALID-CONVOLUTION
+128px deltas against FULL-SUPPORT predictions and reported errors of 0.31/0.72/6.48.
+Those are not like for like. The appendix bandwidth rows -- and therefore the
+sigma=0.75 prediction -- are replicate-padded at full support; the library default
+is valid convolution and carries a support term as well. The full-support arm at
+128px has since been measured on the same frozen weights, and the corrected errors
+are 3.49 / 1.15 / 3.07 -- more uniform, and LAG is an ordinary 3-point miss rather
+than the 35% blowout the earlier column implied.
+
+SETUP. Plain l2-objective autoencoder retrained at 128x128, 250 epochs, 3 seeds,
+namespace res128-v1-*, disjoint from the 64px dl-v1 runs. Rescored two ways on the
+frozen weights: library-default SSIM (valid conv) and replicate-padded full support.
+
+DECOMPOSITION AT BOTH RESOLUTIONS   (distance + support = reported)
+------------------------------------------------------------------------------
+                         distance           support          reported
+                  64px      128px     64px    128px     64px    128px
+  RSNA          +11.13      +0.18    -2.06    -3.18    +9.08    -3.00
+  VinCXR         -0.19      -7.62    -2.19    -1.87    -2.37    -9.49
+  LAG            -6.50     -21.46    -4.04    -3.41   -10.54   -24.87
+
+THE PREDICTION, LIKE FOR LIKE (distance axis, both full support)
+------------------------------------------------------------------------------
+  RSNA       64px  +11.13 -> 128px   +0.18 (sd 0.30)   predicted   -3.31   error  3.49
+  VinCXR     64px   -0.19 -> 128px   -7.62 (sd 0.17)   predicted   -8.77   error  1.15
+  LAG        64px   -6.50 -> 128px  -21.46 (sd 2.07)   predicted  -18.39   error  3.07
+
+  predicted movement vs observed movement:
+    RSNA       predicted  -14.44   observed  -10.95
+    VinCXR     predicted   -8.58   observed   -7.44
+    LAG        predicted  -11.89   observed  -14.96
+
+WHAT IS SUPPORTED
+------------------------------------------------------------------------------
+  * The distance component moved in the predicted direction on all three, by
+    -10.95, -7.43 and -14.96, against predicted -14.44, -8.58 and -11.89.
+  * Errors of 1.15 to 3.49 on movements of 7 to 15 points, from a first-principles
+    scale argument, at a resolution never trained on, with parameter count tripling
+    in between.
+  * The reported (valid-conv) RSNA result flips: +9.08 at 64px, -3.00 at 128px, all
+    three seeds negative. The printed prediction that the gain vanishes holds.
+  * At 128px all three reported deltas are negative.
+
+WHAT IS NOT SUPPORTED — this is the finding, not the embarrassment
+------------------------------------------------------------------------------
+  * RSNA's distance component lands at +0.18 (sd 0.30), indistinguishable from
+    zero, where the bandwidth account predicted -3.31. So the observed RSNA sign
+    flip is carried by the SUPPORT term (-3.18), not by the distance change the
+    bandwidth argument concerns. The account predicted the disappearance of the
+    +11.13 gain, not a harmful distance, and only the weaker statement is earned.
+  * The paper's own distance/support decomposition is what caught this, applied to
+    the authors' own mechanism and against their own interest.
+  * The prediction is one pattern ('all negative'), not three independent events.
+    Any mechanism degrading SSIM at higher resolution yields the same 3/3.
+  * LAG's valid-conv SSIM lands at 52.07, near chance. A monotone unbounded
+    bandwidth account cannot predict a floor and is not tested by an observation
+    pinned at one.
+
+CONFOUND THAT MUST BE DISCLOSED
+------------------------------------------------------------------------------
+  n_params 2,351,184 -> 8,645,712 (3.68x): the bottleneck FC scales with input size.
+  Resolution and capacity moved together. Within each resolution BOTH arms share
+  identical weights, so capacity cannot produce the l2-versus-SSIM delta except
+  through an interaction with the score. The l2 baselines move by at most 2.0 AUROC
+  across the resolution change while the SSIM arm moves by up to 24.9. A
+  latent-matched 128px run would separate them; we have not run it. Note the paper
+  indicts Bergmann et al. for moving two things and crediting one -- say this
+  plainly rather than let a reviewer draw the parallel.
+
+A CONVENTION NOTE ON THE 64px SUPPORT TERM
+------------------------------------------------------------------------------
+  sigma_crossing.py clamps to [0,1]; ssim_window_sweep.py does not, and the 64px
+  ssim_valid is taken from the latter. Empirically this is a no-op: the main
+  pipeline's own clamped run a1-l2-ssim gives 77.4215 on RSNA, matching the
+  unclamped window sweep to four decimals. Two paths, same number.
+
+PROVENANCE
+------------------------------------------------------------------------------
+  res128.json, res128_fullsupport.json and res128_decomposition.json are recomputed
+  from stored per-image score vectors and frozen weights, not transcribed. Scripts:
+  res128_fullsupport.py (committed). Registered in verify_paper_numbers.py under
+  'res128:' and 'res128fs:'. Identity distance+support=reported holds to 0.00e+00.
