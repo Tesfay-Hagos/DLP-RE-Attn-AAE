@@ -878,10 +878,15 @@ _selftest_backbones_d(size=64)
 # verified baseline -- tuning before reproducing makes any gap uninterpretable.
 SAMPLE_MODE = bool(int(os.environ.get('SAMPLE_MODE', '0')))
 
-RUN_VERSION    = 'cv-v1'
+RUN_VERSION    = 'cv-v7.0'
 SKIP_COMPLETED = True
 WANDB_PROJECT  = 'MedIAnomaly-CV'
 WANDB_GROUP    = f'{RUN_VERSION}'
+# wandb run ids are not free-form: a '.' is not reliably accepted, and RUN_VERSION now
+# carries one. Artifact names were already sanitised with the same '.'->'p' mapping in
+# save_run/fetch_run, so this keeps the id consistent with them instead of inventing a
+# second convention. CKPT_DIR keeps the dot -- a filesystem is happy with it.
+WANDB_ID       = RUN_VERSION.lower().replace('.', 'p')
 
 OUTPUT_DIR = ('/kaggle/working/results_cv' if os.path.isdir('/kaggle/working')
               else 'results_cv') + ('' if not SAMPLE_MODE else '_sample')
@@ -928,6 +933,15 @@ print(f"OUTPUT_DIR  : {OUTPUT_DIR}")
 WANDB_SECRET_NAME = os.environ.get('WANDB_SECRET_NAME', 'REATTN_KEY')
 
 USE_WANDB = False
+
+# ── what a "Run All" actually EXECUTES ─────────────────────────────────────────
+# Every cell up to 3.3 defines and self-tests; none of them touch the study. These two
+# gate the cells that do (4.2 and 5.3). They default to True because running the notebook
+# should run the notebook -- an earlier version defined everything, printed
+# "Driver ready", and computed nothing, which reads exactly like a silent failure.
+# Set False to load the definitions for inspection without starting hours of training.
+RUN_REPRODUCTION = True     # Cell 4.2: the 5-method grid vs MedIAnomaly Table 7
+RUN_EXPERIMENTS  = True     # Cell 5.3: E2 (free) then E1 (one DAE per noise_res)
 
 
 # %% [markdown]
@@ -1166,14 +1180,14 @@ try:
     # instead of creating a new one, so metrics keep appending to one history.
     wandb.init(project=WANDB_PROJECT,
                group=WANDB_GROUP,
-               name=f'{RUN_VERSION}',
+               name=WANDB_ID,
                config=dict(image_size=IMAGE_SIZE, latent_dim=LATENT_DIM,
                            hidden_num=HIDDEN_NUM, base_width=BASE_WIDTH,
                            epochs=EPOCHS, batch_size=BATCH_SIZE, lr=LR,
                            weight_decay=WEIGHT_DECAY, pixel_range=PIXEL_RANGE,
                            run_version=RUN_VERSION),
                tags=['medianomaly', 'cv', RUN_VERSION],
-               resume='allow', id=f'{RUN_VERSION}',
+               resume='allow', id=WANDB_ID,
                settings=wandb.Settings(init_timeout=120))
     print(f'WandB ready  project={WANDB_PROJECT}  version={RUN_VERSION}')
 except Exception as _e:
@@ -2745,6 +2759,65 @@ print('Driver ready: train_and_eval(method, seed) / rescore(base_method, score_l
 
 # %% [markdown]
 # ---
+# ## **Cell 3.4** — Preflight
+# Everything above this point defines things and self-tests them; nothing above touches
+# the study. This cell answers the one question that is otherwise easy to get wrong after
+# a Run All: **is this notebook actually ready, and what has already been done?**
+#
+# It exists because the self-tests in Cells 3.0-3.3 pass whether or not the data loaded.
+# A failed Cell 2.0 followed by a wall of green self-test output reads like success.
+
+# %% [CELL 3.4]  Preflight — state, and what will run
+
+def preflight():
+    ok = True
+    print('DATA')
+    have_data = 'X_TRAIN' in globals() and X_TRAIN is not None
+    if have_data:
+        print(f'  root      {DATA_ROOT}')
+        print(f'  train     {tuple(X_TRAIN.shape)}')
+        print(f'  test      {tuple(X_TEST.shape)}  '
+              f'{int((Y_TEST == 0).sum())} normal / {int((Y_TEST == 1).sum())} abnormal')
+        print(f'  lesions   {PIXEL_PREVALENCE*100:.3f}% of test pixels '
+              f'(= the PixAP a random scorer earns)')
+    else:
+        ok = False
+        print('  NOT LOADED — Cell 2.0/2.2 did not complete. The self-tests above pass')
+        print('  without data, so green output there does not mean the notebook is ready.')
+
+    print('\nPLAN')
+    total = sum(len(seeds_for(m)) for m in ACTIVE_METHODS)
+    print(f'  {len(ACTIVE_METHODS)} active methods, {total} runs: ' +
+          ', '.join(f'{m}x{len(seeds_for(m))}' for m in ACTIVE_METHODS))
+    print(f'  epochs {EPOCHS} | {IMAGE_SIZE}px (DAE {METHODS["dae"].get("input_size")}px) '
+          f'| SAMPLE_MODE={SAMPLE_MODE}')
+    if SAMPLE_MODE:
+        print('  !! SAMPLE_MODE is ON — tiny subsets and 2 epochs. Results are')
+        print('     smoke-test artefacts, NOT comparable to Table 7.')
+
+    print('\nALREADY DONE')
+    stored = stored_runs_by_method()
+    if not stored:
+        print('  nothing stored yet — a full run starts from scratch')
+    for m in sorted(stored):
+        done = len(stored[m])
+        want = len(seeds_for(m)) if m in ACTIVE_METHODS else 0
+        print(f'  {m:<18} {done} stored' + (f' / {want} planned' if want else ''))
+
+    print('\nWILL EXECUTE')
+    print(f'  Cell 4.2  reproduction   RUN_REPRODUCTION={RUN_REPRODUCTION}')
+    print(f'  Cell 5.3  experiments    RUN_EXPERIMENTS={RUN_EXPERIMENTS}')
+    if not (RUN_REPRODUCTION or RUN_EXPERIMENTS):
+        print('  -> both are False, so Run All will define everything and compute nothing.')
+    print('\n' + ('READY' if ok else 'NOT READY — fix DATA above before running'))
+    return ok
+
+
+preflight()
+
+
+# %% [markdown]
+# ---
 # ## **Cell 4.0** — The grid
 # Every active method at every one of its seeds. `train_and_eval` skips anything already
 # stored, so this cell is safe to re-run after a Kaggle session dies: it picks up where
@@ -2857,6 +2930,27 @@ def print_results_table(methods=None):
     print('  a large gap means a protocol difference or a bug, not a finding.')
     print('  Dice_ceil is an ORACLE threshold chosen on the test masks (Cell 3.2).')
     return df
+
+
+# %% [markdown]
+# ---
+# ## **Cell 4.2** — Run the reproduction
+# The cells above only DEFINE things. This one executes. `RUN_REPRODUCTION` (Cell 1.4)
+# gates it so the notebook can be loaded for inspection without launching hours of
+# training, but it defaults to True: running the cells should run the study.
+#
+# Re-running is cheap. `train_and_eval` reuses any stored run, so a second pass over a
+# finished grid prints the table in seconds.
+
+# %% [CELL 4.2]  EXECUTE — the reproduction grid and its table
+
+if RUN_REPRODUCTION:
+    _grid = run_grid()
+    print()
+    _df_repro = print_results_table()
+else:
+    print('RUN_REPRODUCTION is False -- nothing executed.')
+    print('  Set it True in Cell 1.4, or call run_grid() then print_results_table().')
 
 
 # %% [markdown]
@@ -3073,3 +3167,31 @@ def aeu_variance_decomposition(seed=TRAIN_SEED):
               'poor localisation.\n     Look elsewhere -- the reconstruction itself, or '
               'the bottleneck.')
     return df
+
+
+
+# %% [markdown]
+# ---
+# ## **Cell 5.3** — Run the experiments
+# E2 is nearly free: it reuses the trained AE-U and only re-scores it. E1 trains one DAE
+# per `noise_res`, so it is the expensive half — it runs second, and only after the
+# reproduction has had a chance to show whether our DAE is trustworthy in the first place.
+
+# %% [CELL 5.3]  EXECUTE — E2 then E1
+
+if RUN_EXPERIMENTS:
+    print('=' * 78)
+    print('E2 — does AE-U\'s uncertainty weighting destroy its own localisation?')
+    print('=' * 78)
+    _df_e2 = aeu_variance_decomposition()
+
+    print('\n' + '=' * 78)
+    print('E1 — is DAE\'s win an architecture, or a corruption-scale match?')
+    print('=' * 78)
+    _sweep = run_noise_sweep()
+    print()
+    _df_e1 = noise_sweep_table()
+else:
+    print('RUN_EXPERIMENTS is False -- nothing executed.')
+    print('  Set it True in Cell 1.4, or call aeu_variance_decomposition(), '
+          'run_noise_sweep(), noise_sweep_table().')
