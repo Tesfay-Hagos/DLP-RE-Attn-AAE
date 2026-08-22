@@ -2204,6 +2204,18 @@ TARGET_BRATS_PIXEL = {
 # retained precisely so the reduction is a choice, not a limitation.
 ACTIVE_METHODS = ['dae', 'ae-perceptual', 'vae', 'ae', 'aeu']
 
+# Relative training cost, used only to order the grid so that a session that dies early
+# has banked the cheap runs. These are HINTS, not measurements: 1.0 is a plain 64px AE.
+#   ae-perceptual  two extra VGG19 forwards per step (net_in and x_hat) plus the backward
+#                  through them; VGG19 is ~20M params against the AE's 2.35M
+#   constrained-ae a second encoder pass over the reconstruction
+#   dae            4x the pixels (128px), 31M params, and 4x the steps (batch 16)
+METHOD_COST = {'ae-perceptual': 12.0, 'constrained-ae': 1.5, 'dae': 40.0}
+
+
+def method_cost(m):
+    return METHOD_COST.get(m, 1.0) * len(seeds_for(m))
+
 # Seeds per method. DAE has the smallest variance in Table 7 (+-0.7 AP_pix, +-0.6 Dice)
 # and by far the largest cost: a 31M-parameter UNet over 4,211 training slices at 128px
 # for 250 epochs, roughly 4x the per-step cost of the 64px AEs on 4x the pixels. One seed
@@ -2785,10 +2797,23 @@ def preflight():
         print('  NOT LOADED — Cell 2.0/2.2 did not complete. The self-tests above pass')
         print('  without data, so green output there does not mean the notebook is ready.')
 
+    print('\nCOMPUTE')
+    print(f'  device    {device}' + (f'  ({torch.cuda.get_device_name(0)})'
+                                     if device.type == 'cuda' else ''))
+    if device.type != 'cuda' and not SAMPLE_MODE:
+        ok = False
+        print('  !! NO GPU. This grid is not feasible on CPU. For scale: one epoch of')
+        print('     ae-perceptual measured ~640s on CPU, so its 250 epochs alone are ~44')
+        print('     HOURS, and dae is several times heavier again. On Kaggle, enable an')
+        print('     accelerator (Settings -> Accelerator -> GPU) and re-run. Set')
+        print('     SAMPLE_MODE=1 if you only want to smoke-test the code path.')
+
     print('\nPLAN')
     total = sum(len(seeds_for(m)) for m in ACTIVE_METHODS)
-    print(f'  {len(ACTIVE_METHODS)} active methods, {total} runs: ' +
-          ', '.join(f'{m}x{len(seeds_for(m))}' for m in ACTIVE_METHODS))
+    _ord = sorted(ACTIVE_METHODS, key=lambda m: (method_cost(m), m))
+    print(f'  {len(ACTIVE_METHODS)} active methods, {total} runs, cheapest first:')
+    print('    ' + ', '.join(f'{m}x{len(seeds_for(m))} (cost {method_cost(m):g})'
+                             for m in _ord))
     print(f'  epochs {EPOCHS} | {IMAGE_SIZE}px (DAE {METHODS["dae"].get("input_size")}px) '
           f'| SAMPLE_MODE={SAMPLE_MODE}')
     if SAMPLE_MODE:
@@ -2835,9 +2860,13 @@ def run_grid(methods=None, verbose=True):
 
     Re-entrant: stored runs are reused, so re-running after a crash resumes."""
     methods = methods or ACTIVE_METHODS
-    # cheapest first, so an interrupted session still yields a partial table
-    order = sorted(methods, key=lambda m: (METHODS[m].get('input_size', IMAGE_SIZE),
-                                           METHODS[m]['net'] == 'unet'))
+    # Cheapest first, so an interrupted session still leaves a usable partial table.
+    #
+    # An earlier version sorted on (input_size, is_unet) and called that "cheapest first".
+    # It is not: every 64px method ties, so the order fell back to registry order and
+    # ae-perceptual -- the most expensive 64px method by an order of magnitude -- ran
+    # FIRST. A session that died early therefore banked nothing. Sort on actual cost.
+    order = sorted(methods, key=lambda m: (method_cost(m), m))
     plan = [(m, s) for m in order for s in seeds_for(m)]
     print(f'{len(plan)} runs planned: ' +
           ', '.join(f'{m}x{len(seeds_for(m))}' for m in order) + '\n')
