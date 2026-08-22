@@ -1250,13 +1250,36 @@ DATA_ROOT_CANDIDATES = [
 ] + _discover_roots()
 
 
-def _looks_like(root, name):
-    """True if <root>/<name> has the structure the MedIAnomaly loaders expect."""
-    d = os.path.join(root, name)
+def _has_payload(d, name):
+    """True if directory `d` IS the dataset payload for `name` (not its parent)."""
     if name == 'BraTS2021':
         return all(os.path.isdir(os.path.join(d, p))
                    for p in ['train', 'test/normal', 'test/tumor', 'test/annotation'])
     return os.path.isdir(os.path.join(d, 'images')) and os.path.isfile(os.path.join(d, 'data.json'))
+
+
+def dataset_dir(root, name):
+    """The directory holding `name`'s payload under `root`, or None.
+
+    Two layouts are accepted, because Kaggle produces both depending on what was zipped:
+
+      <root>/<name>/train/...   the archive contained the dataset FOLDER  (our zip does)
+      <root>/train/...          the archive contained the dataset CONTENTS
+
+    Every caller must resolve through this rather than assuming os.path.join(root, name).
+    A flat mount used to fail discovery entirely and report 'data not found', which sends
+    you looking for a missing upload instead of a naming difference."""
+    nested = os.path.join(root, name)
+    if _has_payload(nested, name):
+        return nested
+    if _has_payload(root, name):
+        return root
+    return None
+
+
+def _looks_like(root, name):
+    """True if `name` is reachable from `root` in either accepted layout."""
+    return dataset_dir(root, name) is not None
 
 
 def find_data_root(required):
@@ -1301,8 +1324,9 @@ def verify_datasets(required, root=None):
             '  (c) set MEDIANOMALY_DATA=/path/to/MedIAnomaly-Data')
     ok = True
     for name in required:
-        d = os.path.join(root, name)
-        if not _looks_like(root, name):
+        d = dataset_dir(root, name)
+        if d is None:
+            d = os.path.join(root, name)
             print(f'  {name:<12} MISSING or wrong structure at {d}'); ok = False; continue
         if name == 'BraTS2021':
             n_tr = len(os.listdir(os.path.join(d, 'train')))
@@ -1335,7 +1359,7 @@ DATA_ROOT = verify_datasets(REQUIRED_DATASETS)
 def load_split_imagelevel(root, name, size=IMAGE_SIZE):
     """RSNA / VinCXR: returns (x_train, x_test, y_test) using THEIR split from data.json."""
     from PIL import Image
-    d = os.path.join(root, name)
+    d = dataset_dir(root, name) or os.path.join(root, name)
     with open(os.path.join(d, 'data.json')) as f:
         dd = json.load(f)
 
@@ -1365,7 +1389,7 @@ def load_split_brats(root, size=IMAGE_SIZE):
     pixel-level ground truth — masks are 0/255 PNGs named like the image with
     'flair'->'seg', matching MedIAnomaly's BraTSAD loader."""
     from PIL import Image
-    d = os.path.join(root, 'BraTS2021')
+    d = dataset_dir(root, 'BraTS2021') or os.path.join(root, 'BraTS2021')
 
     def _load(dirpath, names, tag, nearest=False):
         out = []
